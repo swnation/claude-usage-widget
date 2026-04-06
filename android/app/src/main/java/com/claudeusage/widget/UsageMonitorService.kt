@@ -15,7 +15,7 @@ import java.util.TimerTask
 
 /**
  * 포그라운드 서비스 - 상단 알림창에 Claude 사용량 상시 표시.
- * 항상 claude.ai에서 실시간으로 가져옴. 로컬 저장 없음.
+ * 클로드 앱 사용량 화면과 동일: 현재 세션 + 주간 한도.
  */
 class UsageMonitorService : Service() {
 
@@ -38,55 +38,39 @@ class UsageMonitorService : Service() {
     private lateinit var webClient: ClaudeWebClient
     private lateinit var notificationManager: NotificationManager
     private var timer: Timer? = null
-    private val notifiedModels = mutableSetOf<String>()
+    private var sessionAlertSent = false
+    private var weeklyAlertSent = false
 
     override fun onCreate() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannels()
-
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        webClient = ClaudeWebClient(prefs.getString("session_key", "") ?: "")
+        webClient = ClaudeWebClient(
+            PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("session_key", "") ?: ""
+        )
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> {
-                stopSelf()
-                return START_NOT_STICKY
-            }
-            ACTION_REFRESH -> {
-                // 새로고침 버튼 눌렀을 때 즉시 업데이트
-                Thread { refreshNotification() }.start()
-                return START_STICKY
-            }
+            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_REFRESH -> { Thread { refreshNotification() }.start(); return START_STICKY }
         }
-
         startForeground(NOTIFICATION_ID, buildNotification(null))
         startPolling()
         return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-
-    override fun onDestroy() {
-        timer?.cancel()
-        timer = null
-        super.onDestroy()
-    }
+    override fun onDestroy() { timer?.cancel(); timer = null; super.onDestroy() }
 
     private fun createNotificationChannels() {
-        NotificationChannel(
-            CHANNEL_ID, "Claude 사용량", NotificationManager.IMPORTANCE_LOW
-        ).apply {
+        NotificationChannel(CHANNEL_ID, "Claude 사용량", NotificationManager.IMPORTANCE_LOW).apply {
             description = "Claude 플랜 사용량 표시"
             setShowBadge(false)
             notificationManager.createNotificationChannel(this)
         }
-
-        NotificationChannel(
-            ALERT_CHANNEL_ID, "Claude 사용량 알림", NotificationManager.IMPORTANCE_HIGH
-        ).apply {
+        NotificationChannel(ALERT_CHANNEL_ID, "Claude 사용량 알림", NotificationManager.IMPORTANCE_HIGH).apply {
             description = "사용량 한도 근접 시 알림"
             enableVibration(true)
             notificationManager.createNotificationChannel(this)
@@ -117,32 +101,24 @@ class UsageMonitorService : Service() {
     }
 
     private fun buildNotification(usage: PlanUsage?): Notification {
-        val openIntent = Intent(this, MainActivity::class.java)
-        val pendingOpen = PendingIntent.getActivity(
-            this, 0, openIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val openPI = PendingIntent.getActivity(this, 0,
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        // 중지 버튼
-        val stopIntent = Intent(this, UsageMonitorService::class.java).apply { action = ACTION_STOP }
-        val pendingStop = PendingIntent.getService(
-            this, 1, stopIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val refreshPI = PendingIntent.getService(this, 2,
+            Intent(this, UsageMonitorService::class.java).apply { action = ACTION_REFRESH },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        // 새로고침 버튼
-        val refreshIntent = Intent(this, UsageMonitorService::class.java).apply { action = ACTION_REFRESH }
-        val pendingRefresh = PendingIntent.getService(
-            this, 2, refreshIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+        val stopPI = PendingIntent.getService(this, 1,
+            Intent(this, UsageMonitorService::class.java).apply { action = ACTION_STOP },
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)
-            .setContentIntent(pendingOpen)
-            .addAction(android.R.drawable.ic_menu_rotate, "새로고침", pendingRefresh)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "중지", pendingStop)
+            .setContentIntent(openPI)
+            .addAction(android.R.drawable.ic_menu_rotate, "새로고침", refreshPI)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "중지", stopPI)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
@@ -156,15 +132,10 @@ class UsageMonitorService : Service() {
                     .setContentText(usage.error)
             }
             else -> {
-                val opus = usage.getModel("Opus")
-                val progress = opus?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
-
+                val progress = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
                 builder.setContentTitle(usage.notificationTitle())
                     .setContentText(usage.notificationShort())
-                    .setStyle(
-                        NotificationCompat.BigTextStyle()
-                            .bigText(usage.notificationExpanded())
-                    )
+                    .setStyle(NotificationCompat.BigTextStyle().bigText(usage.notificationExpanded()))
                     .setProgress(100, progress, false)
             }
         }
@@ -175,34 +146,39 @@ class UsageMonitorService : Service() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (!prefs.getBoolean("alerts_enabled", true)) return
 
-        for (model in usage.models) {
-            if (model.usedPercent >= 80 && model.modelName !in notifiedModels) {
-                notifiedModels.add(model.modelName)
-                sendAlert(model)
+        usage.session?.let {
+            if (it.usedPercent >= 80 && !sessionAlertSent) {
+                sessionAlertSent = true
+                sendAlert("현재 세션", it)
             }
+            // 리셋되면 알림 다시 보낼 수 있도록
+            if (it.usedPercent < 20) sessionAlertSent = false
+        }
+
+        usage.weekly?.let {
+            if (it.usedPercent >= 80 && !weeklyAlertSent) {
+                weeklyAlertSent = true
+                sendAlert("주간 한도", it)
+            }
+            if (it.usedPercent < 20) weeklyAlertSent = false
         }
     }
 
-    private fun sendAlert(model: ModelUsage) {
-        val intent = Intent(this, MainActivity::class.java)
-        val pi = PendingIntent.getActivity(
-            this, model.modelName.hashCode(), intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-        )
+    private fun sendAlert(title: String, limit: UsageLimit) {
+        val pi = PendingIntent.getActivity(this, title.hashCode(),
+            Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
-        val emoji = if (model.isAtLimit) "🚨" else "⚠️"
-        val title = if (model.isAtLimit) "$emoji ${model.modelName} 한도 도달!"
-                    else "$emoji ${model.modelName}: ${model.remaining}개 남음"
-
+        val emoji = if (limit.usedPercent >= 95) "🚨" else "⚠️"
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle(title)
-            .setContentText("${model.used}/${model.limit} 사용 (${model.percentText})")
+            .setContentTitle("$emoji $title ${limit.percentText} 사용됨")
+            .setContentText(limit.resetTimeText())
             .setContentIntent(pi)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
 
-        notificationManager.notify(model.modelName.hashCode() + 1000, notification)
+        notificationManager.notify(title.hashCode() + 1000, notification)
     }
 }

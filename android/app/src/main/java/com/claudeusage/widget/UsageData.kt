@@ -1,85 +1,87 @@
 package com.claudeusage.widget
 
 /**
- * Claude Max/Pro 플랜 사용량 데이터.
- * 항상 claude.ai에서 실시간으로 가져온 값만 표시.
+ * Claude 앱 사용량 화면과 동일한 데이터 구조.
+ *
+ * - 현재 세션: 5시간 윈도우 사용량 (%)
+ * - 주간 한도: 모든 모델 통합 주간 사용량 (%)
  */
-data class ModelUsage(
-    val modelName: String,       // "Opus", "Sonnet", "Haiku"
-    val modelTier: String,       // API 내부 tier 이름
-    val used: Int,               // 현재 사용량
-    val limit: Int,              // 한도
-    val resetsAt: String,        // 리셋 시각 (ISO 8601)
-    val windowHours: Int = 5,
+data class UsageLimit(
+    val label: String,           // "현재 세션", "주간 한도" 등
+    val usedPercent: Double,     // 0~100
+    val resetsAt: String,        // ISO 8601 또는 표시용 문자열
 ) {
-    val remaining: Int get() = (limit - used).coerceAtLeast(0)
-    val usedPercent: Double get() = if (limit > 0) (used.toDouble() / limit) * 100 else 0.0
-    val isNearLimit: Boolean get() = usedPercent >= 80
-    val isAtLimit: Boolean get() = used >= limit
+    val isNearLimit: Boolean get() = usedPercent >= 70
+    val isAtLimit: Boolean get() = usedPercent >= 95
 
     val percentText: String get() = "${String.format("%.0f", usedPercent)}%"
 
-    fun remainingText(): String = when {
-        isAtLimit -> "한도 도달"
-        remaining <= 5 -> "${remaining}개 남음!"
-        else -> "${remaining}개 남음"
-    }
-
-    fun formatResetTime(): String {
+    fun resetTimeText(): String {
         if (resetsAt.isEmpty()) return ""
         return try {
             val resetInstant = java.time.Instant.parse(resetsAt)
             val now = java.time.Instant.now()
             val dur = java.time.Duration.between(now, resetInstant)
-            if (dur.isNegative) "곧 초기화"
+            if (dur.isNegative) "곧 재설정"
             else {
-                val h = dur.toHours()
+                val days = dur.toDays()
+                val h = dur.toHours() % 24
                 val m = dur.toMinutes() % 60
-                if (h > 0) "${h}시간 ${m}분 후 초기화" else "${m}분 후 초기화"
+                when {
+                    days > 0 -> "${days}일 ${h}시간 후 재설정"
+                    h > 0 -> "${h}시간 ${m}분 후 재설정"
+                    else -> "${m}분 후 재설정"
+                }
             }
-        } catch (e: Exception) { "" }
+        } catch (e: Exception) {
+            resetsAt  // 파싱 실패 시 원본 그대로
+        }
     }
+
+    fun statusText(): String = "${percentText} 사용됨"
 }
 
 data class PlanUsage(
     val planName: String = "Max",
-    val models: List<ModelUsage> = emptyList(),
+    val session: UsageLimit? = null,    // 현재 세션 (5시간)
+    val weekly: UsageLimit? = null,     // 주간 한도
     val lastUpdated: String = "",
     val error: String? = null,
 ) {
-    fun getModel(name: String): ModelUsage? =
-        models.find { it.modelName.equals(name, ignoreCase = true) }
-
     fun notificationTitle(): String {
-        val opus = getModel("Opus")
-        return if (opus != null) {
-            val emoji = when {
-                opus.usedPercent >= 90 -> "🔴"
-                opus.usedPercent >= 70 -> "🟡"
-                else -> "🟢"
-            }
-            "$emoji Claude $planName │ Opus ${opus.percentText}"
-        } else {
-            "Claude $planName"
+        val s = session ?: return "Claude $planName"
+        val emoji = when {
+            s.usedPercent >= 90 -> "🔴"
+            s.usedPercent >= 70 -> "🟡"
+            else -> "🟢"
         }
+        return "$emoji Claude $planName │ ${s.percentText}"
     }
 
-    fun notificationShort(): String =
-        models.joinToString(" │ ") { "${it.modelName} ${it.percentText}" }
+    fun notificationShort(): String {
+        val parts = mutableListOf<String>()
+        session?.let { parts.add("세션 ${it.percentText}") }
+        weekly?.let { parts.add("주간 ${it.percentText}") }
+        return parts.joinToString(" │ ")
+    }
 
     fun notificationExpanded(): String = buildString {
-        for (m in models) {
-            val bar = progressBar(m.usedPercent)
-            append("${m.modelName} $bar ${m.percentText} (${m.used}/${m.limit})\n")
+        session?.let {
+            append("현재 세션\n")
+            append("${progressBar(it.usedPercent)} ${it.statusText()}\n")
+            val reset = it.resetTimeText()
+            if (reset.isNotEmpty()) append("⏱ $reset\n")
         }
-        val firstReset = models.filter { it.resetsAt.isNotEmpty() }.minByOrNull { it.resetsAt }
-        if (firstReset != null) {
-            append("⏱ ${firstReset.formatResetTime()}")
+        weekly?.let {
+            append("\n주간 한도\n")
+            append("${progressBar(it.usedPercent)} ${it.statusText()}\n")
+            val reset = it.resetTimeText()
+            if (reset.isNotEmpty()) append("⏱ $reset")
         }
     }
 
     private fun progressBar(percent: Double): String {
-        val filled = (percent / 10).toInt().coerceIn(0, 10)
-        return "▓".repeat(filled) + "░".repeat(10 - filled)
+        val filled = (percent / 5).toInt().coerceIn(0, 20)
+        return "▓".repeat(filled) + "░".repeat(20 - filled)
     }
 }

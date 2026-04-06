@@ -1,82 +1,61 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- 사용량 섹션 (현재 세션 / 주간 한도) - 클로드 앱과 동일한 레이아웃 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:background="@drawable/card_background"
-    android:padding="16dp"
-    android:layout_marginBottom="10dp">
+    android:layout_marginBottom="16dp">
 
-    <!-- 모델명 + 퍼센트 -->
-    <LinearLayout
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:orientation="horizontal"
-        android:gravity="center_vertical">
-
-        <TextView
-            android:id="@+id/modelName"
-            android:layout_width="0dp"
-            android:layout_height="wrap_content"
-            android:layout_weight="1"
-            android:text="Opus"
-            android:textColor="#c084fc"
-            android:textSize="17sp"
-            android:textStyle="bold" />
-
-        <TextView
-            android:id="@+id/modelPercent"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="0%"
-            android:textColor="#4ade80"
-            android:textSize="22sp"
-            android:textStyle="bold" />
-    </LinearLayout>
-
-    <!-- 사용량 수치 -->
+    <!-- 섹션 제목 -->
     <TextView
-        android:id="@+id/modelCount"
+        android:id="@+id/sectionTitle"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="0 / 45"
-        android:textColor="#888899"
-        android:textSize="13sp"
-        android:layout_marginTop="2dp" />
+        android:text="현재 세션"
+        android:textColor="#e0e0e0"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        android:layout_marginBottom="10dp" />
 
     <!-- 프로그레스 바 -->
     <ProgressBar
-        android:id="@+id/modelBar"
+        android:id="@+id/usageBar"
         style="@android:style/Widget.ProgressBar.Horizontal"
         android:layout_width="match_parent"
-        android:layout_height="10dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="6dp"
+        android:layout_height="8dp"
         android:max="100"
         android:progress="0"
-        android:progressBackgroundTint="#2a2a4a" />
+        android:progressBackgroundTint="#2a2a4a"
+        android:layout_marginBottom="8dp" />
 
-    <!-- 남은 수 + 초기화 시간 -->
+    <!-- 퍼센트 + 재설정 시간 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal">
 
         <TextView
-            android:id="@+id/modelRemaining"
+            android:id="@+id/usagePercent"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="45개 남음"
-            android:textColor="#4ade80"
-            android:textSize="13sp" />
+            android:text="0% 사용됨"
+            android:textColor="#888899"
+            android:textSize="14sp" />
 
         <TextView
-            android:id="@+id/modelReset"
+            android:id="@+id/resetTime"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="4시간 32분 후 초기화"
+            android:text=""
             android:textColor="#888899"
-            android:textSize="12sp" />
+            android:textSize="14sp" />
     </LinearLayout>
+
+    <!-- 구분선 -->
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#2a2a4a"
+        android:layout_marginTop="16dp" />
 </LinearLayout>

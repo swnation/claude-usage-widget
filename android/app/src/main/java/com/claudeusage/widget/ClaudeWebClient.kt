@@ -8,12 +8,10 @@ import java.time.Instant
 import java.util.concurrent.TimeUnit
 
 /**
- * Fetches Claude Max/Pro plan usage from claude.ai's internal API.
- * Requires the user's sessionKey cookie from claude.ai.
- *
- * Flow:
- * 1. GET /api/bootstrap → get organization ID
- * 2. GET /api/organizations/{orgId}/rate_limits → get per-model usage
+ * claude.ai 내부 API에서 사용량 데이터를 가져옴.
+ * 클로드 앱의 설정 > 사용량 화면과 동일한 데이터:
+ * - 현재 세션 (5시간 윈도우)
+ * - 주간 한도
  */
 class ClaudeWebClient(private var sessionKey: String) {
 
@@ -35,22 +33,17 @@ class ClaudeWebClient(private var sessionKey: String) {
         cachedOrgId = null
     }
 
-    /**
-     * Fetch plan usage. Returns PlanUsage with model-level limits.
-     */
     fun fetchUsage(): Result<PlanUsage> {
         if (sessionKey.isBlank()) {
-            return Result.failure(Exception("Session key not set"))
+            return Result.failure(Exception("로그인이 필요합니다"))
         }
 
-        // Step 1: Get org ID
         val orgId = cachedOrgId ?: run {
             val id = fetchOrgId().getOrElse { return Result.failure(it) }
             cachedOrgId = id
             id
         }
 
-        // Step 2: Get rate limits / usage
         return fetchRateLimits(orgId)
     }
 
@@ -59,16 +52,16 @@ class ClaudeWebClient(private var sessionKey: String) {
         return try {
             client.newCall(request).execute().use { response ->
                 if (response.code == 401 || response.code == 403) {
-                    return Result.failure(Exception("Session expired. Re-login to claude.ai and update cookie."))
+                    return Result.failure(Exception("세션 만료. 다시 로그인하세요."))
                 }
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Bootstrap failed: HTTP ${response.code}"))
+                    return Result.failure(Exception("Bootstrap 실패: HTTP ${response.code}"))
                 }
 
-                val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+                val body = response.body?.string()
+                    ?: return Result.failure(Exception("빈 응답"))
                 val json = gson.fromJson(body, JsonObject::class.java)
 
-                // Try to extract org ID from various possible response structures
                 val orgId = json.getAsJsonArray("account")
                     ?.firstOrNull()?.asJsonObject
                     ?.get("organization")?.asJsonObject
@@ -79,14 +72,11 @@ class ClaudeWebClient(private var sessionKey: String) {
                         ?.get("organization")?.asJsonObject
                         ?.get("uuid")?.asString
 
-                if (orgId != null) {
-                    Result.success(orgId)
-                } else {
-                    Result.failure(Exception("Could not find organization ID in response"))
-                }
+                if (orgId != null) Result.success(orgId)
+                else Result.failure(Exception("조직 ID를 찾을 수 없습니다"))
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Network error: ${e.message}"))
+            Result.failure(Exception("네트워크 오류: ${e.message}"))
         }
     }
 
@@ -96,117 +86,150 @@ class ClaudeWebClient(private var sessionKey: String) {
             client.newCall(request).execute().use { response ->
                 if (response.code == 401 || response.code == 403) {
                     cachedOrgId = null
-                    return Result.failure(Exception("Session expired"))
+                    return Result.failure(Exception("세션 만료"))
                 }
                 if (!response.isSuccessful) {
-                    return Result.failure(Exception("Rate limits failed: HTTP ${response.code}"))
+                    return Result.failure(Exception("사용량 조회 실패: HTTP ${response.code}"))
                 }
 
-                val body = response.body?.string() ?: return Result.failure(Exception("Empty response"))
+                val body = response.body?.string()
+                    ?: return Result.failure(Exception("빈 응답"))
                 parseRateLimits(body)
             }
         } catch (e: Exception) {
-            Result.failure(Exception("Network error: ${e.message}"))
+            Result.failure(Exception("네트워크 오류: ${e.message}"))
         }
     }
 
+    /**
+     * API 응답을 파싱하여 현재 세션 + 주간 한도를 추출.
+     * 응답 구조가 정확히 알려지지 않아 여러 가능한 형태를 시도.
+     */
     private fun parseRateLimits(body: String): Result<PlanUsage> {
         return try {
             val json = gson.fromJson(body, JsonObject::class.java)
-            val models = mutableListOf<ModelUsage>()
 
-            // The response might be a direct object or have a "rate_limits" array
-            val limitsArray = json.getAsJsonArray("rate_limits")
-                ?: json.getAsJsonArray("data")
+            var sessionLimit: UsageLimit? = null
+            var weeklyLimit: UsageLimit? = null
+            var planName = "Max"
 
-            if (limitsArray != null) {
-                for (element in limitsArray) {
-                    val obj = element.asJsonObject
-                    val tierName = obj.get("model_tier")?.asString
-                        ?: obj.get("tier")?.asString
-                        ?: obj.get("model")?.asString
-                        ?: continue
+            // 플랜 이름 감지
+            planName = detectPlanName(json)
 
-                    val displayName = tierToDisplayName(tierName)
-                    val used = obj.get("current_usage")?.asInt
-                        ?: obj.get("used")?.asInt
-                        ?: obj.get("messages_used")?.asInt
-                        ?: 0
-                    val limit = obj.get("message_limit")?.asInt
-                        ?: obj.get("limit")?.asInt
-                        ?: obj.get("messages_limit")?.asInt
-                        ?: 0
-                    val resetsAt = obj.get("resets_at")?.asString
-                        ?: obj.get("reset_at")?.asString
-                        ?: ""
-                    val windowSec = obj.get("window_seconds")?.asInt
-                    val windowHours = if (windowSec != null) windowSec / 3600 else 5
+            // 방법 1: 직접적인 session/weekly 필드
+            sessionLimit = tryParseLimit(json, "session", "현재 세션")
+                ?: tryParseLimit(json, "current_session", "현재 세션")
+                ?: tryParseLimit(json, "short_term", "현재 세션")
 
-                    models.add(
-                        ModelUsage(
-                            modelName = displayName,
-                            modelTier = tierName,
-                            used = used,
-                            limit = limit,
-                            resetsAt = resetsAt,
-                            windowHours = windowHours,
-                        )
-                    )
-                }
-            } else {
-                // Try parsing as a flat object with model keys
-                for (key in json.keySet()) {
-                    val value = json.get(key)
-                    if (value != null && value.isJsonObject) {
-                        val obj = value.asJsonObject
-                        val used = obj.get("current_usage")?.asInt
-                            ?: obj.get("used")?.asInt ?: continue
-                        val limit = obj.get("message_limit")?.asInt
-                            ?: obj.get("limit")?.asInt ?: continue
-                        val resetsAt = obj.get("resets_at")?.asString ?: ""
+            weeklyLimit = tryParseLimit(json, "weekly", "주간 한도")
+                ?: tryParseLimit(json, "long_term", "주간 한도")
+                ?: tryParseLimit(json, "weekly_limit", "주간 한도")
 
-                        models.add(
-                            ModelUsage(
-                                modelName = tierToDisplayName(key),
-                                modelTier = key,
-                                used = used,
-                                limit = limit,
-                                resetsAt = resetsAt,
-                            )
-                        )
+            // 방법 2: rate_limits 배열에서 window 크기로 구분
+            if (sessionLimit == null || weeklyLimit == null) {
+                val limitsArray = json.getAsJsonArray("rate_limits")
+                    ?: json.getAsJsonArray("data")
+                    ?: json.getAsJsonArray("limits")
+
+                if (limitsArray != null) {
+                    for (element in limitsArray) {
+                        val obj = element.asJsonObject
+                        val limit = parseUsageFromObj(obj) ?: continue
+
+                        val windowSec = obj.get("window_seconds")?.asLong
+                            ?: obj.get("window")?.asLong
+                            ?: obj.get("interval_seconds")?.asLong
+
+                        val type = obj.get("type")?.asString?.lowercase()
+                            ?: obj.get("limit_type")?.asString?.lowercase()
+                            ?: ""
+
+                        when {
+                            type.contains("session") || type.contains("short") ||
+                            (windowSec != null && windowSec <= 18000) -> {
+                                if (sessionLimit == null) sessionLimit = limit.copy(label = "현재 세션")
+                            }
+                            type.contains("week") || type.contains("long") ||
+                            (windowSec != null && windowSec > 18000) -> {
+                                if (weeklyLimit == null) weeklyLimit = limit.copy(label = "주간 한도")
+                            }
+                            else -> {
+                                // 첫 번째를 세션, 두 번째를 주간으로
+                                if (sessionLimit == null) sessionLimit = limit.copy(label = "현재 세션")
+                                else if (weeklyLimit == null) weeklyLimit = limit.copy(label = "주간 한도")
+                            }
+                        }
                     }
                 }
             }
 
-            // Sort: Opus first, then Sonnet, then Haiku
-            val order = listOf("opus", "sonnet", "haiku")
-            models.sortBy { m ->
-                order.indexOfFirst { m.modelName.lowercase().contains(it) }
-                    .let { if (it == -1) 99 else it }
+            // 방법 3: 최상위 필드에서 직접 퍼센트 추출
+            if (sessionLimit == null) {
+                val pct = json.get("session_usage_percent")?.asDouble
+                    ?: json.get("current_usage_percent")?.asDouble
+                    ?: json.get("usage_percent")?.asDouble
+                val reset = json.get("session_resets_at")?.asString
+                    ?: json.get("resets_at")?.asString ?: ""
+                if (pct != null) {
+                    sessionLimit = UsageLimit("현재 세션", pct, reset)
+                }
             }
 
-            val planName = detectPlanName(json)
+            if (weeklyLimit == null) {
+                val pct = json.get("weekly_usage_percent")?.asDouble
+                    ?: json.get("weekly_percent")?.asDouble
+                val reset = json.get("weekly_resets_at")?.asString ?: ""
+                if (pct != null) {
+                    weeklyLimit = UsageLimit("주간 한도", pct, reset)
+                }
+            }
 
             Result.success(
                 PlanUsage(
                     planName = planName,
-                    models = models,
+                    session = sessionLimit,
+                    weekly = weeklyLimit,
                     lastUpdated = Instant.now().toString(),
                 )
             )
         } catch (e: Exception) {
-            Result.failure(Exception("Failed to parse usage: ${e.message}"))
+            Result.failure(Exception("파싱 오류: ${e.message}"))
         }
     }
 
-    private fun tierToDisplayName(tier: String): String {
-        val lower = tier.lowercase()
-        return when {
-            "opus" in lower -> "Opus"
-            "sonnet" in lower -> "Sonnet"
-            "haiku" in lower -> "Haiku"
-            else -> tier.replaceFirstChar { it.uppercase() }
+    private fun tryParseLimit(json: JsonObject, key: String, label: String): UsageLimit? {
+        val obj = json.getAsJsonObject(key) ?: return null
+        return parseUsageFromObj(obj)?.copy(label = label)
+    }
+
+    private fun parseUsageFromObj(obj: JsonObject): UsageLimit? {
+        // 퍼센트 직접 제공
+        val percent = obj.get("percent_used")?.asDouble
+            ?: obj.get("usage_percent")?.asDouble
+            ?: obj.get("percent")?.asDouble
+
+        if (percent != null) {
+            val reset = obj.get("resets_at")?.asString
+                ?: obj.get("reset_at")?.asString ?: ""
+            return UsageLimit("", percent, reset)
         }
+
+        // used/limit에서 계산
+        val used = obj.get("current_usage")?.asDouble
+            ?: obj.get("used")?.asDouble
+            ?: obj.get("messages_used")?.asDouble
+        val limit = obj.get("limit")?.asDouble
+            ?: obj.get("message_limit")?.asDouble
+            ?: obj.get("messages_limit")?.asDouble
+
+        if (used != null && limit != null && limit > 0) {
+            val pct = (used / limit) * 100
+            val reset = obj.get("resets_at")?.asString
+                ?: obj.get("reset_at")?.asString ?: ""
+            return UsageLimit("", pct, reset)
+        }
+
+        return null
     }
 
     private fun detectPlanName(json: JsonObject): String {
@@ -221,9 +244,6 @@ class ClaudeWebClient(private var sessionKey: String) {
         }
     }
 
-    /**
-     * Quick check if the session is valid.
-     */
     fun checkSession(): Boolean {
         if (sessionKey.isBlank()) return false
         val request = buildRequest("/api/bootstrap")
@@ -235,12 +255,8 @@ class ClaudeWebClient(private var sessionKey: String) {
     }
 
     private fun buildRequest(path: String): Request {
-        // Support both raw sessionKey value and full cookie string
-        val cookieValue = if (sessionKey.contains("sessionKey=")) {
-            sessionKey
-        } else {
-            "sessionKey=$sessionKey"
-        }
+        val cookieValue = if (sessionKey.contains("sessionKey=")) sessionKey
+                          else "sessionKey=$sessionKey"
 
         return Request.Builder()
             .url("$BASE_URL$path")
