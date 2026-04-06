@@ -4,34 +4,24 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.view.View
 import android.widget.*
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
-import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
-    private lateinit var apiClient: UsageApiClient
-    private val executor = Executors.newSingleThreadExecutor()
-    private val handler = Handler(Looper.getMainLooper())
+    private lateinit var repository: UsageRepository
     private var isServiceRunning = false
 
-    // UI elements
+    // Usage display
     private lateinit var costText: TextView
     private lateinit var costBar: ProgressBar
     private lateinit var tokenText: TextView
     private lateinit var tokenBar: ProgressBar
     private lateinit var detailText: TextView
     private lateinit var statusText: TextView
-    private lateinit var toggleButton: Button
-    private lateinit var serverUrlInput: EditText
-    private lateinit var refreshInput: EditText
-    private lateinit var saveButton: Button
     private lateinit var budgetPercentText: TextView
     private lateinit var tokenPercentText: TextView
 
@@ -45,14 +35,30 @@ class MainActivity : AppCompatActivity() {
     private lateinit var periodMonthlyCost: TextView
     private lateinit var periodMonthlyDetail: TextView
 
+    // Controls
+    private lateinit var toggleButton: Button
+    private lateinit var refreshButton: Button
+    private lateinit var budgetInput: EditText
+    private lateinit var tokenLimitInput: EditText
+    private lateinit var refreshInput: EditText
+    private lateinit var saveButton: Button
+
+    // Manual tracking
+    private lateinit var trackModelInput: EditText
+    private lateinit var trackInputTokens: EditText
+    private lateinit var trackOutputTokens: EditText
+    private lateinit var trackButton: Button
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
 
+        repository = UsageRepository(this)
+
         requestNotificationPermission()
         initViews()
         loadSettings()
-        refreshUsageDisplay()
+        refreshDisplay()
     }
 
     private fun requestNotificationPermission() {
@@ -61,9 +67,7 @@ class MainActivity : AppCompatActivity() {
                 != PackageManager.PERMISSION_GRANTED
             ) {
                 ActivityCompat.requestPermissions(
-                    this,
-                    arrayOf(Manifest.permission.POST_NOTIFICATIONS),
-                    100
+                    this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100
                 )
             }
         }
@@ -76,10 +80,6 @@ class MainActivity : AppCompatActivity() {
         tokenBar = findViewById(R.id.tokenBar)
         detailText = findViewById(R.id.detailText)
         statusText = findViewById(R.id.statusText)
-        toggleButton = findViewById(R.id.toggleButton)
-        serverUrlInput = findViewById(R.id.serverUrlInput)
-        refreshInput = findViewById(R.id.refreshInput)
-        saveButton = findViewById(R.id.saveButton)
         budgetPercentText = findViewById(R.id.budgetPercentText)
         tokenPercentText = findViewById(R.id.tokenPercentText)
 
@@ -91,6 +91,18 @@ class MainActivity : AppCompatActivity() {
         periodWeeklyDetail = findViewById(R.id.periodWeeklyDetail)
         periodMonthlyCost = findViewById(R.id.periodMonthlyCost)
         periodMonthlyDetail = findViewById(R.id.periodMonthlyDetail)
+
+        toggleButton = findViewById(R.id.toggleButton)
+        refreshButton = findViewById(R.id.refreshButton)
+        budgetInput = findViewById(R.id.budgetInput)
+        tokenLimitInput = findViewById(R.id.tokenLimitInput)
+        refreshInput = findViewById(R.id.refreshInput)
+        saveButton = findViewById(R.id.saveButton)
+
+        trackModelInput = findViewById(R.id.trackModelInput)
+        trackInputTokens = findViewById(R.id.trackInputTokens)
+        trackOutputTokens = findViewById(R.id.trackOutputTokens)
+        trackButton = findViewById(R.id.trackButton)
 
         toggleButton.setOnClickListener {
             if (isServiceRunning) {
@@ -104,34 +116,45 @@ class MainActivity : AppCompatActivity() {
                 toggleButton.text = "Stop Monitoring"
                 statusText.text = "Service running"
             }
+            saveServiceState()
         }
+
+        refreshButton.setOnClickListener { refreshDisplay() }
 
         saveButton.setOnClickListener {
             saveSettings()
             Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show()
-            // Restart service if running
             if (isServiceRunning) {
                 UsageMonitorService.stop(this)
                 UsageMonitorService.start(this)
             }
+            refreshDisplay()
         }
 
-        findViewById<Button>(R.id.refreshButton).setOnClickListener {
-            refreshUsageDisplay()
+        trackButton.setOnClickListener {
+            val model = trackModelInput.text.toString().trim().ifEmpty { "claude-sonnet-4-6" }
+            val inTok = trackInputTokens.text.toString().toLongOrNull() ?: 0
+            val outTok = trackOutputTokens.text.toString().toLongOrNull() ?: 0
+
+            if (inTok == 0L && outTok == 0L) {
+                Toast.makeText(this, "Enter token counts", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
+            repository.trackUsage(model, inTok, outTok)
+            trackInputTokens.text.clear()
+            trackOutputTokens.text.clear()
+            Toast.makeText(this, "Tracked!", Toast.LENGTH_SHORT).show()
+            refreshDisplay()
         }
     }
 
     private fun loadSettings() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val serverUrl = prefs.getString("server_url", "http://10.0.2.2:8490") ?: "http://10.0.2.2:8490"
-        val refreshInterval = prefs.getString("refresh_interval", "60") ?: "60"
+        budgetInput.setText(prefs.getString("monthly_budget", "100"))
+        tokenLimitInput.setText(prefs.getString("monthly_token_limit", "10000000"))
+        refreshInput.setText(prefs.getString("refresh_interval", "60"))
 
-        serverUrlInput.setText(serverUrl)
-        refreshInput.setText(refreshInterval)
-
-        apiClient = UsageApiClient(serverUrl)
-
-        // Auto-start service
         isServiceRunning = prefs.getBoolean("service_running", false)
         if (isServiceRunning) {
             toggleButton.text = "Stop Monitoring"
@@ -139,33 +162,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun saveSettings() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val serverUrl = serverUrlInput.text.toString().trim()
-        val refreshInterval = refreshInput.text.toString().trim()
-
-        prefs.edit()
-            .putString("server_url", serverUrl)
-            .putString("refresh_interval", refreshInterval)
-            .putBoolean("service_running", isServiceRunning)
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putString("monthly_budget", budgetInput.text.toString().trim())
+            .putString("monthly_token_limit", tokenLimitInput.text.toString().trim())
+            .putString("refresh_interval", refreshInput.text.toString().trim())
             .apply()
-
-        apiClient.updateServerUrl(serverUrl)
     }
 
-    private fun refreshUsageDisplay() {
-        statusText.text = "Fetching..."
+    private fun saveServiceState() {
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putBoolean("service_running", isServiceRunning)
+            .apply()
+    }
 
-        executor.execute {
-            val result = apiClient.fetchUsage()
-            handler.post {
-                result.onSuccess { data ->
-                    updateUI(data)
-                    statusText.text = "Last updated: ${data.lastUpdated.takeLast(8)}"
-                }.onFailure { e ->
-                    statusText.text = "Error: ${e.message}"
-                }
-            }
-        }
+    private fun refreshDisplay() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val budget = prefs.getString("monthly_budget", "100")?.toDoubleOrNull() ?: 100.0
+        val tokenLimit = prefs.getString("monthly_token_limit", "10000000")?.toLongOrNull() ?: 10_000_000L
+
+        val data = repository.aggregate(budget, tokenLimit)
+        updateUI(data)
+        statusText.text = "Entries: ${repository.getEntryCount()} │ Updated: ${data.lastUpdated.takeLast(13)}"
     }
 
     private fun updateUI(data: UsageData) {
@@ -179,22 +196,18 @@ class MainActivity : AppCompatActivity() {
 
         detailText.text = "📥 Input: ${data.formatTokens(data.inputTokens)}   📤 Output: ${data.formatTokens(data.outputTokens)}"
 
-        // Period breakdown
         updatePeriodRow(data, "5h", period5hCost, period5hDetail)
         updatePeriodRow(data, "daily", periodDailyCost, periodDailyDetail)
         updatePeriodRow(data, "weekly", periodWeeklyCost, periodWeeklyDetail)
         updatePeriodRow(data, "monthly", periodMonthlyCost, periodMonthlyDetail)
 
-        // Color progress bars based on usage
         val costColor = when {
             data.budgetUsedPercent >= 90 -> getColor(android.R.color.holo_red_light)
             data.budgetUsedPercent >= 75 -> getColor(android.R.color.holo_orange_light)
             else -> getColor(android.R.color.holo_green_light)
         }
         costBar.progressTintList = android.content.res.ColorStateList.valueOf(costColor)
-        tokenBar.progressTintList = android.content.res.ColorStateList.valueOf(
-            getColor(R.color.purple_500)
-        )
+        tokenBar.progressTintList = android.content.res.ColorStateList.valueOf(getColor(R.color.purple_500))
     }
 
     private fun updatePeriodRow(data: UsageData, key: String, costView: TextView, detailView: TextView) {
