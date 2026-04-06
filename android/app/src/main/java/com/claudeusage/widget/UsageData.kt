@@ -2,6 +2,14 @@ package com.claudeusage.widget
 
 import com.google.gson.annotations.SerializedName
 
+data class PeriodData(
+    @SerializedName("tokens") val tokens: Long = 0,
+    @SerializedName("cost_usd") val costUsd: Double = 0.0,
+    @SerializedName("input_tokens") val inputTokens: Long = 0,
+    @SerializedName("output_tokens") val outputTokens: Long = 0,
+    @SerializedName("requests") val requests: Int = 0,
+)
+
 data class UsageData(
     @SerializedName("input_tokens") val inputTokens: Long = 0,
     @SerializedName("output_tokens") val outputTokens: Long = 0,
@@ -12,6 +20,7 @@ data class UsageData(
     @SerializedName("budget_used_percent") val budgetUsedPercent: Double = 0.0,
     @SerializedName("tokens_used_percent") val tokensUsedPercent: Double = 0.0,
     @SerializedName("last_updated") val lastUpdated: String = "",
+    @SerializedName("periods") val periods: Map<String, PeriodData> = emptyMap(),
 ) {
     fun formatTokens(n: Long): String = when {
         n >= 1_000_000 -> String.format("%.1fM", n / 1_000_000.0)
@@ -19,8 +28,10 @@ data class UsageData(
         else -> n.toString()
     }
 
+    fun formatCost(v: Double): String = "$${String.format("%.2f", v)}"
+
     fun costSummary(): String =
-        "$${String.format("%.2f", estimatedCostUsd)} / $${String.format("%.2f", monthlyBudgetUsd)}"
+        "${formatCost(estimatedCostUsd)} / ${formatCost(monthlyBudgetUsd)}"
 
     fun tokenSummary(): String =
         "${formatTokens(totalTokens)} / ${formatTokens(monthlyTokenLimit)}"
@@ -29,5 +40,21 @@ data class UsageData(
         "In: ${formatTokens(inputTokens)} | Out: ${formatTokens(outputTokens)}"
 
     fun shortSummary(): String =
-        "$${String.format("%.2f", estimatedCostUsd)} (${String.format("%.1f", budgetUsedPercent)}%)"
+        "${formatCost(estimatedCostUsd)} (${String.format("%.1f", budgetUsedPercent)}%)"
+
+    fun periodSummary(key: String): String {
+        val p = periods[key] ?: return "No data"
+        return "${formatCost(p.costUsd)} │ ${formatTokens(p.tokens)} tok │ ${p.requests} reqs"
+    }
+
+    fun periodNotificationText(): String {
+        val h5 = periods["5h"]
+        val daily = periods["daily"]
+        val weekly = periods["weekly"]
+        return buildString {
+            if (h5 != null) append("5h: ${formatCost(h5.costUsd)} (${h5.requests}r)")
+            if (daily != null) append(" │ Today: ${formatCost(daily.costUsd)} (${daily.requests}r)")
+            if (weekly != null) append("\nWeek: ${formatCost(weekly.costUsd)} (${weekly.requests}r)")
+        }
+    }
 }

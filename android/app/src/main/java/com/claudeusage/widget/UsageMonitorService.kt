@@ -154,14 +154,17 @@ class UsageMonitorService : Service() {
             }
 
             builder.setContentTitle("$emoji Claude: ${data.shortSummary()}")
-                .setContentText("${data.tokenSummary()} │ ${data.detailSummary()}")
+                .setContentText("5h: ${data.periodSummary("5h")} │ Today: ${data.periodSummary("daily")}")
                 .setStyle(
                     NotificationCompat.BigTextStyle()
                         .bigText(buildString {
-                            append("💰 Cost: ${data.costSummary()}\n")
+                            append("💰 Monthly: ${data.costSummary()}\n")
                             append("📊 Tokens: ${data.tokenSummary()}\n")
-                            append("📥 Input: ${data.formatTokens(data.inputTokens)}")
-                            append("  📤 Output: ${data.formatTokens(data.outputTokens)}")
+                            append("─────────────────\n")
+                            append("⏱ 5h: ${data.periodSummary("5h")}\n")
+                            append("📅 Today: ${data.periodSummary("daily")}\n")
+                            append("📆 Week: ${data.periodSummary("weekly")}\n")
+                            append("📋 Month: ${data.periodSummary("monthly")}")
                         })
                 )
                 .setProgress(100, percent.toInt().coerceIn(0, 100), false)

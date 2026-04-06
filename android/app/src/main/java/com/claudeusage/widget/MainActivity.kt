@@ -35,6 +35,16 @@ class MainActivity : AppCompatActivity() {
     private lateinit var budgetPercentText: TextView
     private lateinit var tokenPercentText: TextView
 
+    // Period views
+    private lateinit var period5hCost: TextView
+    private lateinit var period5hDetail: TextView
+    private lateinit var periodDailyCost: TextView
+    private lateinit var periodDailyDetail: TextView
+    private lateinit var periodWeeklyCost: TextView
+    private lateinit var periodWeeklyDetail: TextView
+    private lateinit var periodMonthlyCost: TextView
+    private lateinit var periodMonthlyDetail: TextView
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -72,6 +82,15 @@ class MainActivity : AppCompatActivity() {
         saveButton = findViewById(R.id.saveButton)
         budgetPercentText = findViewById(R.id.budgetPercentText)
         tokenPercentText = findViewById(R.id.tokenPercentText)
+
+        period5hCost = findViewById(R.id.period5hCost)
+        period5hDetail = findViewById(R.id.period5hDetail)
+        periodDailyCost = findViewById(R.id.periodDailyCost)
+        periodDailyDetail = findViewById(R.id.periodDailyDetail)
+        periodWeeklyCost = findViewById(R.id.periodWeeklyCost)
+        periodWeeklyDetail = findViewById(R.id.periodWeeklyDetail)
+        periodMonthlyCost = findViewById(R.id.periodMonthlyCost)
+        periodMonthlyDetail = findViewById(R.id.periodMonthlyDetail)
 
         toggleButton.setOnClickListener {
             if (isServiceRunning) {
@@ -160,6 +179,12 @@ class MainActivity : AppCompatActivity() {
 
         detailText.text = "📥 Input: ${data.formatTokens(data.inputTokens)}   📤 Output: ${data.formatTokens(data.outputTokens)}"
 
+        // Period breakdown
+        updatePeriodRow(data, "5h", period5hCost, period5hDetail)
+        updatePeriodRow(data, "daily", periodDailyCost, periodDailyDetail)
+        updatePeriodRow(data, "weekly", periodWeeklyCost, periodWeeklyDetail)
+        updatePeriodRow(data, "monthly", periodMonthlyCost, periodMonthlyDetail)
+
         // Color progress bars based on usage
         val costColor = when {
             data.budgetUsedPercent >= 90 -> getColor(android.R.color.holo_red_light)
@@ -170,5 +195,16 @@ class MainActivity : AppCompatActivity() {
         tokenBar.progressTintList = android.content.res.ColorStateList.valueOf(
             getColor(R.color.purple_500)
         )
+    }
+
+    private fun updatePeriodRow(data: UsageData, key: String, costView: TextView, detailView: TextView) {
+        val p = data.periods[key]
+        if (p != null) {
+            costView.text = data.formatCost(p.costUsd)
+            detailView.text = "${data.formatTokens(p.tokens)} tok │ ${p.requests} reqs"
+        } else {
+            costView.text = "$0.00"
+            detailView.text = "No data"
+        }
     }
 }

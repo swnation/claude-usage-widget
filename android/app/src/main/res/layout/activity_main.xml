@@ -137,7 +137,165 @@
             android:text="📥 Input: 0   📤 Output: 0"
             android:textColor="#888899"
             android:textSize="13sp"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginBottom="12dp" />
+
+        <!-- Period Breakdown -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Usage by Period"
+            android:textColor="#c084fc"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="8dp" />
+
+        <!-- 5h period -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="@drawable/card_background"
+            android:padding="12dp"
+            android:layout_marginBottom="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:text="⏱ 5h"
+                android:textColor="#c084fc"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/period5hCost"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="$0.00"
+                android:textColor="#e0e0e0"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/period5hDetail"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 tok │ 0 reqs"
+                android:textColor="#888899"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Daily period -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="@drawable/card_background"
+            android:padding="12dp"
+            android:layout_marginBottom="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:text="📅 Day"
+                android:textColor="#c084fc"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/periodDailyCost"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="$0.00"
+                android:textColor="#e0e0e0"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/periodDailyDetail"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 tok │ 0 reqs"
+                android:textColor="#888899"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Weekly period -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="@drawable/card_background"
+            android:padding="12dp"
+            android:layout_marginBottom="6dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:text="📆 Wk"
+                android:textColor="#c084fc"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/periodWeeklyCost"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="$0.00"
+                android:textColor="#e0e0e0"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/periodWeeklyDetail"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 tok │ 0 reqs"
+                android:textColor="#888899"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Monthly period -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:background="@drawable/card_background"
+            android:padding="12dp"
+            android:layout_marginBottom="16dp"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:layout_width="48dp"
+                android:layout_height="wrap_content"
+                android:text="📋 Mo"
+                android:textColor="#c084fc"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/periodMonthlyCost"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="$0.00"
+                android:textColor="#e0e0e0"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/periodMonthlyDetail"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="0 tok │ 0 reqs"
+                android:textColor="#888899"
+                android:textSize="11sp" />
+        </LinearLayout>
 
         <!-- Action Buttons -->
         <LinearLayout
