@@ -164,9 +164,9 @@ class MainActivity : AppCompatActivity() {
             val resetText = card.findViewById<TextView>(R.id.modelReset)
 
             nameText.text = model.modelName
-            usageText.text = "${model.used} / ${model.limit}"
-            bar.max = model.limit.coerceAtLeast(1)
-            bar.progress = model.used
+            usageText.text = "${model.percentText}  (${model.used}/${model.limit})"
+            bar.max = 100
+            bar.progress = model.usedPercent.toInt().coerceIn(0, 100)
 
             val color = when {
                 model.usedPercent >= 90 -> getColor(android.R.color.holo_red_light)

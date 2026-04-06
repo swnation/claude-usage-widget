@@ -17,7 +17,11 @@ data class ModelUsage(
     val isNearLimit: Boolean get() = usedPercent >= 80
     val isAtLimit: Boolean get() = used >= limit
 
-    fun shortSummary(): String = "$used/$limit"
+    val percentText: String get() = "${String.format("%.0f", usedPercent)}%"
+
+    fun shortSummary(): String = percentText
+
+    fun detailSummary(): String = "$used/$limit ($percentText)"
 
     fun remainingText(): String = when {
         isAtLimit -> "Limit reached"
@@ -43,7 +47,7 @@ data class PlanUsage(
                 opus.usedPercent >= 70 -> "🟡"
                 else -> "🟢"
             }
-            "$emoji Claude $planName: Opus ${opus.shortSummary()}"
+            "$emoji Claude $planName: Opus ${opus.percentText}"
         } else {
             "Claude $planName"
         }
@@ -56,7 +60,7 @@ data class PlanUsage(
     fun notificationExpanded(): String = buildString {
         for (m in models) {
             val bar = progressBar(m.usedPercent)
-            append("${m.modelName}: ${m.shortSummary()} $bar ${m.remainingText()}\n")
+            append("${m.modelName}: ${m.percentText} $bar (${m.used}/${m.limit})\n")
         }
         val firstReset = models.minByOrNull { it.resetsAt }
         if (firstReset != null && firstReset.resetsAt.isNotEmpty()) {
