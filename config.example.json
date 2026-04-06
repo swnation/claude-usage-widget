@@ -1,0 +1,16 @@
+{
+  "anthropic_api_key": "sk-ant-xxxxx",
+  "organization_id": "",
+  "monthly_budget_usd": 100.00,
+  "monthly_token_limit": 10000000,
+  "alert_thresholds": [50, 75, 90, 95],
+  "refresh_interval_seconds": 300,
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8490
+  },
+  "notification": {
+    "ntfy_topic": "",
+    "ntfy_server": "https://ntfy.sh"
+  }
+}
