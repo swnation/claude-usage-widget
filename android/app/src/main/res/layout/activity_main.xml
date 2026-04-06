@@ -23,12 +23,49 @@
             android:id="@+id/planNameText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Claude Max"
+            android:text=""
             android:textColor="#888899"
             android:textSize="14sp"
-            android:layout_marginBottom="20dp" />
+            android:layout_marginBottom="16dp" />
 
-        <!-- 모델별 사용량 카드 (동적 추가) -->
+        <!-- 로그인 상태 + 버튼 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:id="@+id/loginStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="로그인이 필요합니다"
+                android:textColor="#888899"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/loginButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="claude.ai 로그���"
+                android:backgroundTint="#c084fc"
+                android:textColor="#ffffff"
+                android:textSize="13sp" />
+
+            <Button
+                android:id="@+id/logoutButton"
+                android:layout_width="wrap_content"
+                android:layout_height="40dp"
+                android:text="로그아��"
+                android:backgroundTint="#2a2a4a"
+                android:textColor="#f87171"
+                android:textSize="13sp"
+                android:visibility="gone" />
+        </LinearLayout>
+
+        <!-- 모델별 사용량 카드 -->
         <LinearLayout
             android:id="@+id/modelsContainer"
             android:layout_width="match_parent"
@@ -81,43 +118,6 @@
             android:textColor="#c084fc"
             android:textSize="18sp"
             android:textStyle="bold"
-            android:layout_marginBottom="12dp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="세션 키"
-            android:textColor="#888899"
-            android:textSize="12sp" />
-
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="claude.ai → F12 → Application → Cookies → sessionKey 값 복사"
-            android:textColor="#555566"
-            android:textSize="10sp"
-            android:layout_marginBottom="4dp" />
-
-        <EditText
-            android:id="@+id/sessionKeyInput"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@drawable/input_background"
-            android:textColor="#e0e0e0"
-            android:textColorHint="#555566"
-            android:hint="sk-ant-sid01-..."
-            android:inputType="textPassword"
-            android:padding="12dp"
-            android:textSize="13sp"
-            android:layout_marginBottom="4dp" />
-
-        <TextView
-            android:id="@+id/sessionStatus"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text=""
-            android:textColor="#888899"
-            android:textSize="11sp"
             android:layout_marginBottom="12dp" />
 
         <TextView

@@ -24,6 +24,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".LoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ClaudeUsage" />
+
         <service
             android:name=".UsageMonitorService"
             android:foregroundServiceType="dataSync"

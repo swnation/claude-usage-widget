@@ -1,22 +1,23 @@
 package com.claudeusage.widget
 
 import android.Manifest
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.widget.*
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
-import java.util.concurrent.Executors
 
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webClient: ClaudeWebClient
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private var isServiceRunning = false
 
@@ -25,10 +26,24 @@ class MainActivity : AppCompatActivity() {
     private lateinit var modelsContainer: LinearLayout
     private lateinit var toggleButton: Button
     private lateinit var refreshButton: Button
-    private lateinit var sessionKeyInput: EditText
+    private lateinit var loginButton: Button
+    private lateinit var logoutButton: Button
+    private lateinit var loginStatus: TextView
     private lateinit var refreshInput: EditText
     private lateinit var saveButton: Button
-    private lateinit var sessionStatus: TextView
+
+    private val loginLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == LoginActivity.RESULT_LOGGED_IN) {
+            // 로그인 성공 — 세션 키가 저장됨
+            val key = PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("session_key", "") ?: ""
+            webClient.updateSessionKey(key)
+            updateLoginUI(true)
+            fetchAndDisplay()
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -56,24 +71,49 @@ class MainActivity : AppCompatActivity() {
         modelsContainer = findViewById(R.id.modelsContainer)
         toggleButton = findViewById(R.id.toggleButton)
         refreshButton = findViewById(R.id.refreshButton)
-        sessionKeyInput = findViewById(R.id.sessionKeyInput)
+        loginButton = findViewById(R.id.loginButton)
+        logoutButton = findViewById(R.id.logoutButton)
+        loginStatus = findViewById(R.id.loginStatus)
         refreshInput = findViewById(R.id.refreshInput)
         saveButton = findViewById(R.id.saveButton)
-        sessionStatus = findViewById(R.id.sessionStatus)
+
+        loginButton.setOnClickListener {
+            loginLauncher.launch(Intent(this, LoginActivity::class.java))
+        }
+
+        logoutButton.setOnClickListener {
+            PreferenceManager.getDefaultSharedPreferences(this).edit()
+                .remove("session_key")
+                .apply()
+            webClient.updateSessionKey("")
+            updateLoginUI(false)
+
+            if (isServiceRunning) {
+                UsageMonitorService.stop(this)
+                isServiceRunning = false
+                toggleButton.text = "모니터링 시작"
+                saveServiceState()
+            }
+
+            modelsContainer.removeAllViews()
+            planNameText.text = ""
+            statusText.text = "로그아웃됨"
+        }
 
         toggleButton.setOnClickListener {
+            val key = PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("session_key", "") ?: ""
+            if (key.isEmpty()) {
+                Toast.makeText(this, "먼저 로그인하세요", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+
             if (isServiceRunning) {
                 UsageMonitorService.stop(this)
                 isServiceRunning = false
                 toggleButton.text = "모니터링 시작"
                 statusText.text = "서비스 중지됨"
             } else {
-                val key = sessionKeyInput.text.toString().trim()
-                if (key.isEmpty()) {
-                    Toast.makeText(this, "세션 키를 먼저 입력하세요", Toast.LENGTH_SHORT).show()
-                    return@setOnClickListener
-                }
-                saveSettings()
                 UsageMonitorService.start(this)
                 isServiceRunning = true
                 toggleButton.text = "모니터링 중지"
@@ -85,7 +125,9 @@ class MainActivity : AppCompatActivity() {
         refreshButton.setOnClickListener { fetchAndDisplay() }
 
         saveButton.setOnClickListener {
-            saveSettings()
+            PreferenceManager.getDefaultSharedPreferences(this).edit()
+                .putString("refresh_interval", refreshInput.text.toString().trim())
+                .apply()
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show()
             if (isServiceRunning) {
                 UsageMonitorService.stop(this)
@@ -96,24 +138,32 @@ class MainActivity : AppCompatActivity() {
 
     private fun loadSettings() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        sessionKeyInput.setText(prefs.getString("session_key", ""))
         refreshInput.setText(prefs.getString("refresh_interval", "120"))
 
         val key = prefs.getString("session_key", "") ?: ""
         webClient = ClaudeWebClient(key)
 
-        isServiceRunning = prefs.getBoolean("service_running", false)
-        toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
+        val loggedIn = key.isNotEmpty()
+        updateLoginUI(loggedIn)
 
-        if (key.isNotEmpty()) fetchAndDisplay()
+        isServiceRunning = prefs.getBoolean("service_running", false)
+        toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니��링 시작"
+
+        if (loggedIn) fetchAndDisplay()
     }
 
-    private fun saveSettings() {
-        PreferenceManager.getDefaultSharedPreferences(this).edit()
-            .putString("session_key", sessionKeyInput.text.toString().trim())
-            .putString("refresh_interval", refreshInput.text.toString().trim())
-            .apply()
-        webClient.updateSessionKey(sessionKeyInput.text.toString().trim())
+    private fun updateLoginUI(loggedIn: Boolean) {
+        if (loggedIn) {
+            loginButton.visibility = android.view.View.GONE
+            logoutButton.visibility = android.view.View.VISIBLE
+            loginStatus.text = "✓ 로그인됨"
+            loginStatus.setTextColor(getColor(android.R.color.holo_green_light))
+        } else {
+            loginButton.visibility = android.view.View.VISIBLE
+            logoutButton.visibility = android.view.View.GONE
+            loginStatus.text = "로그인이 필요��니다"
+            loginStatus.setTextColor(getColor(android.R.color.holo_red_light))
+        }
     }
 
     private fun saveServiceState() {
@@ -124,20 +174,19 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchAndDisplay() {
         statusText.text = "불러오는 중..."
-        sessionStatus.text = "확인 중..."
 
         executor.execute {
             val result = webClient.fetchUsage()
             handler.post {
                 result.onSuccess { usage ->
                     displayUsage(usage)
-                    statusText.text = "마지막 업데이트: ${usage.lastUpdated.takeLast(13)}"
-                    sessionStatus.text = "✓ 연결됨"
-                    sessionStatus.setTextColor(getColor(android.R.color.holo_green_light))
+                    statusText.text = "마지막 업���이트: ${usage.lastUpdated.takeLast(13)}"
                 }.onFailure { error ->
                     statusText.text = "오류: ${error.message}"
-                    sessionStatus.text = "✗ ${error.message?.take(40)}"
-                    sessionStatus.setTextColor(getColor(android.R.color.holo_red_light))
+                    if (error.message?.contains("expired") == true ||
+                        error.message?.contains("Session") == true) {
+                        updateLoginUI(false)
+                    }
                 }
             }
         }
@@ -150,30 +199,28 @@ class MainActivity : AppCompatActivity() {
         for (model in usage.models) {
             val card = layoutInflater.inflate(R.layout.item_model_usage, modelsContainer, false)
 
-            val nameText = card.findViewById<TextView>(R.id.modelName)
-            val percentText = card.findViewById<TextView>(R.id.modelPercent)
-            val countText = card.findViewById<TextView>(R.id.modelCount)
-            val bar = card.findViewById<ProgressBar>(R.id.modelBar)
-            val remainingText = card.findViewById<TextView>(R.id.modelRemaining)
-            val resetText = card.findViewById<TextView>(R.id.modelReset)
+            card.findViewById<TextView>(R.id.modelName).text = model.modelName
+            card.findViewById<TextView>(R.id.modelPercent).apply {
+                text = model.percentText
+                val color = when {
+                    model.usedPercent >= 90 -> getColor(android.R.color.holo_red_light)
+                    model.usedPercent >= 70 -> getColor(android.R.color.holo_orange_light)
+                    else -> getColor(android.R.color.holo_green_light)
+                }
+                setTextColor(color)
 
-            nameText.text = model.modelName
-            percentText.text = model.percentText
-            countText.text = "${model.used} / ${model.limit}"
-            bar.max = 100
-            bar.progress = model.usedPercent.toInt().coerceIn(0, 100)
-
-            val color = when {
-                model.usedPercent >= 90 -> getColor(android.R.color.holo_red_light)
-                model.usedPercent >= 70 -> getColor(android.R.color.holo_orange_light)
-                else -> getColor(android.R.color.holo_green_light)
+                card.findViewById<ProgressBar>(R.id.modelBar).apply {
+                    max = 100
+                    progress = model.usedPercent.toInt().coerceIn(0, 100)
+                    progressTintList = android.content.res.ColorStateList.valueOf(color)
+                }
+                card.findViewById<TextView>(R.id.modelRemaining).apply {
+                    text = model.remainingText()
+                    setTextColor(color)
+                }
             }
-            bar.progressTintList = android.content.res.ColorStateList.valueOf(color)
-            percentText.setTextColor(color)
-
-            remainingText.text = model.remainingText()
-            remainingText.setTextColor(color)
-            resetText.text = model.formatResetTime()
+            card.findViewById<TextView>(R.id.modelCount).text = "${model.used} / ${model.limit}"
+            card.findViewById<TextView>(R.id.modelReset).text = model.formatResetTime()
 
             modelsContainer.addView(card)
         }
