@@ -1,60 +1,87 @@
 package com.claudeusage.widget
 
-import com.google.gson.annotations.SerializedName
-
-data class PeriodData(
-    @SerializedName("tokens") val tokens: Long = 0,
-    @SerializedName("cost_usd") val costUsd: Double = 0.0,
-    @SerializedName("input_tokens") val inputTokens: Long = 0,
-    @SerializedName("output_tokens") val outputTokens: Long = 0,
-    @SerializedName("requests") val requests: Int = 0,
-)
-
-data class UsageData(
-    @SerializedName("input_tokens") val inputTokens: Long = 0,
-    @SerializedName("output_tokens") val outputTokens: Long = 0,
-    @SerializedName("total_tokens") val totalTokens: Long = 0,
-    @SerializedName("estimated_cost_usd") val estimatedCostUsd: Double = 0.0,
-    @SerializedName("monthly_budget_usd") val monthlyBudgetUsd: Double = 100.0,
-    @SerializedName("monthly_token_limit") val monthlyTokenLimit: Long = 10_000_000,
-    @SerializedName("budget_used_percent") val budgetUsedPercent: Double = 0.0,
-    @SerializedName("tokens_used_percent") val tokensUsedPercent: Double = 0.0,
-    @SerializedName("last_updated") val lastUpdated: String = "",
-    @SerializedName("periods") val periods: Map<String, PeriodData> = emptyMap(),
+/**
+ * Claude Max plan usage data.
+ * Represents the usage limits shown in claude.ai Settings > Usage.
+ */
+data class ModelUsage(
+    val modelName: String,       // e.g. "Opus", "Sonnet", "Haiku"
+    val modelTier: String,       // e.g. "claude_pro_opus", "claude_pro_sonnet"
+    val used: Int,               // messages used in current window
+    val limit: Int,              // message limit per window
+    val resetsAt: String,        // ISO timestamp of next reset
+    val windowHours: Int = 5,    // reset window (typically 5 hours)
 ) {
-    fun formatTokens(n: Long): String = when {
-        n >= 1_000_000 -> String.format("%.1fM", n / 1_000_000.0)
-        n >= 1_000 -> String.format("%.1fK", n / 1_000.0)
-        else -> n.toString()
+    val remaining: Int get() = (limit - used).coerceAtLeast(0)
+    val usedPercent: Double get() = if (limit > 0) (used.toDouble() / limit) * 100 else 0.0
+    val isNearLimit: Boolean get() = usedPercent >= 80
+    val isAtLimit: Boolean get() = used >= limit
+
+    fun shortSummary(): String = "$used/$limit"
+
+    fun remainingText(): String = when {
+        isAtLimit -> "Limit reached"
+        remaining <= 5 -> "$remaining left!"
+        else -> "$remaining left"
+    }
+}
+
+data class PlanUsage(
+    val planName: String = "Max",       // "Pro", "Max", "Free", etc.
+    val models: List<ModelUsage> = emptyList(),
+    val lastUpdated: String = "",
+    val error: String? = null,
+) {
+    fun getModel(name: String): ModelUsage? =
+        models.find { it.modelName.equals(name, ignoreCase = true) }
+
+    fun notificationTitle(): String {
+        val opus = getModel("Opus")
+        return if (opus != null) {
+            val emoji = when {
+                opus.usedPercent >= 90 -> "🔴"
+                opus.usedPercent >= 70 -> "🟡"
+                else -> "🟢"
+            }
+            "$emoji Claude $planName: Opus ${opus.shortSummary()}"
+        } else {
+            "Claude $planName"
+        }
     }
 
-    fun formatCost(v: Double): String = "$${String.format("%.2f", v)}"
-
-    fun costSummary(): String =
-        "${formatCost(estimatedCostUsd)} / ${formatCost(monthlyBudgetUsd)}"
-
-    fun tokenSummary(): String =
-        "${formatTokens(totalTokens)} / ${formatTokens(monthlyTokenLimit)}"
-
-    fun detailSummary(): String =
-        "In: ${formatTokens(inputTokens)} | Out: ${formatTokens(outputTokens)}"
-
-    fun shortSummary(): String =
-        "${formatCost(estimatedCostUsd)} (${String.format("%.1f", budgetUsedPercent)}%)"
-
-    fun periodSummary(key: String): String {
-        val p = periods[key] ?: return "No data"
-        return "${formatCost(p.costUsd)} │ ${formatTokens(p.tokens)} tok │ ${p.requests} reqs"
+    fun notificationShort(): String {
+        return models.joinToString(" │ ") { "${it.modelName} ${it.shortSummary()}" }
     }
 
-    fun periodNotificationText(): String {
-        val h5 = periods["5h"]
-        val daily = periods["daily"]
-        val weekly = periods["weekly"]
-        return buildString {
-            if (h5 != null) append("5h: ${formatCost(h5.costUsd)} (${h5.requests}r)")
-            if (daily != null) append(" │ Today: ${formatCost(daily.costUsd)} (${daily.requests}r)")
-            if (weekly != null) append("\nWeek: ${formatCost(weekly.costUsd)} (${weekly.requests}r)")
+    fun notificationExpanded(): String = buildString {
+        for (m in models) {
+            val bar = progressBar(m.usedPercent)
+            append("${m.modelName}: ${m.shortSummary()} $bar ${m.remainingText()}\n")
+        }
+        val firstReset = models.minByOrNull { it.resetsAt }
+        if (firstReset != null && firstReset.resetsAt.isNotEmpty()) {
+            append("⏱ Resets: ${formatResetTime(firstReset.resetsAt)}")
+        }
+    }
+
+    private fun progressBar(percent: Double): String {
+        val filled = (percent / 10).toInt().coerceIn(0, 10)
+        return "▓".repeat(filled) + "░".repeat(10 - filled)
+    }
+
+    private fun formatResetTime(iso: String): String {
+        return try {
+            val resetInstant = java.time.Instant.parse(iso)
+            val now = java.time.Instant.now()
+            val remaining = java.time.Duration.between(now, resetInstant)
+            if (remaining.isNegative) "Soon"
+            else {
+                val h = remaining.toHours()
+                val m = remaining.toMinutes() % 60
+                if (h > 0) "${h}h ${m}m" else "${m}m"
+            }
+        } catch (e: Exception) {
+            iso.takeLast(8)
         }
     }
 }

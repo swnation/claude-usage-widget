@@ -14,8 +14,8 @@ import java.util.Timer
 import java.util.TimerTask
 
 /**
- * Foreground service that shows Claude usage as a persistent notification.
- * Standalone - reads from local UsageRepository, no server needed.
+ * Foreground service that shows Claude Max plan usage as a persistent notification.
+ * Fetches directly from claude.ai using the user's session cookie.
  */
 class UsageMonitorService : Service() {
 
@@ -34,16 +34,19 @@ class UsageMonitorService : Service() {
         }
     }
 
-    private lateinit var repository: UsageRepository
+    private lateinit var webClient: ClaudeWebClient
     private lateinit var notificationManager: NotificationManager
     private var timer: Timer? = null
-    private val notifiedThresholds = mutableSetOf<Int>()
+    private val notifiedModels = mutableSetOf<String>()  // models where limit alert was sent
 
     override fun onCreate() {
         super.onCreate()
-        repository = UsageRepository(this)
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannels()
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val sessionKey = prefs.getString("session_key", "") ?: ""
+        webClient = ClaudeWebClient(sessionKey)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -66,26 +69,29 @@ class UsageMonitorService : Service() {
     }
 
     private fun createNotificationChannels() {
-        val statusChannel = NotificationChannel(
+        NotificationChannel(
             CHANNEL_ID, "Claude Usage Status", NotificationManager.IMPORTANCE_LOW
         ).apply {
-            description = "Shows current Claude API usage"
+            description = "Shows current Claude plan usage"
             setShowBadge(false)
+            notificationManager.createNotificationChannel(this)
         }
-        notificationManager.createNotificationChannel(statusChannel)
 
-        val alertChannel = NotificationChannel(
+        NotificationChannel(
             ALERT_CHANNEL_ID, "Claude Usage Alerts", NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = "Alerts when usage thresholds are reached"
+            description = "Alerts when usage limits are near"
             enableVibration(true)
+            notificationManager.createNotificationChannel(this)
         }
-        notificationManager.createNotificationChannel(alertChannel)
     }
 
     private fun startPolling() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val intervalMs = (prefs.getString("refresh_interval", "60")?.toLongOrNull() ?: 60) * 1000
+        val intervalMs = (prefs.getString("refresh_interval", "120")?.toLongOrNull() ?: 120) * 1000
+
+        val sessionKey = prefs.getString("session_key", "") ?: ""
+        webClient.updateSessionKey(sessionKey)
 
         timer?.cancel()
         timer = Timer().apply {
@@ -96,16 +102,17 @@ class UsageMonitorService : Service() {
     }
 
     private fun refreshNotification() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val budget = prefs.getString("monthly_budget", "100")?.toDoubleOrNull() ?: 100.0
-        val tokenLimit = prefs.getString("monthly_token_limit", "10000000")?.toLongOrNull() ?: 10_000_000L
-
-        val data = repository.aggregate(budget, tokenLimit)
-        notificationManager.notify(NOTIFICATION_ID, buildNotification(data))
-        checkAlertThresholds(data)
+        val result = webClient.fetchUsage()
+        result.onSuccess { usage ->
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+            checkAlerts(usage)
+        }.onFailure { error ->
+            val errorUsage = PlanUsage(error = error.message)
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(errorUsage))
+        }
     }
 
-    private fun buildNotification(data: UsageData?): Notification {
+    private fun buildNotification(usage: PlanUsage?): Notification {
         val openIntent = Intent(this, MainActivity::class.java)
         val pendingOpen = PendingIntent.getActivity(
             this, 0, openIntent,
@@ -126,71 +133,67 @@ class UsageMonitorService : Service() {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        if (data != null) {
-            val percent = data.budgetUsedPercent
-            val emoji = when {
-                percent >= 90 -> "\uD83D\uDD34"  // red circle
-                percent >= 75 -> "\uD83D\uDFE1"  // yellow circle
-                else -> "\uD83D\uDFE2"            // green circle
+        when {
+            usage == null -> {
+                builder.setContentTitle("Claude Usage Widget")
+                    .setContentText("Starting...")
             }
+            usage.error != null -> {
+                builder.setContentTitle("⚠️ Claude Usage")
+                    .setContentText(usage.error)
+            }
+            else -> {
+                val opus = usage.getModel("Opus")
+                val progress = opus?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
 
-            builder.setContentTitle("$emoji Claude: ${data.shortSummary()}")
-                .setContentText("5h: ${data.periodSummary("5h")} │ Today: ${data.periodSummary("daily")}")
-                .setStyle(
-                    NotificationCompat.BigTextStyle()
-                        .bigText(buildString {
-                            append("💰 Monthly: ${data.costSummary()}\n")
-                            append("📊 Tokens: ${data.tokenSummary()}\n")
-                            append("─────────────────\n")
-                            append("⏱ 5h: ${data.periodSummary("5h")}\n")
-                            append("📅 Today: ${data.periodSummary("daily")}\n")
-                            append("📆 Week: ${data.periodSummary("weekly")}\n")
-                            append("📋 Month: ${data.periodSummary("monthly")}")
-                        })
-                )
-                .setProgress(100, percent.toInt().coerceIn(0, 100), false)
-        } else {
-            builder.setContentTitle("Claude Usage Widget")
-                .setContentText("Tracking usage locally...")
+                builder.setContentTitle(usage.notificationTitle())
+                    .setContentText(usage.notificationShort())
+                    .setStyle(
+                        NotificationCompat.BigTextStyle()
+                            .bigText(usage.notificationExpanded())
+                    )
+                    .setProgress(100, progress, false)
+            }
         }
 
         return builder.build()
     }
 
-    private fun checkAlertThresholds(data: UsageData) {
+    private fun checkAlerts(usage: PlanUsage) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (!prefs.getBoolean("alerts_enabled", true)) return
 
-        val thresholds = listOf(50, 75, 90, 95)
-        for (t in thresholds) {
-            if (data.budgetUsedPercent >= t && t !in notifiedThresholds) {
-                notifiedThresholds.add(t)
-                sendAlert(t, data)
+        for (model in usage.models) {
+            if (model.usedPercent >= 80 && model.modelName !in notifiedModels) {
+                notifiedModels.add(model.modelName)
+                sendAlert(model, usage)
             }
         }
     }
 
-    private fun sendAlert(threshold: Int, data: UsageData) {
+    private fun sendAlert(model: ModelUsage, usage: PlanUsage) {
         val intent = Intent(this, MainActivity::class.java)
         val pi = PendingIntent.getActivity(
-            this, threshold, intent,
+            this, model.modelName.hashCode(), intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
-        val emoji = if (threshold >= 90) "🚨" else "⚠️"
+        val emoji = if (model.isAtLimit) "🚨" else "⚠️"
+        val title = if (model.isAtLimit) {
+            "$emoji ${model.modelName} limit reached!"
+        } else {
+            "$emoji ${model.modelName}: ${model.remaining} messages left"
+        }
+
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
-            .setContentTitle("$emoji Claude Usage: ${threshold}% reached!")
-            .setContentText("Cost: ${data.costSummary()}")
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .bigText("Budget ${String.format("%.1f", data.budgetUsedPercent)}% used\n${data.costSummary()}\n${data.tokenSummary()}")
-            )
+            .setContentTitle(title)
+            .setContentText("${model.shortSummary()} used (${String.format("%.0f", model.usedPercent)}%)")
             .setContentIntent(pi)
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
 
-        notificationManager.notify(threshold, notification)
+        notificationManager.notify(model.modelName.hashCode() + 1000, notification)
     }
 }

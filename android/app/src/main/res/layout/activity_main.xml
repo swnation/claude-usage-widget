@@ -17,292 +17,31 @@
             android:text="⬡ Claude Usage"
             android:textColor="#c084fc"
             android:textSize="24sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="24dp" />
+            android:textStyle="bold" />
 
-        <!-- Cost Section -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/card_background"
-            android:padding="16dp"
-            android:layout_marginBottom="12dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="💰 Cost"
-                    android:textColor="#888899"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/budgetPercentText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.0%"
-                    android:textColor="#e0e0e0"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/costText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="$0.00 / $100.00"
-                android:textColor="#e0e0e0"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="8dp" />
-
-            <ProgressBar
-                android:id="@+id/costBar"
-                style="@android:style/Widget.ProgressBar.Horizontal"
-                android:layout_width="match_parent"
-                android:layout_height="8dp"
-                android:max="100"
-                android:progress="0"
-                android:progressBackgroundTint="#2a2a4a" />
-        </LinearLayout>
-
-        <!-- Token Section -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:background="@drawable/card_background"
-            android:padding="16dp"
-            android:layout_marginBottom="12dp">
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:text="📊 Tokens"
-                    android:textColor="#888899"
-                    android:textSize="14sp" />
-
-                <TextView
-                    android:id="@+id/tokenPercentText"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="0.0%"
-                    android:textColor="#e0e0e0"
-                    android:textSize="14sp"
-                    android:textStyle="bold" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/tokenText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="0 / 10M"
-                android:textColor="#e0e0e0"
-                android:textSize="20sp"
-                android:textStyle="bold"
-                android:layout_marginTop="4dp"
-                android:layout_marginBottom="8dp" />
-
-            <ProgressBar
-                android:id="@+id/tokenBar"
-                style="@android:style/Widget.ProgressBar.Horizontal"
-                android:layout_width="match_parent"
-                android:layout_height="8dp"
-                android:max="100"
-                android:progress="0"
-                android:progressBackgroundTint="#2a2a4a"
-                android:progressTint="#c084fc" />
-        </LinearLayout>
-
-        <!-- Detail -->
         <TextView
-            android:id="@+id/detailText"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="📥 Input: 0   📤 Output: 0"
-            android:textColor="#888899"
-            android:textSize="13sp"
-            android:layout_marginBottom="12dp" />
-
-        <!-- Period Breakdown -->
-        <TextView
+            android:id="@+id/planNameText"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Usage by Period"
-            android:textColor="#c084fc"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="8dp" />
+            android:text="Claude Max"
+            android:textColor="#888899"
+            android:textSize="14sp"
+            android:layout_marginBottom="20dp" />
 
-        <!-- 5h period -->
+        <!-- Model usage cards (dynamically added) -->
         <LinearLayout
+            android:id="@+id/modelsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:background="@drawable/card_background"
-            android:padding="12dp"
-            android:layout_marginBottom="6dp"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="48dp"
-                android:layout_height="wrap_content"
-                android:text="⏱ 5h"
-                android:textColor="#c084fc"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/period5hCost"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="$0.00"
-                android:textColor="#e0e0e0"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/period5hDetail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0 tok │ 0 reqs"
-                android:textColor="#888899"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <!-- Daily period -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:background="@drawable/card_background"
-            android:padding="12dp"
-            android:layout_marginBottom="6dp"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="48dp"
-                android:layout_height="wrap_content"
-                android:text="📅 Day"
-                android:textColor="#c084fc"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/periodDailyCost"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="$0.00"
-                android:textColor="#e0e0e0"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/periodDailyDetail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0 tok │ 0 reqs"
-                android:textColor="#888899"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <!-- Weekly period -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:background="@drawable/card_background"
-            android:padding="12dp"
-            android:layout_marginBottom="6dp"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="48dp"
-                android:layout_height="wrap_content"
-                android:text="📆 Wk"
-                android:textColor="#c084fc"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/periodWeeklyCost"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="$0.00"
-                android:textColor="#e0e0e0"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/periodWeeklyDetail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0 tok │ 0 reqs"
-                android:textColor="#888899"
-                android:textSize="11sp" />
-        </LinearLayout>
-
-        <!-- Monthly period -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:background="@drawable/card_background"
-            android:padding="12dp"
-            android:layout_marginBottom="16dp"
-            android:gravity="center_vertical">
-
-            <TextView
-                android:layout_width="48dp"
-                android:layout_height="wrap_content"
-                android:text="📋 Mo"
-                android:textColor="#c084fc"
-                android:textSize="13sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/periodMonthlyCost"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="$0.00"
-                android:textColor="#e0e0e0"
-                android:textSize="15sp"
-                android:textStyle="bold" />
-
-            <TextView
-                android:id="@+id/periodMonthlyDetail"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="0 tok │ 0 reqs"
-                android:textColor="#888899"
-                android:textSize="11sp" />
-        </LinearLayout>
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp" />
 
         <!-- Action Buttons -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <Button
                 android:id="@+id/toggleButton"
@@ -334,7 +73,7 @@
             android:textSize="12sp"
             android:layout_marginBottom="24dp" />
 
-        <!-- Settings Section -->
+        <!-- Settings -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -347,22 +86,38 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Server URL"
+            android:text="Session Key"
             android:textColor="#888899"
-            android:textSize="12sp"
+            android:textSize="12sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="claude.ai → F12 → Application → Cookies → sessionKey"
+            android:textColor="#555566"
+            android:textSize="10sp"
             android:layout_marginBottom="4dp" />
 
         <EditText
-            android:id="@+id/serverUrlInput"
+            android:id="@+id/sessionKeyInput"
             android:layout_width="match_parent"
             android:layout_height="48dp"
             android:background="@drawable/input_background"
             android:textColor="#e0e0e0"
             android:textColorHint="#555566"
-            android:hint="http://your-server:8490"
-            android:inputType="textUri"
+            android:hint="sk-ant-sid01-..."
+            android:inputType="textPassword"
             android:padding="12dp"
-            android:textSize="14sp"
+            android:textSize="13sp"
+            android:layout_marginBottom="4dp" />
+
+        <TextView
+            android:id="@+id/sessionStatus"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#888899"
+            android:textSize="11sp"
             android:layout_marginBottom="12dp" />
 
         <TextView
@@ -380,7 +135,7 @@
             android:background="@drawable/input_background"
             android:textColor="#e0e0e0"
             android:textColorHint="#555566"
-            android:hint="60"
+            android:hint="120"
             android:inputType="number"
             android:padding="12dp"
             android:textSize="14sp"
