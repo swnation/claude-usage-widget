@@ -14,8 +14,8 @@ import java.util.Timer
 import java.util.TimerTask
 
 /**
- * 포그라운드 서비스 - 상단 알림창에 Claude 사용량을 상시 표시.
- * claude.ai에서 직접 가져오며 서버 필요 없음.
+ * 포그라운드 서비스 - 상단 알림창에 Claude 사용량 상시 표시.
+ * 항상 claude.ai에서 실시간으로 가져옴. 로컬 저장 없음.
  */
 class UsageMonitorService : Service() {
 
@@ -24,6 +24,7 @@ class UsageMonitorService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ALERT_CHANNEL_ID = "claude_usage_alert"
         const val ACTION_STOP = "com.claudeusage.widget.STOP_SERVICE"
+        const val ACTION_REFRESH = "com.claudeusage.widget.REFRESH"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, UsageMonitorService::class.java))
@@ -35,7 +36,6 @@ class UsageMonitorService : Service() {
     }
 
     private lateinit var webClient: ClaudeWebClient
-    private lateinit var accumulator: UsageAccumulator
     private lateinit var notificationManager: NotificationManager
     private var timer: Timer? = null
     private val notifiedModels = mutableSetOf<String>()
@@ -45,18 +45,23 @@ class UsageMonitorService : Service() {
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannels()
 
-        accumulator = UsageAccumulator(this)
-
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val sessionKey = prefs.getString("session_key", "") ?: ""
-        webClient = ClaudeWebClient(sessionKey)
+        webClient = ClaudeWebClient(prefs.getString("session_key", "") ?: "")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+            ACTION_REFRESH -> {
+                // 새로고침 버튼 눌렀을 때 즉시 업데이트
+                Thread { refreshNotification() }.start()
+                return START_STICKY
+            }
         }
+
         startForeground(NOTIFICATION_ID, buildNotification(null))
         startPolling()
         return START_STICKY
@@ -104,26 +109,11 @@ class UsageMonitorService : Service() {
     private fun refreshNotification() {
         val result = webClient.fetchUsage()
         result.onSuccess { usage ->
-            // 누적기 업데이트 + 주간/총 데이터 병합
-            val enriched = enrichWithAccumulated(usage)
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(enriched))
-            checkAlerts(enriched)
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+            checkAlerts(usage)
         }.onFailure { error ->
-            val errorUsage = PlanUsage(error = error.message)
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(errorUsage))
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(PlanUsage(error = error.message)))
         }
-    }
-
-    private fun enrichWithAccumulated(usage: PlanUsage): PlanUsage {
-        val enrichedModels = usage.models.map { model ->
-            accumulator.update(model.modelName, model.used)
-            val acc = accumulator.getAccumulated(model.modelName, model.used)
-            model.copy(
-                weeklyUsed = acc.weeklyMessages,
-                totalUsed = acc.totalMessages,
-            )
-        }
-        return usage.copy(models = enrichedModels)
     }
 
     private fun buildNotification(usage: PlanUsage?): Notification {
@@ -132,9 +122,18 @@ class UsageMonitorService : Service() {
             this, 0, openIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+        // 중지 버튼
         val stopIntent = Intent(this, UsageMonitorService::class.java).apply { action = ACTION_STOP }
         val pendingStop = PendingIntent.getService(
             this, 1, stopIntent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        // 새로고침 버튼
+        val refreshIntent = Intent(this, UsageMonitorService::class.java).apply { action = ACTION_REFRESH }
+        val pendingRefresh = PendingIntent.getService(
+            this, 2, refreshIntent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -142,6 +141,7 @@ class UsageMonitorService : Service() {
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)
             .setContentIntent(pendingOpen)
+            .addAction(android.R.drawable.ic_menu_rotate, "새로고침", pendingRefresh)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "중지", pendingStop)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -149,7 +149,7 @@ class UsageMonitorService : Service() {
         when {
             usage == null -> {
                 builder.setContentTitle("Claude 사용량")
-                    .setContentText("시작 중...")
+                    .setContentText("불러오는 중...")
             }
             usage.error != null -> {
                 builder.setContentTitle("⚠️ Claude 사용량")
@@ -191,11 +191,8 @@ class UsageMonitorService : Service() {
         )
 
         val emoji = if (model.isAtLimit) "🚨" else "⚠️"
-        val title = if (model.isAtLimit) {
-            "$emoji ${model.modelName} 한도 도달!"
-        } else {
-            "$emoji ${model.modelName}: ${model.remaining}개 남음"
-        }
+        val title = if (model.isAtLimit) "$emoji ${model.modelName} 한도 도달!"
+                    else "$emoji ${model.modelName}: ${model.remaining}개 남음"
 
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)

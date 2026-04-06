@@ -16,7 +16,6 @@ import java.util.concurrent.Executors
 class MainActivity : AppCompatActivity() {
 
     private lateinit var webClient: ClaudeWebClient
-    private lateinit var accumulator: UsageAccumulator
     private val executor = Executors.newSingleThreadExecutor()
     private val handler = Handler(Looper.getMainLooper())
     private var isServiceRunning = false
@@ -34,8 +33,6 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-
-        accumulator = UsageAccumulator(this)
 
         requestNotificationPermission()
         initViews()
@@ -133,8 +130,7 @@ class MainActivity : AppCompatActivity() {
             val result = webClient.fetchUsage()
             handler.post {
                 result.onSuccess { usage ->
-                    val enriched = enrichWithAccumulated(usage)
-                    displayUsage(enriched)
+                    displayUsage(usage)
                     statusText.text = "마지막 업데이트: ${usage.lastUpdated.takeLast(13)}"
                     sessionStatus.text = "✓ 연결됨"
                     sessionStatus.setTextColor(getColor(android.R.color.holo_green_light))
@@ -145,15 +141,6 @@ class MainActivity : AppCompatActivity() {
                 }
             }
         }
-    }
-
-    private fun enrichWithAccumulated(usage: PlanUsage): PlanUsage {
-        val enrichedModels = usage.models.map { model ->
-            accumulator.update(model.modelName, model.used)
-            val acc = accumulator.getAccumulated(model.modelName, model.used)
-            model.copy(weeklyUsed = acc.weeklyMessages, totalUsed = acc.totalMessages)
-        }
-        return usage.copy(models = enrichedModels)
     }
 
     private fun displayUsage(usage: PlanUsage) {
@@ -169,12 +156,10 @@ class MainActivity : AppCompatActivity() {
             val bar = card.findViewById<ProgressBar>(R.id.modelBar)
             val remainingText = card.findViewById<TextView>(R.id.modelRemaining)
             val resetText = card.findViewById<TextView>(R.id.modelReset)
-            val weeklyText = card.findViewById<TextView>(R.id.modelWeekly)
-            val totalText = card.findViewById<TextView>(R.id.modelTotal)
 
             nameText.text = model.modelName
             percentText.text = model.percentText
-            countText.text = "${model.used} / ${model.limit} 메시지"
+            countText.text = "${model.used} / ${model.limit}"
             bar.max = 100
             bar.progress = model.usedPercent.toInt().coerceIn(0, 100)
 
@@ -189,9 +174,6 @@ class MainActivity : AppCompatActivity() {
             remainingText.text = model.remainingText()
             remainingText.setTextColor(color)
             resetText.text = model.formatResetTime()
-
-            weeklyText.text = "주간: ${model.weeklyUsed}개"
-            totalText.text = "총: ${model.totalUsed}개"
 
             modelsContainer.addView(card)
         }

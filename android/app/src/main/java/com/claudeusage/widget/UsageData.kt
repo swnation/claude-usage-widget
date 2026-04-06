@@ -2,18 +2,15 @@ package com.claudeusage.widget
 
 /**
  * Claude Max/Pro 플랜 사용량 데이터.
- * claude.ai 설정 > 사용량에 표시되는 정보를 모델링.
+ * 항상 claude.ai에서 실시간으로 가져온 값만 표시.
  */
 data class ModelUsage(
     val modelName: String,       // "Opus", "Sonnet", "Haiku"
     val modelTier: String,       // API 내부 tier 이름
-    val used: Int,               // 현재 5시간 윈도우 사용 메시지 수
-    val limit: Int,              // 5시간 윈도우 메시지 한도
+    val used: Int,               // 현재 사용량
+    val limit: Int,              // 한도
     val resetsAt: String,        // 리셋 시각 (ISO 8601)
     val windowHours: Int = 5,
-    // 누적 데이터 (UsageAccumulator에서 제공)
-    val weeklyUsed: Int = 0,     // 이번 주 누적 메시지 수
-    val totalUsed: Int = 0,      // 이번 달 누적 메시지 수
 ) {
     val remaining: Int get() = (limit - used).coerceAtLeast(0)
     val usedPercent: Double get() = if (limit > 0) (used.toDouble() / limit) * 100 else 0.0
@@ -53,8 +50,6 @@ data class PlanUsage(
     fun getModel(name: String): ModelUsage? =
         models.find { it.modelName.equals(name, ignoreCase = true) }
 
-    // --- 알림 텍스트 ---
-
     fun notificationTitle(): String {
         val opus = getModel("Opus")
         return if (opus != null) {
@@ -69,35 +64,14 @@ data class PlanUsage(
         }
     }
 
-    fun notificationShort(): String {
-        return models.joinToString(" │ ") { "${it.modelName} ${it.percentText}" }
-    }
+    fun notificationShort(): String =
+        models.joinToString(" │ ") { "${it.modelName} ${it.percentText}" }
 
     fun notificationExpanded(): String = buildString {
-        append("── 5시간 ──\n")
         for (m in models) {
             val bar = progressBar(m.usedPercent)
             append("${m.modelName} $bar ${m.percentText} (${m.used}/${m.limit})\n")
         }
-
-        // 주간
-        val weeklyModels = models.filter { it.weeklyUsed > 0 }
-        if (weeklyModels.isNotEmpty()) {
-            append("── 주간 ──\n")
-            for (m in weeklyModels) {
-                append("${m.modelName}: ${m.weeklyUsed}개 메시지\n")
-            }
-        }
-
-        // 총 사용량
-        val totalModels = models.filter { it.totalUsed > 0 }
-        if (totalModels.isNotEmpty()) {
-            append("── 총 사용량 ──\n")
-            for (m in totalModels) {
-                append("${m.modelName}: ${m.totalUsed}개 메시지\n")
-            }
-        }
-
         val firstReset = models.filter { it.resetsAt.isNotEmpty() }.minByOrNull { it.resetsAt }
         if (firstReset != null) {
             append("⏱ ${firstReset.formatResetTime()}")
