@@ -10,11 +10,11 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <!-- Header -->
+        <!-- 헤더 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="⬡ Claude Usage"
+            android:text="⬡ Claude 사용량"
             android:textColor="#c084fc"
             android:textSize="24sp"
             android:textStyle="bold" />
@@ -28,7 +28,7 @@
             android:textSize="14sp"
             android:layout_marginBottom="20dp" />
 
-        <!-- Model usage cards (dynamically added) -->
+        <!-- 모델별 사용량 카드 (동적 추가) -->
         <LinearLayout
             android:id="@+id/modelsContainer"
             android:layout_width="match_parent"
@@ -36,7 +36,7 @@
             android:orientation="vertical"
             android:layout_marginBottom="16dp" />
 
-        <!-- Action Buttons -->
+        <!-- 버튼 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -48,7 +48,7 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:text="Start Monitoring"
+                android:text="모니터링 시작"
                 android:backgroundTint="#c084fc"
                 android:textColor="#ffffff"
                 android:layout_marginEnd="8dp" />
@@ -58,26 +58,26 @@
                 android:layout_width="0dp"
                 android:layout_height="48dp"
                 android:layout_weight="1"
-                android:text="Refresh"
+                android:text="새로고침"
                 android:backgroundTint="#2a2a4a"
                 android:textColor="#e0e0e0" />
         </LinearLayout>
 
-        <!-- Status -->
+        <!-- 상태 -->
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Not connected"
+            android:text="연결 안 됨"
             android:textColor="#888899"
             android:textSize="12sp"
             android:layout_marginBottom="24dp" />
 
-        <!-- Settings -->
+        <!-- 설정 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Settings"
+            android:text="설정"
             android:textColor="#c084fc"
             android:textSize="18sp"
             android:textStyle="bold"
@@ -86,14 +86,14 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Session Key"
+            android:text="세션 키"
             android:textColor="#888899"
             android:textSize="12sp" />
 
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="claude.ai → F12 → Application → Cookies → sessionKey"
+            android:text="claude.ai → F12 → Application → Cookies → sessionKey 값 복사"
             android:textColor="#555566"
             android:textSize="10sp"
             android:layout_marginBottom="4dp" />
@@ -123,7 +123,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Refresh Interval (seconds)"
+            android:text="갱신 주기 (초)"
             android:textColor="#888899"
             android:textSize="12sp"
             android:layout_marginBottom="4dp" />
@@ -145,7 +145,7 @@
             android:id="@+id/saveButton"
             android:layout_width="match_parent"
             android:layout_height="48dp"
-            android:text="Save Settings"
+            android:text="설정 저장"
             android:backgroundTint="#2a2a4a"
             android:textColor="#c084fc" />
 

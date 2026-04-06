@@ -7,7 +7,7 @@
     android:padding="16dp"
     android:layout_marginBottom="10dp">
 
-    <!-- Model name + usage count -->
+    <!-- 모델명 + 퍼센트 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -21,20 +21,30 @@
             android:layout_weight="1"
             android:text="Opus"
             android:textColor="#c084fc"
-            android:textSize="16sp"
+            android:textSize="17sp"
             android:textStyle="bold" />
 
         <TextView
-            android:id="@+id/modelUsageText"
+            android:id="@+id/modelPercent"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="0%  (0/45)"
-            android:textColor="#e0e0e0"
-            android:textSize="16sp"
+            android:text="0%"
+            android:textColor="#4ade80"
+            android:textSize="22sp"
             android:textStyle="bold" />
     </LinearLayout>
 
-    <!-- Progress bar -->
+    <!-- 메시지 수 -->
+    <TextView
+        android:id="@+id/modelCount"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="0 / 45 메시지"
+        android:textColor="#888899"
+        android:textSize="13sp"
+        android:layout_marginTop="2dp" />
+
+    <!-- 프로그레스 바 -->
     <ProgressBar
         android:id="@+id/modelBar"
         style="@android:style/Widget.ProgressBar.Horizontal"
@@ -46,18 +56,19 @@
         android:progress="0"
         android:progressBackgroundTint="#2a2a4a" />
 
-    <!-- Remaining + reset time -->
+    <!-- 남은 수 + 초기화 시간 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:layout_marginBottom="6dp">
 
         <TextView
             android:id="@+id/modelRemaining"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="45 left"
+            android:text="45개 남음"
             android:textColor="#4ade80"
             android:textSize="13sp" />
 
@@ -65,7 +76,33 @@
             android:id="@+id/modelReset"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Resets in 4h 32m"
+            android:text="4시간 32분 후 초기화"
+            android:textColor="#888899"
+            android:textSize="12sp" />
+    </LinearLayout>
+
+    <!-- 주간 / 총 사용량 -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:background="#1a1a2e"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/modelWeekly"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="주간: 0개"
+            android:textColor="#888899"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/modelTotal"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="총: 0개"
             android:textColor="#888899"
             android:textSize="12sp" />
     </LinearLayout>
