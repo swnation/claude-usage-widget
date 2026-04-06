@@ -1,17 +1,3 @@
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
-
-# Config with secrets
-config.json
-
-# Server data
-server/usage_data.json
-server/usage_log.jsonl
-
 # Android
 android/.gradle/
 android/build/
