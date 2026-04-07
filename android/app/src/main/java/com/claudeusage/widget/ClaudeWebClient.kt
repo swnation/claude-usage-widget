@@ -255,13 +255,17 @@ class ClaudeWebClient(private var sessionKey: String) {
     }
 
     private fun buildRequest(path: String): Request {
-        val cookieValue = if (sessionKey.contains("sessionKey=")) sessionKey
-                          else "sessionKey=$sessionKey"
+        // 전체 쿠키 문자열이면 그대로 사용, 아니면 sessionKey= 접두어 추가
+        val cookieValue = when {
+            sessionKey.contains("sessionKey=") -> sessionKey
+            sessionKey.contains(";") -> sessionKey  // 전체 쿠키 문자열
+            else -> "sessionKey=$sessionKey"
+        }
 
         return Request.Builder()
             .url("$BASE_URL$path")
             .header("Cookie", cookieValue)
-            .header("User-Agent", "Mozilla/5.0 (Linux; Android) ClaudeUsageWidget/1.0")
+            .header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36")
             .header("Accept", "application/json")
             .get()
             .build()

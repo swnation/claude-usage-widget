@@ -165,24 +165,73 @@ class LoginActivity : AppCompatActivity() {
         mainWebView.visibility = View.VISIBLE
     }
 
+    private var loginCompleted = false
+
     private fun checkForSessionKey(url: String?) {
+        if (loginCompleted) return
+        if (url == null) return
+
         val cookies = CookieManager.getInstance().getCookie("https://claude.ai") ?: return
 
-        val sessionKey = cookies.split(";")
-            .map { it.trim() }
-            .find { it.startsWith("sessionKey=") }
-            ?.substringAfter("sessionKey=")
-            ?.trim()
-
-        if (!sessionKey.isNullOrEmpty() && sessionKey.startsWith("sk-ant-sid")) {
-            PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("session_key", sessionKey)
-                .apply()
-
-            Toast.makeText(this, "로그인 성공!", Toast.LENGTH_SHORT).show()
-            setResult(RESULT_LOGGED_IN)
-            finish()
+        // sessionKey 쿠키 찾기 (여러 가능한 이름)
+        val cookieMap = cookies.split(";").associate {
+            val parts = it.trim().split("=", limit = 2)
+            if (parts.size == 2) parts[0].trim() to parts[1].trim()
+            else parts[0].trim() to ""
         }
+
+        val sessionKey = cookieMap["sessionKey"]
+            ?: cookieMap["session_key"]
+            ?: cookieMap["__Secure-next-auth.session-token"]
+
+        // 방법 1: sessionKey 쿠키를 직접 찾은 경우
+        if (!sessionKey.isNullOrEmpty() && sessionKey.length > 10) {
+            saveAndFinish(sessionKey)
+            return
+        }
+
+        // 방법 2: 로그인 후 메인 페이지에 도달한 경우 (쿠키 전체 저장)
+        // claude.ai 메인 페이지에 왔다면 로그인 성공으로 간주
+        if (url.contains("claude.ai") &&
+            !url.contains("/login") &&
+            !url.contains("/auth") &&
+            !url.contains("/verify")) {
+
+            // sk-ant로 시작하는 쿠키가 있는지 전체 검색
+            val anySessionCookie = cookieMap.entries.find {
+                it.value.startsWith("sk-ant") || it.value.length > 100
+            }
+
+            if (anySessionCookie != null) {
+                saveAndFinish(anySessionCookie.value)
+                return
+            }
+
+            // 쿠키에서 못 찾아도 메인 페이지에 왔으면 전체 쿠키 문자열 저장
+            if (cookies.length > 50) {
+                saveAndFinish(cookies, isFullCookie = true)
+                return
+            }
+        }
+    }
+
+    private fun saveAndFinish(key: String, isFullCookie: Boolean = false) {
+        loginCompleted = true
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (isFullCookie) {
+            // 전체 쿠키 문자열 저장 (ClaudeWebClient가 Cookie 헤더로 사용)
+            prefs.edit().putString("session_key", key)
+                .putBoolean("is_full_cookie", true)
+                .apply()
+        } else {
+            prefs.edit().putString("session_key", key)
+                .putBoolean("is_full_cookie", false)
+                .apply()
+        }
+
+        Toast.makeText(this, "로그인 성공!", Toast.LENGTH_SHORT).show()
+        setResult(RESULT_LOGGED_IN)
+        finish()
     }
 
     @Deprecated("Use OnBackPressedCallback")
