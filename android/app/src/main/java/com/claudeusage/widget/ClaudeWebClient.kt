@@ -24,7 +24,8 @@ class ClaudeWebClient(private var sessionKey: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(false)
+        .followRedirects(true)   // 리다이렉트 허용
+        .followSslRedirects(true)
         .build()
 
     private val gson = Gson()
@@ -63,11 +64,12 @@ class ClaudeWebClient(private var sessionKey: String) {
                 val body = response.body?.string()
                     ?: return Result.failure(Exception("빈 응답"))
                 val json = gson.fromJson(body, JsonObject::class.java)
+                    ?: return Result.failure(Exception("JSON 파싱 실패"))
 
                 val orgId = findOrgId(json)
 
                 if (orgId != null) Result.success(orgId)
-                else Result.failure(Exception("조직 ID를 찾을 수 없습니다. 응답 키: ${json.keySet()}"))
+                else Result.failure(Exception("조직 ID를 찾을 수 없습니다. 키: ${json.keySet()}"))
             }
         } catch (e: Exception) {
             Result.failure(Exception("네트워크 오류: ${e.message}"))
@@ -95,20 +97,15 @@ class ClaudeWebClient(private var sessionKey: String) {
         }
     }
 
-    /**
-     * API 응답을 파싱하여 현재 세션 + 주간 한도를 추출.
-     * 응답 구조가 정확히 알려지지 않아 여러 가능한 형태를 시도.
-     */
     private fun parseRateLimits(body: String): Result<PlanUsage> {
         return try {
             val json = gson.fromJson(body, JsonObject::class.java)
+                ?: return Result.failure(Exception("JSON 파싱 실패"))
 
             var sessionLimit: UsageLimit? = null
             var weeklyLimit: UsageLimit? = null
-            var planName = "Max"
 
-            // 플랜 이름 감지
-            planName = detectPlanName(json)
+            val planName = detectPlanName(json)
 
             // 방법 1: 직접적인 session/weekly 필드
             sessionLimit = tryParseLimit(json, "session", "현재 세션")
@@ -127,15 +124,15 @@ class ClaudeWebClient(private var sessionKey: String) {
 
                 if (limitsArray != null) {
                     for (element in limitsArray) {
-                        val obj = element.asJsonObject
+                        val obj = safeObject(element) ?: continue
                         val limit = parseUsageFromObj(obj) ?: continue
 
-                        val windowSec = obj.get("window_seconds")?.asLong
-                            ?: obj.get("window")?.asLong
-                            ?: obj.get("interval_seconds")?.asLong
+                        val windowSec = safeLong(obj, "window_seconds")
+                            ?: safeLong(obj, "window")
+                            ?: safeLong(obj, "interval_seconds")
 
-                        val type = obj.get("type")?.asString?.lowercase()
-                            ?: obj.get("limit_type")?.asString?.lowercase()
+                        val type = safeString(obj, "type")?.lowercase()
+                            ?: safeString(obj, "limit_type")?.lowercase()
                             ?: ""
 
                         when {
@@ -148,7 +145,6 @@ class ClaudeWebClient(private var sessionKey: String) {
                                 if (weeklyLimit == null) weeklyLimit = limit.copy(label = "주간 한도")
                             }
                             else -> {
-                                // 첫 번째를 세션, 두 번째를 주간으로
                                 if (sessionLimit == null) sessionLimit = limit.copy(label = "현재 세션")
                                 else if (weeklyLimit == null) weeklyLimit = limit.copy(label = "주간 한도")
                             }
@@ -159,21 +155,21 @@ class ClaudeWebClient(private var sessionKey: String) {
 
             // 방법 3: 최상위 필드에서 직접 퍼센트 추출
             if (sessionLimit == null) {
-                val pct = json.get("session_usage_percent")?.asDouble
-                    ?: json.get("current_usage_percent")?.asDouble
-                    ?: json.get("usage_percent")?.asDouble
-                val reset = json.get("session_resets_at")?.asString
-                    ?: json.get("resets_at")?.asString ?: ""
+                val pct = safeDouble(json, "session_usage_percent")
+                    ?: safeDouble(json, "current_usage_percent")
+                    ?: safeDouble(json, "usage_percent")
                 if (pct != null) {
+                    val reset = safeString(json, "session_resets_at")
+                        ?: safeString(json, "resets_at") ?: ""
                     sessionLimit = UsageLimit("현재 세션", pct, reset)
                 }
             }
 
             if (weeklyLimit == null) {
-                val pct = json.get("weekly_usage_percent")?.asDouble
-                    ?: json.get("weekly_percent")?.asDouble
-                val reset = json.get("weekly_resets_at")?.asString ?: ""
+                val pct = safeDouble(json, "weekly_usage_percent")
+                    ?: safeDouble(json, "weekly_percent")
                 if (pct != null) {
+                    val reset = safeString(json, "weekly_resets_at") ?: ""
                     weeklyLimit = UsageLimit("주간 한도", pct, reset)
                 }
             }
@@ -184,6 +180,9 @@ class ClaudeWebClient(private var sessionKey: String) {
                     session = sessionLimit,
                     weekly = weeklyLimit,
                     lastUpdated = Instant.now().toString(),
+                    // 디버깅: 아무 데이터도 파싱 못 했으면 응답 키 표시
+                    error = if (sessionLimit == null && weeklyLimit == null)
+                        "응답에서 사용량을 찾을 수 없습니다. 키: ${json.keySet()}" else null,
                 )
             )
         } catch (e: Exception) {
@@ -191,35 +190,67 @@ class ClaudeWebClient(private var sessionKey: String) {
         }
     }
 
+    // === 안전한 JSON 접근 헬퍼 ===
+
+    private fun safeString(obj: JsonObject, key: String): String? {
+        val el = obj.get(key) ?: return null
+        if (el.isJsonNull) return null
+        return try { el.asString } catch (e: Exception) { null }
+    }
+
+    private fun safeDouble(obj: JsonObject, key: String): Double? {
+        val el = obj.get(key) ?: return null
+        if (el.isJsonNull) return null
+        return try { el.asDouble } catch (e: Exception) { null }
+    }
+
+    private fun safeLong(obj: JsonObject, key: String): Long? {
+        val el = obj.get(key) ?: return null
+        if (el.isJsonNull) return null
+        return try { el.asLong } catch (e: Exception) { null }
+    }
+
+    private fun safeArray(json: JsonObject, key: String): JsonArray? {
+        val el = json.get(key) ?: return null
+        if (el.isJsonNull) return null
+        return if (el.isJsonArray) el.asJsonArray else null
+    }
+
+    private fun safeObject(element: JsonElement?): JsonObject? {
+        if (element == null || element.isJsonNull) return null
+        return if (element.isJsonObject) element.asJsonObject else null
+    }
+
+    // === 파싱 로직 ===
+
     private fun tryParseLimit(json: JsonObject, key: String, label: String): UsageLimit? {
-        val obj = json.getAsJsonObject(key) ?: return null
-        return parseUsageFromObj(obj)?.copy(label = label)
+        val el = json.get(key) ?: return null
+        if (el.isJsonNull || !el.isJsonObject) return null
+        return parseUsageFromObj(el.asJsonObject)?.copy(label = label)
     }
 
     private fun parseUsageFromObj(obj: JsonObject): UsageLimit? {
-        // 퍼센트 직접 제공
-        val percent = obj.get("percent_used")?.asDouble
-            ?: obj.get("usage_percent")?.asDouble
-            ?: obj.get("percent")?.asDouble
+        val percent = safeDouble(obj, "percent_used")
+            ?: safeDouble(obj, "usage_percent")
+            ?: safeDouble(obj, "percent")
 
         if (percent != null) {
-            val reset = obj.get("resets_at")?.asString
-                ?: obj.get("reset_at")?.asString ?: ""
+            val reset = safeString(obj, "resets_at")
+                ?: safeString(obj, "reset_at") ?: ""
             return UsageLimit("", percent, reset)
         }
 
-        // used/limit에서 계산
-        val used = obj.get("current_usage")?.asDouble
-            ?: obj.get("used")?.asDouble
-            ?: obj.get("messages_used")?.asDouble
-        val limit = obj.get("limit")?.asDouble
-            ?: obj.get("message_limit")?.asDouble
-            ?: obj.get("messages_limit")?.asDouble
+        val used = safeDouble(obj, "current_usage")
+            ?: safeDouble(obj, "used")
+            ?: safeDouble(obj, "messages_used")
+        val limit = safeDouble(obj, "limit")
+            ?: safeDouble(obj, "message_limit")
+            ?: safeDouble(obj, "messages_limit")
 
         if (used != null && limit != null && limit > 0) {
             val pct = (used / limit) * 100
-            val reset = obj.get("resets_at")?.asString
-                ?: obj.get("reset_at")?.asString ?: ""
+            val reset = safeString(obj, "resets_at")
+                ?: safeString(obj, "reset_at") ?: ""
             return UsageLimit("", pct, reset)
         }
 
@@ -227,9 +258,9 @@ class ClaudeWebClient(private var sessionKey: String) {
     }
 
     private fun detectPlanName(json: JsonObject): String {
-        val plan = json.get("plan")?.asString
-            ?: json.get("plan_name")?.asString
-            ?: json.get("subscription_type")?.asString
+        val plan = safeString(json, "plan")
+            ?: safeString(json, "plan_name")
+            ?: safeString(json, "subscription_type")
         return when {
             plan != null && plan.lowercase().contains("max") -> "Max"
             plan != null && plan.lowercase().contains("pro") -> "Pro"
@@ -238,58 +269,40 @@ class ClaudeWebClient(private var sessionKey: String) {
         }
     }
 
-    /** JsonObject에서 안전하게 JsonArray를 꺼냄 (null/JsonNull 방지) */
-    private fun safeArray(json: JsonObject, key: String): JsonArray? {
-        val element = json.get(key) ?: return null
-        return if (element.isJsonArray) element.asJsonArray else null
-    }
-
-    /** JsonObject에서 안전하게 JsonObject를 꺼냄 */
-    private fun safeObject(element: JsonElement?): JsonObject? {
-        if (element == null || element.isJsonNull) return null
-        return if (element.isJsonObject) element.asJsonObject else null
-    }
-
     /** 다양한 bootstrap 응답 구조에서 org ID를 찾음 */
     private fun findOrgId(json: JsonObject): String? {
         // account 배열
         safeArray(json, "account")?.forEach { elem ->
             val obj = safeObject(elem) ?: return@forEach
-            val orgUuid = safeObject(obj.get("organization"))?.get("uuid")?.asString
+            val orgUuid = safeObject(obj.get("organization"))?.let { safeString(it, "uuid") }
             if (orgUuid != null) return orgUuid
         }
 
         // 직접 필드
-        json.get("organization_uuid")?.let {
-            if (!it.isJsonNull) return it.asString
-        }
+        safeString(json, "organization_uuid")?.let { return it }
 
         // memberships 배열
         safeArray(json, "memberships")?.forEach { elem ->
             val obj = safeObject(elem) ?: return@forEach
-            val orgUuid = safeObject(obj.get("organization"))?.get("uuid")?.asString
+            val orgUuid = safeObject(obj.get("organization"))?.let { safeString(it, "uuid") }
             if (orgUuid != null) return orgUuid
         }
 
         // organizations 배열
         safeArray(json, "organizations")?.forEach { elem ->
             val obj = safeObject(elem) ?: return@forEach
-            val uuid = obj.get("uuid")?.asString ?: obj.get("id")?.asString
+            val uuid = safeString(obj, "uuid") ?: safeString(obj, "id")
             if (uuid != null) return uuid
         }
 
-        // 최상위에서 uuid/id 직접 탐색
-        json.get("uuid")?.let { if (!it.isJsonNull) return it.asString }
-        json.get("id")?.let { if (!it.isJsonNull) return it.asString }
+        // 최상위 uuid/id
+        safeString(json, "uuid")?.let { return it }
+        safeString(json, "id")?.let { return it }
 
-        // 모든 키를 순회하며 uuid 포함된 객체 찾기
+        // 모든 키를 순회하며 uuid가 있는 객체 찾기
         for (key in json.keySet()) {
-            val value = json.get(key)
-            if (value != null && value.isJsonObject) {
-                val obj = value.asJsonObject
-                val uuid = obj.get("uuid")?.let { if (!it.isJsonNull) it.asString else null }
-                if (uuid != null) return uuid
-            }
+            val obj = safeObject(json.get(key)) ?: continue
+            safeString(obj, "uuid")?.let { return it }
         }
 
         return null
@@ -306,10 +319,9 @@ class ClaudeWebClient(private var sessionKey: String) {
     }
 
     private fun buildRequest(path: String): Request {
-        // 전체 쿠키 문자열이면 그대로 사용, 아니면 sessionKey= 접두어 추가
         val cookieValue = when {
             sessionKey.contains("sessionKey=") -> sessionKey
-            sessionKey.contains(";") -> sessionKey  // 전체 쿠키 문자열
+            sessionKey.contains(";") -> sessionKey
             else -> "sessionKey=$sessionKey"
         }
 
