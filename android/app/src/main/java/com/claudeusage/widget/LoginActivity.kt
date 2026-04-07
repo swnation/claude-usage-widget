@@ -89,6 +89,15 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun onDoneClicked() {
+        // 현재 URL이 claude.ai 메인 페이지인지 확인
+        val currentUrl = mainWebView.url ?: ""
+        if (!currentUrl.contains("claude.ai") ||
+            currentUrl.contains("/login") ||
+            currentUrl.contains("accounts.google.com")) {
+            Toast.makeText(this, "claude.ai 채팅 화면이 보일 때 눌러주세요", Toast.LENGTH_SHORT).show()
+            return
+        }
+
         val cookies = CookieManager.getInstance().getCookie("https://claude.ai")
         if (cookies.isNullOrEmpty() || cookies.length < 20) {
             Toast.makeText(this, "먼저 로그인을 완료하세요", Toast.LENGTH_SHORT).show()
