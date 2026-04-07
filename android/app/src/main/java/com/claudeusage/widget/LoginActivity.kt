@@ -29,9 +29,6 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var container: FrameLayout
     private lateinit var mainWebView: WebView
     private lateinit var doneButton: Button
-    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
-    private var googleStuckRunnable: Runnable? = null
-    private var lastGoogleUrl: String? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -58,25 +55,6 @@ class LoginActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView?, request: WebResourceRequest?
                 ): Boolean = false
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    // Google OAuth 완료 후 "잠시만 기다려주세요"에서 멈추는 경우만 감지
-                    // 같은 URL이 연속 2번 로드되면 (= 페이지가 멈춤) claude.ai로 이동
-                    googleStuckRunnable?.let { handler.removeCallbacks(it) }
-                    if (url != null && url.contains("accounts.google.com")) {
-                        if (url == lastGoogleUrl) {
-                            // 같은 URL이 또 로드됨 → 멈춘 상태 → 8초 후 claude.ai로
-                            googleStuckRunnable = Runnable {
-                                view?.loadUrl("https://claude.ai/")
-                            }
-                            handler.postDelayed(googleStuckRunnable!!, 8000)
-                        }
-                        lastGoogleUrl = url
-                    } else {
-                        lastGoogleUrl = null
-                    }
-                }
             }
         }
 
@@ -134,7 +112,6 @@ class LoginActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
-        googleStuckRunnable?.let { handler.removeCallbacks(it) }
         mainWebView.destroy()
         super.onDestroy()
     }
