@@ -49,13 +49,17 @@ data class PlanUsage(
     val error: String? = null,
 ) {
     fun notificationTitle(): String {
-        val s = session ?: return "Claude $planName"
+        val s = session
+        val w = weekly
         val emoji = when {
-            s.usedPercent >= 90 -> "🔴"
-            s.usedPercent >= 70 -> "🟡"
+            s != null && s.usedPercent >= 90 -> "🔴"
+            s != null && s.usedPercent >= 70 -> "🟡"
             else -> "🟢"
         }
-        return "$emoji Claude $planName │ ${s.percentText}"
+        val parts = mutableListOf<String>()
+        s?.let { parts.add("세션 ${it.percentText}") }
+        w?.let { parts.add("주간 ${it.percentText}") }
+        return "$emoji ${parts.joinToString(" │ ")}"
     }
 
     fun notificationShort(): String {
