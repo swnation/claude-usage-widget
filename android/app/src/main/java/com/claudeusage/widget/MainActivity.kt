@@ -60,6 +60,12 @@ class MainActivity : AppCompatActivity() {
         AppUpdater(this).checkForUpdate()
     }
 
+    @Deprecated("Use OnBackPressedCallback")
+    override fun onBackPressed() {
+        // 뒤로가기 시 앱 종료 (숨겨진 WebView 노출 방지)
+        moveTaskToBack(true)
+    }
+
     override fun onDestroy() {
         stopAutoRefresh()
         scrapeWebView?.destroy()
@@ -377,7 +383,7 @@ class MainActivity : AppCompatActivity() {
                     statusText.text = "세션 만료. 다시 로그인하세요."
                     updateLoginUI(false)
                 } else {
-                    statusText.text = "사용량을 찾을 수 없음. 페이지: ${bodyPreview.take(100)}"
+                    statusText.text = "사용량을 찾을 수 없음. 새로고침을 다시 눌러주세요."
                 }
             }
         } catch (e: Exception) {
