@@ -111,6 +111,7 @@ class UsageMonitorService : Service() {
      */
     @SuppressLint("SetJavaScriptEnabled")
     private fun scrapeUsage() {
+        try {
         // 기존 WebView 정리
         scrapeWebView?.destroy()
 
@@ -139,6 +140,7 @@ class UsageMonitorService : Service() {
 
         scrapeWebView = wv
         wv.loadUrl("https://claude.ai/settings/usage")
+        } catch (_: Exception) {}
     }
 
     private fun extractUsageData(view: WebView?) {

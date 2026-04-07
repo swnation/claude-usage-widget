@@ -151,13 +151,11 @@ class MainActivity : AppCompatActivity() {
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
 
-        // 저장된 사용량 데이터가 있으면 먼저 표시
+        // 저장된 사용량 데이터가 있으면 표시 (자동 스크래핑 안 함)
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) {
             displayUsageFromJson(lastUsage)
         }
-
-        if (loggedIn) fetchUsageViaScraping()
     }
 
     private fun updateLoginUI(loggedIn: Boolean) {
@@ -187,8 +185,12 @@ class MainActivity : AppCompatActivity() {
     private fun fetchUsageViaScraping() {
         statusText.text = "불러오는 중..."
 
+        try {
         // 기존 WebView 정리
-        scrapeWebView?.destroy()
+        scrapeWebView?.let {
+            (it.parent as? android.view.ViewGroup)?.removeView(it)
+            it.destroy()
+        }
 
         val wv = WebView(this).apply {
             // 화면에 안 보이게
@@ -223,6 +225,10 @@ class MainActivity : AppCompatActivity() {
 
         // 설정 > 사용량 페이지 로드
         wv.loadUrl("https://claude.ai/settings/usage")
+
+        } catch (e: Exception) {
+            statusText.text = "스크래핑 오류: ${e.message}"
+        }
     }
 
     /**
@@ -344,10 +350,10 @@ class MainActivity : AppCompatActivity() {
         }
 
         // 스크래핑 WebView 정리
-        scrapeWebView?.let {
+        try { scrapeWebView?.let {
             (it.parent as? android.view.ViewGroup)?.removeView(it)
             it.destroy()
-        }
+        } } catch (_: Exception) {}
         scrapeWebView = null
     }
 
