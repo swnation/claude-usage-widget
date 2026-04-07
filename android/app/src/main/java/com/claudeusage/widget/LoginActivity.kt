@@ -99,15 +99,68 @@ class LoginActivity : AppCompatActivity() {
             .putString("session_key", cookies)
             .apply()
 
-        // JS로 org ID 가져오기
+        // JS로 org ID + 사용량 데이터 가져오기 (여러 방법 시도)
         mainWebView.evaluateJavascript("""
             (async function() {
                 try {
-                    const resp = await fetch('/api/organizations', {credentials: 'include'});
-                    const text = await resp.text();
-                    return text;
+                    // 방법 1: window.__NEXT_DATA__에서 org ID 찾기
+                    let orgId = null;
+                    if (window.__NEXT_DATA__) {
+                        const nd = JSON.stringify(window.__NEXT_DATA__);
+                        const match = nd.match(/"organizationUuid":"([^"]+)"/);
+                        if (match) orgId = match[1];
+                        if (!orgId) {
+                            const match2 = nd.match(/"orgId":"([^"]+)"/);
+                            if (match2) orgId = match2[1];
+                        }
+                        if (!orgId) {
+                            const match3 = nd.match(/"uuid":"([a-f0-9-]{36})"/);
+                            if (match3) orgId = match3[1];
+                        }
+                    }
+
+                    // 방법 2: meta 태그나 script에서 찾기
+                    if (!orgId) {
+                        const scripts = document.querySelectorAll('script');
+                        for (const s of scripts) {
+                            const text = s.textContent || '';
+                            const match = text.match(/"organizationUuid"\s*:\s*"([^"]+)"/);
+                            if (match) { orgId = match[1]; break; }
+                            const match2 = text.match(/"activeOrganizationUuid"\s*:\s*"([^"]+)"/);
+                            if (match2) { orgId = match2[1]; break; }
+                        }
+                    }
+
+                    // 방법 3: /api/organizations 시도
+                    if (!orgId) {
+                        try {
+                            const resp = await fetch('/api/organizations', {credentials:'include'});
+                            const data = await resp.json();
+                            if (Array.isArray(data) && data.length > 0) {
+                                orgId = data[0].uuid || data[0].id;
+                            }
+                        } catch(e) {}
+                    }
+
+                    // 방법 4: /api/bootstrap에서 찾기
+                    if (!orgId) {
+                        try {
+                            const resp = await fetch('/api/bootstrap', {credentials:'include'});
+                            const text = await resp.text();
+                            const match = text.match(/"uuid"\s*:\s*"([a-f0-9-]{36})"/);
+                            if (match) orgId = match[1];
+                        } catch(e) {}
+                    }
+
+                    // 방법 5: 현재 URL에서 찾기
+                    if (!orgId) {
+                        const match = window.location.href.match(/organizations\/([a-f0-9-]+)/);
+                        if (match) orgId = match[1];
+                    }
+
+                    return JSON.stringify({orgId: orgId || '', cookies: document.cookie});
                 } catch(e) {
-                    return JSON.stringify({error: e.message});
+                    return JSON.stringify({orgId: '', error: e.message});
                 }
             })();
         """.trimIndent()) { result ->
@@ -116,7 +169,6 @@ class LoginActivity : AppCompatActivity() {
     }
 
     private fun handleOrgResponse(jsResult: String?, cookies: String) {
-        // evaluateJavascript returns a JSON-encoded string (with quotes)
         val raw = jsResult
             ?.trim()
             ?.removeSurrounding("\"")
@@ -126,39 +178,28 @@ class LoginActivity : AppCompatActivity() {
 
         try {
             val gson = com.google.gson.Gson()
-            val element = gson.fromJson(raw, com.google.gson.JsonElement::class.java)
+            val json = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
+            val orgId = json?.get("orgId")?.asString ?: ""
 
-            var orgId: String? = null
-
-            if (element.isJsonArray) {
-                val arr = element.asJsonArray
-                if (arr.size() > 0) {
-                    val first = arr[0].asJsonObject
-                    orgId = first.get("uuid")?.asString ?: first.get("id")?.asString
-                }
-            } else if (element.isJsonObject) {
-                val obj = element.asJsonObject
-                orgId = obj.get("uuid")?.asString ?: obj.get("id")?.asString
-            }
-
-            if (orgId != null) {
+            if (orgId.isNotEmpty()) {
                 PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putString("org_id", orgId)
                     .apply()
 
                 loginCompleted = true
-                Toast.makeText(this, "로그인 성공! (org: ${orgId.take(8)}...)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "로그인 성공!", Toast.LENGTH_SHORT).show()
                 setResult(RESULT_LOGGED_IN)
                 finish()
             } else {
-                Toast.makeText(this, "org ID를 찾을 수 없습니다: ${raw.take(100)}", Toast.LENGTH_LONG).show()
+                // org ID를 못 찾아도 쿠키는 저장됨 — 앱에서 다시 시도 가능
+                Toast.makeText(this, "org ID를 자동으로 찾지 못했습니다. 다시 시도하세요.", Toast.LENGTH_LONG).show()
                 doneButton.isEnabled = true
-                doneButton.text = "✓ 로그인 완료"
+                doneButton.text = "✓ 다시 시도"
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "파싱 오류: ${e.message}\n응답: ${raw.take(100)}", Toast.LENGTH_LONG).show()
+            Toast.makeText(this, "오류: ${e.message}", Toast.LENGTH_LONG).show()
             doneButton.isEnabled = true
-            doneButton.text = "✓ 로그인 완료"
+            doneButton.text = "✓ 다시 시도"
         }
     }
 
