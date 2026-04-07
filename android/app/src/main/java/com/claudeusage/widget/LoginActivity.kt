@@ -16,8 +16,9 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 
 /**
- * WebView로 claude.ai에 로그인 → 사용량 페이지 스크래핑.
- * API를 추측하지 않고, 사용량 페이지의 DOM에서 직접 데이터를 추출.
+ * WebView로 claude.ai에 로그인.
+ * 로그인 후 "로그인 완료" 버튼 → 쿠키만 저장하고 종료.
+ * org ID, API 호출 없음 — 쿠키 저장이 전부.
  */
 class LoginActivity : AppCompatActivity() {
 
@@ -33,7 +34,6 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var mainWebView: WebView
     private lateinit var doneButton: Button
     private var popupWebView: WebView? = null
-    private var loginCompleted = false
     private val handler = Handler(Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -75,146 +75,24 @@ class LoginActivity : AppCompatActivity() {
         mainWebView.loadUrl(CLAUDE_URL)
     }
 
+    /**
+     * 쿠키만 저장하고 완료. org ID나 API 호출 없음.
+     */
     private fun onDoneClicked() {
-        doneButton.isEnabled = false
-        doneButton.text = "쿠키 저장 중..."
-
-        // 전체 쿠키 저장
         val cookies = CookieManager.getInstance().getCookie("https://claude.ai")
-        if (cookies.isNullOrEmpty()) {
-            Toast.makeText(this, "쿠키가 없습니다. 먼저 로그인하세요.", Toast.LENGTH_SHORT).show()
-            resetButton()
+        if (cookies.isNullOrEmpty() || cookies.length < 20) {
+            Toast.makeText(this, "먼저 로그인을 완료하세요", Toast.LENGTH_SHORT).show()
             return
         }
 
         PreferenceManager.getDefaultSharedPreferences(this).edit()
             .putString("session_key", cookies)
+            .putBoolean("logged_in", true)
             .apply()
 
-        doneButton.text = "API 탐색 중..."
-
-        // JS로 여러 API를 호출하고, 모든 결과를 반환
-        mainWebView.evaluateJavascript("""
-            (async function() {
-                const results = {};
-
-                // 1. 현재 페이지의 모든 XHR/fetch URL 수집은 불가하므로
-                //    직접 여러 엔드포인트를 시도
-
-                // 시도할 엔드포인트 목록
-                const endpoints = [
-                    '/api/organizations',
-                    '/api/auth/session',
-                    '/api/account',
-                    '/api/settings',
-                    '/api/me',
-                ];
-
-                for (const ep of endpoints) {
-                    try {
-                        const r = await fetch(ep, {credentials:'include'});
-                        if (r.ok) {
-                            const t = await r.text();
-                            results[ep] = t.substring(0, 300);
-                        } else {
-                            results[ep] = 'HTTP ' + r.status;
-                        }
-                    } catch(e) {
-                        results[ep] = 'ERR: ' + e.message;
-                    }
-                }
-
-                // 페이지 소스에서 UUID 패턴 찾기
-                const bodyText = document.body?.innerText || '';
-                const allText = document.documentElement?.innerHTML || '';
-                const uuidMatch = allText.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/);
-                results['page_uuid'] = uuidMatch ? uuidMatch[0] : 'none';
-
-                // URL 체크
-                results['url'] = window.location.href;
-
-                // document.cookie
-                results['doc_cookies'] = (document.cookie || '').substring(0, 200);
-
-                return JSON.stringify(results);
-            })();
-        """.trimIndent()) { jsResult ->
-            handleApiProbeResult(jsResult, cookies)
-        }
-    }
-
-    private fun handleApiProbeResult(jsResult: String?, cookies: String) {
-        val raw = jsResult?.trim()
-            ?.removeSurrounding("\"")
-            ?.replace("\\\"", "\"")
-            ?.replace("\\\\", "\\")
-            ?.replace("\\/", "/")
-            ?: "{}"
-
-        try {
-            val gson = com.google.gson.Gson()
-            val results = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
-
-            // 결과에서 org ID 추출 시도
-            var orgId: String? = null
-
-            // /api/organizations 응답에서
-            val orgsResp = results?.get("/api/organizations")?.asString ?: ""
-            if (orgsResp.isNotEmpty() && !orgsResp.startsWith("HTTP") && !orgsResp.startsWith("ERR")) {
-                val uuidMatch = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
-                    .find(orgsResp)
-                if (uuidMatch != null) orgId = uuidMatch.value
-            }
-
-            // 다른 응답에서도 시도
-            if (orgId == null) {
-                for (key in (results?.keySet() ?: emptySet())) {
-                    val value = results?.get(key)?.asString ?: ""
-                    if (value.startsWith("HTTP") || value.startsWith("ERR") || value == "none") continue
-                    val uuidMatch = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
-                        .find(value)
-                    if (uuidMatch != null) {
-                        orgId = uuidMatch.value
-                        break
-                    }
-                }
-            }
-
-            // 페이지에서 찾은 UUID
-            if (orgId == null) {
-                val pageUuid = results?.get("page_uuid")?.asString
-                if (pageUuid != null && pageUuid != "none") orgId = pageUuid
-            }
-
-            if (orgId != null) {
-                PreferenceManager.getDefaultSharedPreferences(this).edit()
-                    .putString("org_id", orgId)
-                    .apply()
-
-                loginCompleted = true
-                Toast.makeText(this, "로그인 성공!", Toast.LENGTH_SHORT).show()
-                setResult(RESULT_LOGGED_IN)
-                finish()
-            } else {
-                // 디버그: 모든 응답 표시
-                val debugInfo = buildString {
-                    results?.keySet()?.forEach { key ->
-                        val v = results.get(key)?.asString ?: ""
-                        append("$key: ${v.take(60)}\n")
-                    }
-                }
-                Toast.makeText(this, "org ID 못 찾음.\n$debugInfo", Toast.LENGTH_LONG).show()
-                resetButton()
-            }
-        } catch (e: Exception) {
-            Toast.makeText(this, "오류: ${e.message}\n원본: ${raw.take(100)}", Toast.LENGTH_LONG).show()
-            resetButton()
-        }
-    }
-
-    private fun resetButton() {
-        doneButton.isEnabled = true
-        doneButton.text = "✓ 다시 시도"
+        Toast.makeText(this, "로그인 성공!", Toast.LENGTH_SHORT).show()
+        setResult(RESULT_LOGGED_IN)
+        finish()
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -234,7 +112,6 @@ class LoginActivity : AppCompatActivity() {
                     request?.requestHeaders?.remove("X-Requested-With")
                     return super.shouldInterceptRequest(view, request)
                 }
-
                 override fun shouldOverrideUrlLoading(
                     view: WebView?, request: WebResourceRequest?
                 ): Boolean = false
@@ -258,7 +135,6 @@ class LoginActivity : AppCompatActivity() {
                     resultMsg?.sendToTarget()
                     return true
                 }
-
                 override fun onCloseWindow(window: WebView?) { closePopup() }
             }
         }
@@ -281,7 +157,6 @@ class LoginActivity : AppCompatActivity() {
                     request?.requestHeaders?.remove("X-Requested-With")
                     return super.shouldInterceptRequest(view, request)
                 }
-
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     if (url != null && url.contains("claude.ai") &&
@@ -289,12 +164,10 @@ class LoginActivity : AppCompatActivity() {
                         handler.postDelayed({ closePopup() }, 1500)
                     }
                 }
-
                 override fun shouldOverrideUrlLoading(
                     view: WebView?, request: WebResourceRequest?
                 ): Boolean = false
             }
-
             webChromeClient = object : WebChromeClient() {
                 override fun onCloseWindow(window: WebView?) { closePopup() }
             }
