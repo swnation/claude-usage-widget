@@ -51,6 +51,19 @@ class ClaudeWebClient(private var sessionKey: String) {
     }
 
     private fun fetchOrgId(): Result<String> {
+        // 방법 1: /api/organizations 직접 호출
+        try {
+            val orgRequest = buildRequest("/api/organizations")
+            client.newCall(orgRequest).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val orgId = parseOrgIdFromOrganizations(body)
+                    if (orgId != null) return Result.success(orgId)
+                }
+            }
+        } catch (_: Exception) {}
+
+        // 방법 2: /api/bootstrap에서 추출
         val request = buildRequest("/api/bootstrap")
         return try {
             client.newCall(request).execute().use { response ->
@@ -70,7 +83,6 @@ class ClaudeWebClient(private var sessionKey: String) {
 
                 if (orgId != null) Result.success(orgId)
                 else {
-                    // 디버깅: 각 키의 타입과 일부 내용 표시
                     val debug = json.keySet().joinToString(", ") { key ->
                         val el = json.get(key)
                         val type = when {
@@ -88,6 +100,27 @@ class ClaudeWebClient(private var sessionKey: String) {
         } catch (e: Exception) {
             Result.failure(Exception("네트워크 오류: ${e.message}"))
         }
+    }
+
+    /** /api/organizations 응답에서 org ID 추출 */
+    private fun parseOrgIdFromOrganizations(body: String): String? {
+        return try {
+            val element = gson.fromJson(body, JsonElement::class.java)
+            if (element.isJsonArray) {
+                // 배열이면 첫 번째 org의 uuid
+                element.asJsonArray.firstOrNull()?.let { safeObject(it) }?.let {
+                    safeString(it, "uuid") ?: safeString(it, "id")
+                }
+            } else if (element.isJsonObject) {
+                val json = element.asJsonObject
+                // 직접 uuid
+                safeString(json, "uuid") ?: safeString(json, "id")
+                // 또는 data 배열 안에
+                ?: safeArray(json, "data")?.firstOrNull()?.let { safeObject(it) }?.let {
+                    safeString(it, "uuid") ?: safeString(it, "id")
+                }
+            } else null
+        } catch (_: Exception) { null }
     }
 
     private fun fetchRateLimits(orgId: String): Result<PlanUsage> {
@@ -309,6 +342,29 @@ class ClaudeWebClient(private var sessionKey: String) {
             val obj = safeObject(elem) ?: return@forEach
             val orgUuid = safeObject(obj.get("organization"))?.let { safeString(it, "uuid") }
             if (orgUuid != null) return orgUuid
+        }
+
+        // statsig.user에서 찾기
+        safeObject(json.get("statsig"))?.let { statsig ->
+            safeObject(statsig.get("user"))?.let { user ->
+                safeString(user, "organizationID")?.let { return it }
+                safeString(user, "organization_id")?.let { return it }
+                safeString(user, "orgID")?.let { return it }
+                safeString(user, "userID")?.let { /* userID는 org가 아님, 스킵 */ }
+                // custom 필드
+                safeObject(user.get("custom"))?.let { custom ->
+                    safeString(custom, "organizationID")?.let { return it }
+                    safeString(custom, "organization_id")?.let { return it }
+                }
+            }
+        }
+
+        // growthbook.user에서 찾기
+        safeObject(json.get("growthbook"))?.let { gb ->
+            safeObject(gb.get("user"))?.let { user ->
+                safeString(user, "organizationID")?.let { return it }
+                safeString(user, "organization_id")?.let { return it }
+            }
         }
 
         // 직접 필드
