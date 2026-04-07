@@ -27,6 +27,7 @@ class MainActivity : AppCompatActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var isServiceRunning = false
     private var scrapeWebView: WebView? = null
+    private var autoRefreshRunnable: Runnable? = null
 
     private lateinit var statusText: TextView
     private lateinit var planNameText: TextView
@@ -57,6 +58,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        stopAutoRefresh()
         scrapeWebView?.destroy()
         super.onDestroy()
     }
@@ -138,6 +140,7 @@ class MainActivity : AppCompatActivity() {
                 .putString("refresh_interval", refreshInput.text.toString().trim())
                 .apply()
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show()
+            startAutoRefresh()  // 새 주기로 재시작
         }
     }
 
@@ -151,11 +154,40 @@ class MainActivity : AppCompatActivity() {
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
 
-        // 저장된 사용량 데이터가 있으면 표시 (자동 스크래핑 안 함)
+        // 저장된 사용량 데이터가 있으면 먼저 표시
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) {
             displayUsageFromJson(lastUsage)
         }
+
+        // 로그인되어 있으면 자동 갱신 시작
+        if (loggedIn) {
+            fetchUsageViaScraping()
+            startAutoRefresh()
+        }
+    }
+
+    private fun startAutoRefresh() {
+        stopAutoRefresh()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val intervalMs = (prefs.getString("refresh_interval", "120")?.toLongOrNull() ?: 120) * 1000
+        if (intervalMs < 30000) return  // 최소 30초
+
+        autoRefreshRunnable = object : Runnable {
+            override fun run() {
+                if (PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                        .getBoolean("logged_in", false)) {
+                    fetchUsageViaScraping()
+                }
+                handler.postDelayed(this, intervalMs)
+            }
+        }
+        handler.postDelayed(autoRefreshRunnable!!, intervalMs)
+    }
+
+    private fun stopAutoRefresh() {
+        autoRefreshRunnable?.let { handler.removeCallbacks(it) }
+        autoRefreshRunnable = null
     }
 
     private fun updateLoginUI(loggedIn: Boolean) {
