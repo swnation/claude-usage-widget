@@ -80,10 +80,19 @@ class LoginActivity : AppCompatActivity() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     if (loginCompleted) return
-                    // claude.ai 메인 페이지(로그인 완료)에 도달하면 org ID를 JS로 가져옴
-                    if (url != null && url.contains("claude.ai") &&
-                        !url.contains("/login") && !url.contains("/verify")) {
-                        fetchOrgIdViaJs(view)
+                    if (url == null) return
+
+                    // claude.ai에 있고, 로그인/인증 페이지가 아니면 org ID 탐색
+                    val isMainPage = url.contains("claude.ai") &&
+                        !url.contains("/login") &&
+                        !url.contains("/verify") &&
+                        !url.contains("/oauth") &&
+                        !url.contains("/auth") &&
+                        !url.contains("/signup")
+
+                    if (isMainPage) {
+                        // 페이지 로드 후 약간 대기 (세션 안정화)
+                        handler.postDelayed({ fetchOrgIdViaJs(view) }, 2000)
                     }
                 }
 
@@ -135,9 +144,15 @@ class LoginActivity : AppCompatActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    if (url != null && url.contains("claude.ai") && !url.contains("login")) {
-                        closePopup()
-                        mainWebView.reload()
+                    if (url == null) return
+                    // OAuth 완료 후 claude.ai로 돌아오면 팝업 닫기
+                    val isBackToClaude = url.contains("claude.ai") &&
+                        !url.contains("/login") && !url.contains("/oauth")
+                    if (isBackToClaude) {
+                        handler.postDelayed({
+                            closePopup()
+                            mainWebView.loadUrl("https://claude.ai/")
+                        }, 1000)
                     }
                 }
 
