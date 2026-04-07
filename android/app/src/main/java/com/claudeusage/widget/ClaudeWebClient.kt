@@ -1,6 +1,8 @@
 package com.claudeusage.widget
 
 import com.google.gson.Gson
+import com.google.gson.JsonArray
+import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -62,18 +64,10 @@ class ClaudeWebClient(private var sessionKey: String) {
                     ?: return Result.failure(Exception("빈 응답"))
                 val json = gson.fromJson(body, JsonObject::class.java)
 
-                val orgId = json.getAsJsonArray("account")
-                    ?.firstOrNull()?.asJsonObject
-                    ?.get("organization")?.asJsonObject
-                    ?.get("uuid")?.asString
-                    ?: json.get("organization_uuid")?.asString
-                    ?: json.getAsJsonArray("memberships")
-                        ?.firstOrNull()?.asJsonObject
-                        ?.get("organization")?.asJsonObject
-                        ?.get("uuid")?.asString
+                val orgId = findOrgId(json)
 
                 if (orgId != null) Result.success(orgId)
-                else Result.failure(Exception("조직 ID를 찾을 수 없습니다"))
+                else Result.failure(Exception("조직 ID를 찾을 수 없습니다. 응답 키: ${json.keySet()}"))
             }
         } catch (e: Exception) {
             Result.failure(Exception("네트워크 오류: ${e.message}"))
@@ -127,9 +121,9 @@ class ClaudeWebClient(private var sessionKey: String) {
 
             // 방법 2: rate_limits 배열에서 window 크기로 구분
             if (sessionLimit == null || weeklyLimit == null) {
-                val limitsArray = json.getAsJsonArray("rate_limits")
-                    ?: json.getAsJsonArray("data")
-                    ?: json.getAsJsonArray("limits")
+                val limitsArray = safeArray(json, "rate_limits")
+                    ?: safeArray(json, "data")
+                    ?: safeArray(json, "limits")
 
                 if (limitsArray != null) {
                     for (element in limitsArray) {
@@ -242,6 +236,63 @@ class ClaudeWebClient(private var sessionKey: String) {
             plan != null -> plan.replaceFirstChar { it.uppercase() }
             else -> "Max"
         }
+    }
+
+    /** JsonObject에서 안전하게 JsonArray를 꺼냄 (null/JsonNull 방지) */
+    private fun safeArray(json: JsonObject, key: String): JsonArray? {
+        val element = json.get(key) ?: return null
+        return if (element.isJsonArray) element.asJsonArray else null
+    }
+
+    /** JsonObject에서 안전하게 JsonObject를 꺼냄 */
+    private fun safeObject(element: JsonElement?): JsonObject? {
+        if (element == null || element.isJsonNull) return null
+        return if (element.isJsonObject) element.asJsonObject else null
+    }
+
+    /** 다양한 bootstrap 응답 구조에서 org ID를 찾음 */
+    private fun findOrgId(json: JsonObject): String? {
+        // account 배열
+        safeArray(json, "account")?.forEach { elem ->
+            val obj = safeObject(elem) ?: return@forEach
+            val orgUuid = safeObject(obj.get("organization"))?.get("uuid")?.asString
+            if (orgUuid != null) return orgUuid
+        }
+
+        // 직접 필드
+        json.get("organization_uuid")?.let {
+            if (!it.isJsonNull) return it.asString
+        }
+
+        // memberships 배열
+        safeArray(json, "memberships")?.forEach { elem ->
+            val obj = safeObject(elem) ?: return@forEach
+            val orgUuid = safeObject(obj.get("organization"))?.get("uuid")?.asString
+            if (orgUuid != null) return orgUuid
+        }
+
+        // organizations 배열
+        safeArray(json, "organizations")?.forEach { elem ->
+            val obj = safeObject(elem) ?: return@forEach
+            val uuid = obj.get("uuid")?.asString ?: obj.get("id")?.asString
+            if (uuid != null) return uuid
+        }
+
+        // 최상위에서 uuid/id 직접 탐색
+        json.get("uuid")?.let { if (!it.isJsonNull) return it.asString }
+        json.get("id")?.let { if (!it.isJsonNull) return it.asString }
+
+        // 모든 키를 순회하며 uuid 포함된 객체 찾기
+        for (key in json.keySet()) {
+            val value = json.get(key)
+            if (value != null && value.isJsonObject) {
+                val obj = value.asJsonObject
+                val uuid = obj.get("uuid")?.let { if (!it.isJsonNull) it.asString else null }
+                if (uuid != null) return uuid
+            }
+        }
+
+        return null
     }
 
     fun checkSession(): Boolean {
