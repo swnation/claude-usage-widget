@@ -29,6 +29,8 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var container: FrameLayout
     private lateinit var mainWebView: WebView
     private lateinit var doneButton: Button
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var googleRedirectRunnable: Runnable? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -55,6 +57,20 @@ class LoginActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView?, request: WebResourceRequest?
                 ): Boolean = false
+
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    // Google OAuth 후 "잠시만 기다려주세요"에서 멈추면
+                    // 5초 후 자동으로 claude.ai로 이동
+                    googleRedirectRunnable?.let { handler.removeCallbacks(it) }
+                    if (url != null && (url.contains("accounts.google.com") ||
+                        url.contains("accounts.youtube.com"))) {
+                        googleRedirectRunnable = Runnable {
+                            view?.loadUrl("https://claude.ai/")
+                        }
+                        handler.postDelayed(googleRedirectRunnable!!, 5000)
+                    }
+                }
             }
         }
 
@@ -112,6 +128,7 @@ class LoginActivity : AppCompatActivity() {
     }
 
     override fun onDestroy() {
+        googleRedirectRunnable?.let { handler.removeCallbacks(it) }
         mainWebView.destroy()
         super.onDestroy()
     }
