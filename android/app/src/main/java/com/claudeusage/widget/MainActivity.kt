@@ -55,9 +55,24 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
         initViews()
         loadSettings()
+        handleAutoRefreshIntent(intent)
 
-        // 앱 시작 시 업데이트 확인
         AppUpdater(this).checkForUpdate()
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        // 알림 탭으로 앱이 다시 열릴 때
+        handleAutoRefreshIntent(intent)
+    }
+
+    private fun handleAutoRefreshIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra("auto_refresh", false) == true) {
+            intent.removeExtra("auto_refresh")
+            val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean("logged_in", false)
+            if (loggedIn) fetchUsageViaScraping()
+        }
     }
 
     @Deprecated("Use OnBackPressedCallback")
@@ -434,13 +449,16 @@ class MainActivity : AppCompatActivity() {
             .putString("last_usage", json)
             .apply()
 
-        // 서비스가 실행 중이면 알림도 즉시 갱신
+        // 서비스 알림 갱신
         if (isServiceRunning) {
             val intent = Intent(this, UsageMonitorService::class.java).apply {
                 action = "com.claudeusage.widget.NOTIFY_UPDATE"
             }
             startService(intent)
         }
+
+        // 홈 화면 위젯 갱신
+        UsageWidgetProvider.updateAll(this)
     }
 
     private fun displayUsageFromJson(json: String) {
