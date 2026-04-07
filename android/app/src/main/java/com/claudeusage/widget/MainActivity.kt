@@ -217,7 +217,7 @@ class MainActivity : AppCompatActivity() {
         scrapeWebView = wv
         // 레이아웃에 추가 (보이지 않음)
         (findViewById<View>(android.R.id.content) as? android.view.ViewGroup)?.addView(
-            wv, ViewGroup.LayoutParams(1, 1)
+            wv, ViewGroup.LayoutParams(400, 800)
         )
 
         // 설정 > 사용량 페이지 로드
@@ -288,8 +288,9 @@ class MainActivity : AppCompatActivity() {
 
             val url = json?.get("url")?.asString ?: ""
             val percentMatches = json?.getAsJsonArray("percentMatches")
-            val resetMatches = json?.getAsJsonArray("resetMatches")
-            val headings = json?.getAsJsonArray("headings")
+            val resetMatches = try { json?.getAsJsonArray("resetMatches") } catch (_: Exception) { null }
+            val headings = try { json?.getAsJsonArray("headings") } catch (_: Exception) { null }
+            val barValues = try { json?.getAsJsonArray("barValues") } catch (_: Exception) { null }
             val bodyPreview = json?.get("bodyPreview")?.asString ?: ""
 
             // 퍼센트 값 추출
@@ -301,6 +302,14 @@ class MainActivity : AppCompatActivity() {
 
             val resets = mutableListOf<String>()
             resetMatches?.forEach { resets.add(it.asString) }
+
+            // barValues에서도 퍼센트 추출 시도
+            if (percents.isEmpty() && barValues != null) {
+                barValues.forEach {
+                    val v = it.asString.toIntOrNull()
+                    if (v != null && v in 0..100) percents.add(v)
+                }
+            }
 
             if (percents.isNotEmpty()) {
                 // 사용량 데이터 구성
