@@ -148,7 +148,7 @@ class MainActivity : AppCompatActivity() {
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
 
-        if (key.isNotEmpty()) fetchAndDisplay()
+        if (key.isNotEmpty() && orgId.isNotEmpty()) fetchAndDisplay()
     }
 
     private fun updateLoginUI(loggedIn: Boolean) {
