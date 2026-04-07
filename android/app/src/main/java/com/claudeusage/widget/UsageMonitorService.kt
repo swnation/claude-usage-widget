@@ -45,10 +45,10 @@ class UsageMonitorService : Service() {
         super.onCreate()
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannels()
-        webClient = ClaudeWebClient(
-            PreferenceManager.getDefaultSharedPreferences(this)
-                .getString("session_key", "") ?: ""
-        )
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        webClient = ClaudeWebClient(prefs.getString("session_key", "") ?: "")
+        val orgId = prefs.getString("org_id", "") ?: ""
+        if (orgId.isNotEmpty()) webClient.setOrgId(orgId)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -81,6 +81,8 @@ class UsageMonitorService : Service() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val intervalMs = (prefs.getString("refresh_interval", "120")?.toLongOrNull() ?: 120) * 1000
         webClient.updateSessionKey(prefs.getString("session_key", "") ?: "")
+        val orgId = prefs.getString("org_id", "") ?: ""
+        if (orgId.isNotEmpty()) webClient.setOrgId(orgId)
 
         timer?.cancel()
         timer = Timer().apply {

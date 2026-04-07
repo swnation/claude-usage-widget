@@ -36,9 +36,11 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
         if (result.resultCode == LoginActivity.RESULT_LOGGED_IN) {
-            val key = PreferenceManager.getDefaultSharedPreferences(this)
-                .getString("session_key", "") ?: ""
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val key = prefs.getString("session_key", "") ?: ""
+            val orgId = prefs.getString("org_id", "") ?: ""
             webClient.updateSessionKey(key)
+            if (orgId.isNotEmpty()) webClient.setOrgId(orgId)
             updateLoginUI(true)
             fetchAndDisplay()
         }
@@ -81,7 +83,10 @@ class MainActivity : AppCompatActivity() {
 
         logoutButton.setOnClickListener {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .remove("session_key").apply()
+                .remove("session_key")
+                .remove("org_id")
+                .remove("cookies")
+                .apply()
             webClient.updateSessionKey("")
             updateLoginUI(false)
             if (isServiceRunning) {
@@ -135,8 +140,10 @@ class MainActivity : AppCompatActivity() {
         refreshInput.setText(prefs.getString("refresh_interval", "120"))
 
         val key = prefs.getString("session_key", "") ?: ""
+        val orgId = prefs.getString("org_id", "") ?: ""
         webClient = ClaudeWebClient(key)
-        updateLoginUI(key.isNotEmpty())
+        if (orgId.isNotEmpty()) webClient.setOrgId(orgId)
+        updateLoginUI(key.isNotEmpty() && orgId.isNotEmpty())
 
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"

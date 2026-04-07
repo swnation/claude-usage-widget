@@ -24,7 +24,7 @@ class ClaudeWebClient(private var sessionKey: String) {
     private val client = OkHttpClient.Builder()
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
-        .followRedirects(true)   // 리다이렉트 허용
+        .followRedirects(true)
         .followSslRedirects(true)
         .build()
 
@@ -33,7 +33,11 @@ class ClaudeWebClient(private var sessionKey: String) {
 
     fun updateSessionKey(key: String) {
         sessionKey = key.trim()
-        cachedOrgId = null
+    }
+
+    /** org ID를 외부에서 직접 설정 (LoginActivity에서 JS로 가져온 값) */
+    fun setOrgId(orgId: String) {
+        cachedOrgId = orgId
     }
 
     fun fetchUsage(): Result<PlanUsage> {
@@ -41,11 +45,8 @@ class ClaudeWebClient(private var sessionKey: String) {
             return Result.failure(Exception("로그인이 필요합니다"))
         }
 
-        val orgId = cachedOrgId ?: run {
-            val id = fetchOrgId().getOrElse { return Result.failure(it) }
-            cachedOrgId = id
-            id
-        }
+        val orgId = cachedOrgId
+            ?: return Result.failure(Exception("org ID 없음. 다시 로그인하세요."))
 
         return fetchRateLimits(orgId)
     }
