@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.view.View
+import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
