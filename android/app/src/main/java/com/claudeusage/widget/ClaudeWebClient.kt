@@ -70,9 +70,19 @@ class ClaudeWebClient(private var sessionKey: String) {
 
                 if (orgId != null) Result.success(orgId)
                 else {
-                    // 디버깅: account 내부 키도 표시
-                    val accountKeys = safeObject(json.get("account"))?.keySet() ?: "null"
-                    Result.failure(Exception("조직 ID 못 찾음. account 키: $accountKeys"))
+                    // 디버깅: 각 키의 타입과 일부 내용 표시
+                    val debug = json.keySet().joinToString(", ") { key ->
+                        val el = json.get(key)
+                        val type = when {
+                            el == null || el.isJsonNull -> "null"
+                            el.isJsonObject -> "obj(${el.asJsonObject.keySet().take(5)})"
+                            el.isJsonArray -> "arr[${el.asJsonArray.size()}]"
+                            el.isJsonPrimitive -> "\"${el.asString.take(30)}\""
+                            else -> el.javaClass.simpleName
+                        }
+                        "$key=$type"
+                    }
+                    Result.failure(Exception("org ID 못 찾음. $debug"))
                 }
             }
         } catch (e: Exception) {
