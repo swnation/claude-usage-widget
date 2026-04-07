@@ -69,7 +69,11 @@ class ClaudeWebClient(private var sessionKey: String) {
                 val orgId = findOrgId(json)
 
                 if (orgId != null) Result.success(orgId)
-                else Result.failure(Exception("조직 ID를 찾을 수 없습니다. 키: ${json.keySet()}"))
+                else {
+                    // 디버깅: account 내부 키도 표시
+                    val accountKeys = safeObject(json.get("account"))?.keySet() ?: "null"
+                    Result.failure(Exception("조직 ID 못 찾음. account 키: $accountKeys"))
+                }
             }
         } catch (e: Exception) {
             Result.failure(Exception("네트워크 오류: ${e.message}"))
