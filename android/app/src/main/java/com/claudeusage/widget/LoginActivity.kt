@@ -16,8 +16,8 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 
 /**
- * WebView로 claude.ai에 로그인.
- * 로그인 후 "로그인 완료" 버튼을 누르면 쿠키 + org ID를 자동 저장.
+ * WebView로 claude.ai에 로그인 → 사용량 페이지 스크래핑.
+ * API를 추측하지 않고, 사용량 페이지의 DOM에서 직접 데이터를 추출.
  */
 class LoginActivity : AppCompatActivity() {
 
@@ -43,14 +43,12 @@ class LoginActivity : AppCompatActivity() {
         container = FrameLayout(this)
         setContentView(container)
 
-        // WebView
         mainWebView = createWebView()
         container.addView(mainWebView, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        // "로그인 완료" 버튼 (WebView 위에 플로팅)
         doneButton = Button(this).apply {
             text = "✓ 로그인 완료"
             setBackgroundColor(0xFFc084fc.toInt())
@@ -77,21 +75,15 @@ class LoginActivity : AppCompatActivity() {
         mainWebView.loadUrl(CLAUDE_URL)
     }
 
-    /**
-     * "로그인 완료" 버튼 클릭 시:
-     * 1. CookieManager에서 전체 쿠키 저장
-     * 2. JS로 /api/organizations 호출하여 org ID 추출
-     */
     private fun onDoneClicked() {
         doneButton.isEnabled = false
-        doneButton.text = "확인 중..."
+        doneButton.text = "쿠키 저장 중..."
 
         // 전체 쿠키 저장
         val cookies = CookieManager.getInstance().getCookie("https://claude.ai")
         if (cookies.isNullOrEmpty()) {
-            Toast.makeText(this, "쿠키를 찾을 수 없습니다. 먼저 로그인하세요.", Toast.LENGTH_SHORT).show()
-            doneButton.isEnabled = true
-            doneButton.text = "✓ 로그인 완료"
+            Toast.makeText(this, "쿠키가 없습니다. 먼저 로그인하세요.", Toast.LENGTH_SHORT).show()
+            resetButton()
             return
         }
 
@@ -99,89 +91,102 @@ class LoginActivity : AppCompatActivity() {
             .putString("session_key", cookies)
             .apply()
 
-        // JS로 org ID + 사용량 데이터 가져오기 (여러 방법 시도)
+        doneButton.text = "API 탐색 중..."
+
+        // JS로 여러 API를 호출하고, 모든 결과를 반환
         mainWebView.evaluateJavascript("""
             (async function() {
-                try {
-                    // 방법 1: window.__NEXT_DATA__에서 org ID 찾기
-                    let orgId = null;
-                    if (window.__NEXT_DATA__) {
-                        const nd = JSON.stringify(window.__NEXT_DATA__);
-                        const match = nd.match(/"organizationUuid":"([^"]+)"/);
-                        if (match) orgId = match[1];
-                        if (!orgId) {
-                            const match2 = nd.match(/"orgId":"([^"]+)"/);
-                            if (match2) orgId = match2[1];
+                const results = {};
+
+                // 1. 현재 페이지의 모든 XHR/fetch URL 수집은 불가하므로
+                //    직접 여러 엔드포인트를 시도
+
+                // 시도할 엔드포인트 목록
+                const endpoints = [
+                    '/api/organizations',
+                    '/api/auth/session',
+                    '/api/account',
+                    '/api/settings',
+                    '/api/me',
+                ];
+
+                for (const ep of endpoints) {
+                    try {
+                        const r = await fetch(ep, {credentials:'include'});
+                        if (r.ok) {
+                            const t = await r.text();
+                            results[ep] = t.substring(0, 300);
+                        } else {
+                            results[ep] = 'HTTP ' + r.status;
                         }
-                        if (!orgId) {
-                            const match3 = nd.match(/"uuid":"([a-f0-9-]{36})"/);
-                            if (match3) orgId = match3[1];
-                        }
+                    } catch(e) {
+                        results[ep] = 'ERR: ' + e.message;
                     }
-
-                    // 방법 2: meta 태그나 script에서 찾기
-                    if (!orgId) {
-                        const scripts = document.querySelectorAll('script');
-                        for (const s of scripts) {
-                            const text = s.textContent || '';
-                            const match = text.match(/"organizationUuid"\s*:\s*"([^"]+)"/);
-                            if (match) { orgId = match[1]; break; }
-                            const match2 = text.match(/"activeOrganizationUuid"\s*:\s*"([^"]+)"/);
-                            if (match2) { orgId = match2[1]; break; }
-                        }
-                    }
-
-                    // 방법 3: /api/organizations 시도
-                    if (!orgId) {
-                        try {
-                            const resp = await fetch('/api/organizations', {credentials:'include'});
-                            const data = await resp.json();
-                            if (Array.isArray(data) && data.length > 0) {
-                                orgId = data[0].uuid || data[0].id;
-                            }
-                        } catch(e) {}
-                    }
-
-                    // 방법 4: /api/bootstrap에서 찾기
-                    if (!orgId) {
-                        try {
-                            const resp = await fetch('/api/bootstrap', {credentials:'include'});
-                            const text = await resp.text();
-                            const match = text.match(/"uuid"\s*:\s*"([a-f0-9-]{36})"/);
-                            if (match) orgId = match[1];
-                        } catch(e) {}
-                    }
-
-                    // 방법 5: 현재 URL에서 찾기
-                    if (!orgId) {
-                        const match = window.location.href.match(/organizations\/([a-f0-9-]+)/);
-                        if (match) orgId = match[1];
-                    }
-
-                    return JSON.stringify({orgId: orgId || '', cookies: document.cookie});
-                } catch(e) {
-                    return JSON.stringify({orgId: '', error: e.message});
                 }
+
+                // 페이지 소스에서 UUID 패턴 찾기
+                const bodyText = document.body?.innerText || '';
+                const allText = document.documentElement?.innerHTML || '';
+                const uuidMatch = allText.match(/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}/);
+                results['page_uuid'] = uuidMatch ? uuidMatch[0] : 'none';
+
+                // URL 체크
+                results['url'] = window.location.href;
+
+                // document.cookie
+                results['doc_cookies'] = (document.cookie || '').substring(0, 200);
+
+                return JSON.stringify(results);
             })();
-        """.trimIndent()) { result ->
-            handleOrgResponse(result, cookies)
+        """.trimIndent()) { jsResult ->
+            handleApiProbeResult(jsResult, cookies)
         }
     }
 
-    private fun handleOrgResponse(jsResult: String?, cookies: String) {
-        val raw = jsResult
-            ?.trim()
+    private fun handleApiProbeResult(jsResult: String?, cookies: String) {
+        val raw = jsResult?.trim()
             ?.removeSurrounding("\"")
             ?.replace("\\\"", "\"")
             ?.replace("\\\\", "\\")
-            ?: ""
+            ?.replace("\\/", "/")
+            ?: "{}"
 
         try {
             val gson = com.google.gson.Gson()
-            val json = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
-            val orgId = json?.get("orgId")?.asString ?: ""
+            val results = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
 
-            if (orgId.isNotEmpty()) {
+            // 결과에서 org ID 추출 시도
+            var orgId: String? = null
+
+            // /api/organizations 응답에서
+            val orgsResp = results?.get("/api/organizations")?.asString ?: ""
+            if (orgsResp.isNotEmpty() && !orgsResp.startsWith("HTTP") && !orgsResp.startsWith("ERR")) {
+                val uuidMatch = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
+                    .find(orgsResp)
+                if (uuidMatch != null) orgId = uuidMatch.value
+            }
+
+            // 다른 응답에서도 시도
+            if (orgId == null) {
+                for (key in (results?.keySet() ?: emptySet())) {
+                    val value = results?.get(key)?.asString ?: ""
+                    if (value.startsWith("HTTP") || value.startsWith("ERR") || value == "none") continue
+                    val uuidMatch = Regex("[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}")
+                        .find(value)
+                    if (uuidMatch != null) {
+                        orgId = uuidMatch.value
+                        break
+                    }
+                }
+            }
+
+            // 페이지에서 찾은 UUID
+            if (orgId == null) {
+                val pageUuid = results?.get("page_uuid")?.asString
+                if (pageUuid != null && pageUuid != "none") orgId = pageUuid
+            }
+
+            if (orgId != null) {
                 PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putString("org_id", orgId)
                     .apply()
@@ -191,16 +196,25 @@ class LoginActivity : AppCompatActivity() {
                 setResult(RESULT_LOGGED_IN)
                 finish()
             } else {
-                // org ID를 못 찾아도 쿠키는 저장됨 — 앱에서 다시 시도 가능
-                Toast.makeText(this, "org ID를 자동으로 찾지 못했습니다. 다시 시도하세요.", Toast.LENGTH_LONG).show()
-                doneButton.isEnabled = true
-                doneButton.text = "✓ 다시 시도"
+                // 디버그: 모든 응답 표시
+                val debugInfo = buildString {
+                    results?.keySet()?.forEach { key ->
+                        val v = results.get(key)?.asString ?: ""
+                        append("$key: ${v.take(60)}\n")
+                    }
+                }
+                Toast.makeText(this, "org ID 못 찾음.\n$debugInfo", Toast.LENGTH_LONG).show()
+                resetButton()
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "오류: ${e.message}", Toast.LENGTH_LONG).show()
-            doneButton.isEnabled = true
-            doneButton.text = "✓ 다시 시도"
+            Toast.makeText(this, "오류: ${e.message}\n원본: ${raw.take(100)}", Toast.LENGTH_LONG).show()
+            resetButton()
         }
+    }
+
+    private fun resetButton() {
+        doneButton.isEnabled = true
+        doneButton.text = "✓ 다시 시도"
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -270,7 +284,6 @@ class LoginActivity : AppCompatActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    // OAuth 완료 후 claude.ai로 돌아오면 팝업 닫기
                     if (url != null && url.contains("claude.ai") &&
                         !url.contains("/login") && !url.contains("/oauth")) {
                         handler.postDelayed({ closePopup() }, 1500)
