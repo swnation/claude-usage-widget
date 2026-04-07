@@ -5,20 +5,19 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.Message
+import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
+import android.widget.Button
 import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 
 /**
- * WebView로 claude.ai에 직접 로그인.
- * 로그인 성공 후:
- * 1. JavaScript로 /api/organizations를 호출하여 org ID 추출
- * 2. org ID + 전체 쿠키를 저장
- * → OkHttp가 아닌 WebView 컨텍스트에서 API를 호출하므로 쿠키 문제 없음
+ * WebView로 claude.ai에 로그인.
+ * 로그인 후 "로그인 완료" 버튼을 누르면 쿠키 + org ID를 자동 저장.
  */
 class LoginActivity : AppCompatActivity() {
 
@@ -32,6 +31,7 @@ class LoginActivity : AppCompatActivity() {
 
     private lateinit var container: FrameLayout
     private lateinit var mainWebView: WebView
+    private lateinit var doneButton: Button
     private var popupWebView: WebView? = null
     private var loginCompleted = false
     private val handler = Handler(Looper.getMainLooper())
@@ -43,11 +43,31 @@ class LoginActivity : AppCompatActivity() {
         container = FrameLayout(this)
         setContentView(container)
 
+        // WebView
         mainWebView = createWebView()
         container.addView(mainWebView, ViewGroup.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
+
+        // "로그인 완료" 버튼 (WebView 위에 플로팅)
+        doneButton = Button(this).apply {
+            text = "✓ 로그인 완료"
+            setBackgroundColor(0xFFc084fc.toInt())
+            setTextColor(0xFFFFFFFF.toInt())
+            textSize = 16f
+            setPadding(48, 24, 48, 24)
+            elevation = 8f
+            setOnClickListener { onDoneClicked() }
+        }
+        val btnParams = FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply {
+            gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
+            bottomMargin = 80
+        }
+        container.addView(doneButton, btnParams)
 
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
@@ -55,6 +75,91 @@ class LoginActivity : AppCompatActivity() {
         }
 
         mainWebView.loadUrl(CLAUDE_URL)
+    }
+
+    /**
+     * "로그인 완료" 버튼 클릭 시:
+     * 1. CookieManager에서 전체 쿠키 저장
+     * 2. JS로 /api/organizations 호출하여 org ID 추출
+     */
+    private fun onDoneClicked() {
+        doneButton.isEnabled = false
+        doneButton.text = "확인 중..."
+
+        // 전체 쿠키 저장
+        val cookies = CookieManager.getInstance().getCookie("https://claude.ai")
+        if (cookies.isNullOrEmpty()) {
+            Toast.makeText(this, "쿠키를 찾을 수 없습니다. 먼저 로그인하세요.", Toast.LENGTH_SHORT).show()
+            doneButton.isEnabled = true
+            doneButton.text = "✓ 로그인 완료"
+            return
+        }
+
+        PreferenceManager.getDefaultSharedPreferences(this).edit()
+            .putString("session_key", cookies)
+            .apply()
+
+        // JS로 org ID 가져오기
+        mainWebView.evaluateJavascript("""
+            (async function() {
+                try {
+                    const resp = await fetch('/api/organizations', {credentials: 'include'});
+                    const text = await resp.text();
+                    return text;
+                } catch(e) {
+                    return JSON.stringify({error: e.message});
+                }
+            })();
+        """.trimIndent()) { result ->
+            handleOrgResponse(result, cookies)
+        }
+    }
+
+    private fun handleOrgResponse(jsResult: String?, cookies: String) {
+        // evaluateJavascript returns a JSON-encoded string (with quotes)
+        val raw = jsResult
+            ?.trim()
+            ?.removeSurrounding("\"")
+            ?.replace("\\\"", "\"")
+            ?.replace("\\\\", "\\")
+            ?: ""
+
+        try {
+            val gson = com.google.gson.Gson()
+            val element = gson.fromJson(raw, com.google.gson.JsonElement::class.java)
+
+            var orgId: String? = null
+
+            if (element.isJsonArray) {
+                val arr = element.asJsonArray
+                if (arr.size() > 0) {
+                    val first = arr[0].asJsonObject
+                    orgId = first.get("uuid")?.asString ?: first.get("id")?.asString
+                }
+            } else if (element.isJsonObject) {
+                val obj = element.asJsonObject
+                orgId = obj.get("uuid")?.asString ?: obj.get("id")?.asString
+            }
+
+            if (orgId != null) {
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putString("org_id", orgId)
+                    .apply()
+
+                loginCompleted = true
+                Toast.makeText(this, "로그인 성공! (org: ${orgId.take(8)}...)", Toast.LENGTH_SHORT).show()
+                setResult(RESULT_LOGGED_IN)
+                finish()
+            } else {
+                Toast.makeText(this, "org ID를 찾을 수 없습니다: ${raw.take(100)}", Toast.LENGTH_LONG).show()
+                doneButton.isEnabled = true
+                doneButton.text = "✓ 로그인 완료"
+            }
+        } catch (e: Exception) {
+            Toast.makeText(this, "파싱 오류: ${e.message}\n응답: ${raw.take(100)}", Toast.LENGTH_LONG).show()
+            doneButton.isEnabled = true
+            doneButton.text = "✓ 로그인 완료"
+        }
     }
 
     @SuppressLint("SetJavaScriptEnabled")
@@ -67,33 +172,12 @@ class LoginActivity : AppCompatActivity() {
             settings.userAgentString = CHROME_UA
             settings.databaseEnabled = true
 
-            addJavascriptInterface(JsBridge(), "AndroidBridge")
-
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(
                     view: WebView?, request: WebResourceRequest?
                 ): WebResourceResponse? {
                     request?.requestHeaders?.remove("X-Requested-With")
                     return super.shouldInterceptRequest(view, request)
-                }
-
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    if (loginCompleted) return
-                    if (url == null) return
-
-                    // claude.ai에 있고, 로그인/인증 페이지가 아니면 org ID 탐색
-                    val isMainPage = url.contains("claude.ai") &&
-                        !url.contains("/login") &&
-                        !url.contains("/verify") &&
-                        !url.contains("/oauth") &&
-                        !url.contains("/auth") &&
-                        !url.contains("/signup")
-
-                    if (isMainPage) {
-                        // 페이지 로드 후 약간 대기 (세션 안정화)
-                        handler.postDelayed({ fetchOrgIdViaJs(view) }, 2000)
-                    }
                 }
 
                 override fun shouldOverrideUrlLoading(
@@ -108,11 +192,12 @@ class LoginActivity : AppCompatActivity() {
                 ): Boolean {
                     val popup = createPopupWebView()
                     popupWebView = popup
-                    container.addView(popup, ViewGroup.LayoutParams(
+                    container.addView(popup, 0, ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
                     ))
                     mainWebView.visibility = View.GONE
+                    doneButton.visibility = View.GONE
                     val transport = resultMsg?.obj as? WebView.WebViewTransport
                     transport?.webView = popup
                     resultMsg?.sendToTarget()
@@ -144,15 +229,10 @@ class LoginActivity : AppCompatActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    if (url == null) return
                     // OAuth 완료 후 claude.ai로 돌아오면 팝업 닫기
-                    val isBackToClaude = url.contains("claude.ai") &&
-                        !url.contains("/login") && !url.contains("/oauth")
-                    if (isBackToClaude) {
-                        handler.postDelayed({
-                            closePopup()
-                            mainWebView.loadUrl("https://claude.ai/")
-                        }, 1000)
+                    if (url != null && url.contains("claude.ai") &&
+                        !url.contains("/login") && !url.contains("/oauth")) {
+                        handler.postDelayed({ closePopup() }, 1500)
                     }
                 }
 
@@ -167,85 +247,12 @@ class LoginActivity : AppCompatActivity() {
         }
     }
 
-    /**
-     * WebView 안에서 JavaScript로 /api/organizations를 fetch.
-     * WebView의 쿠키가 자동으로 포함되므로 인증 문제 없음.
-     */
-    private fun fetchOrgIdViaJs(view: WebView?) {
-        view?.evaluateJavascript("""
-            (async function() {
-                try {
-                    const resp = await fetch('/api/organizations', {credentials: 'include'});
-                    const data = await resp.json();
-
-                    let orgId = null;
-                    if (Array.isArray(data) && data.length > 0) {
-                        orgId = data[0].uuid || data[0].id;
-                    } else if (data && data.uuid) {
-                        orgId = data.uuid;
-                    }
-
-                    // 쿠키도 같이 보냄
-                    const cookies = document.cookie;
-
-                    AndroidBridge.onOrgFound(
-                        orgId || '',
-                        cookies || '',
-                        JSON.stringify(data).substring(0, 500)
-                    );
-                } catch(e) {
-                    AndroidBridge.onOrgFound('', '', 'fetch error: ' + e.message);
-                }
-            })();
-        """.trimIndent(), null)
-    }
-
-    /** JavaScript에서 호출하는 브릿지 */
-    inner class JsBridge {
-        @JavascriptInterface
-        fun onOrgFound(orgId: String, cookies: String, debug: String) {
-            handler.post {
-                if (loginCompleted) return@post
-
-                val prefs = PreferenceManager.getDefaultSharedPreferences(this@LoginActivity)
-
-                if (orgId.isNotEmpty()) {
-                    // org ID를 직접 저장
-                    prefs.edit()
-                        .putString("org_id", orgId)
-                        .putString("cookies", cookies)
-                        .apply()
-
-                    // WebView CookieManager에서도 전체 쿠키 저장
-                    val allCookies = CookieManager.getInstance()
-                        .getCookie("https://claude.ai") ?: cookies
-                    prefs.edit()
-                        .putString("session_key", allCookies)
-                        .putBoolean("is_full_cookie", true)
-                        .apply()
-
-                    loginCompleted = true
-                    Toast.makeText(this@LoginActivity, "로그인 성공!", Toast.LENGTH_SHORT).show()
-                    setResult(RESULT_LOGGED_IN)
-                    finish()
-                } else {
-                    // org ID를 못 찾음 - 디버그 표시
-                    Toast.makeText(this@LoginActivity,
-                        "org ID 탐색 중... $debug", Toast.LENGTH_LONG).show()
-
-                    // 3초 후 재시도
-                    handler.postDelayed({
-                        if (!loginCompleted) fetchOrgIdViaJs(mainWebView)
-                    }, 3000)
-                }
-            }
-        }
-    }
-
     private fun closePopup() {
         popupWebView?.let { container.removeView(it); it.destroy() }
         popupWebView = null
         mainWebView.visibility = View.VISIBLE
+        doneButton.visibility = View.VISIBLE
+        mainWebView.loadUrl("https://claude.ai/")
     }
 
     @Deprecated("Use OnBackPressedCallback")
