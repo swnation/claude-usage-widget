@@ -271,7 +271,26 @@ class ClaudeWebClient(private var sessionKey: String) {
 
     /** 다양한 bootstrap 응답 구조에서 org ID를 찾음 */
     private fun findOrgId(json: JsonObject): String? {
-        // account 배열
+        // account가 객체인 경우 (실제 응답 구조)
+        safeObject(json.get("account"))?.let { account ->
+            // account.memberships[].organization.uuid
+            safeArray(account, "memberships")?.forEach { elem ->
+                val obj = safeObject(elem) ?: return@forEach
+                val orgUuid = safeObject(obj.get("organization"))?.let { safeString(it, "uuid") }
+                if (orgUuid != null) return orgUuid
+            }
+            // account.uuid 또는 account.organization_uuid
+            safeString(account, "organization_uuid")?.let { return it }
+            safeString(account, "uuid")?.let { return it }
+
+            // account 내부 모든 객체에서 uuid 탐색
+            for (key in account.keySet()) {
+                val child = safeObject(account.get(key)) ?: continue
+                safeString(child, "uuid")?.let { return it }
+            }
+        }
+
+        // account가 배열인 경우
         safeArray(json, "account")?.forEach { elem ->
             val obj = safeObject(elem) ?: return@forEach
             val orgUuid = safeObject(obj.get("organization"))?.let { safeString(it, "uuid") }
@@ -281,7 +300,7 @@ class ClaudeWebClient(private var sessionKey: String) {
         // 직접 필드
         safeString(json, "organization_uuid")?.let { return it }
 
-        // memberships 배열
+        // memberships 배열 (최상위)
         safeArray(json, "memberships")?.forEach { elem ->
             val obj = safeObject(elem) ?: return@forEach
             val orgUuid = safeObject(obj.get("organization"))?.let { safeString(it, "uuid") }
@@ -299,10 +318,15 @@ class ClaudeWebClient(private var sessionKey: String) {
         safeString(json, "uuid")?.let { return it }
         safeString(json, "id")?.let { return it }
 
-        // 모든 키를 순회하며 uuid가 있는 객체 찾기
+        // 모든 최상위 키를 순회하며 uuid가 있는 객체 찾기
         for (key in json.keySet()) {
             val obj = safeObject(json.get(key)) ?: continue
             safeString(obj, "uuid")?.let { return it }
+            // 한 단계 더 깊이
+            for (childKey in obj.keySet()) {
+                val child = safeObject(obj.get(childKey)) ?: continue
+                safeString(child, "uuid")?.let { return it }
+            }
         }
 
         return null
