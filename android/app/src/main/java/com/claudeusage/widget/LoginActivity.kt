@@ -2,11 +2,10 @@ package com.claudeusage.widget
 
 import android.annotation.SuppressLint
 import android.graphics.Bitmap
-import android.net.Uri
 import android.os.Bundle
 import android.os.Message
-import android.view.View
 import android.view.ViewGroup
+import android.view.View
 import android.webkit.*
 import android.widget.FrameLayout
 import android.widget.Toast
@@ -15,15 +14,13 @@ import androidx.preference.PreferenceManager
 
 /**
  * WebView로 claude.ai에 직접 로그인.
- * Google OAuth 팝업을 지원하기 위해 멀티 윈도우 + Chrome user agent 사용.
- * 로그인 성공 후 sessionKey 쿠키를 자동 추출하여 저장.
+ * X-Requested-With 헤더 제거로 Google OAuth WebView 차단 우회.
  */
 class LoginActivity : AppCompatActivity() {
 
     companion object {
         const val CLAUDE_URL = "https://claude.ai/login"
         const val RESULT_LOGGED_IN = 100
-        // Google이 차단하지 않도록 최신 Chrome UA 사용
         const val CHROME_UA = "Mozilla/5.0 (Linux; Android 14; Pixel 8) " +
                 "AppleWebKit/537.36 (KHTML, like Gecko) " +
                 "Chrome/131.0.0.0 Mobile Safari/537.36"
@@ -46,7 +43,6 @@ class LoginActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        // 쿠키 허용
         CookieManager.getInstance().apply {
             setAcceptCookie(true)
             setAcceptThirdPartyCookies(mainWebView, true)
@@ -64,13 +60,18 @@ class LoginActivity : AppCompatActivity() {
             settings.setSupportMultipleWindows(true)
             settings.userAgentString = CHROME_UA
             settings.databaseEnabled = true
-            settings.allowContentAccess = true
-            settings.loadWithOverviewMode = true
-            settings.useWideViewPort = true
+
+            // Google이 WebView를 감지하는 X-Requested-With 헤더 제거
+            WebView.setWebContentsDebuggingEnabled(false)
 
             webViewClient = object : WebViewClient() {
-                override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
-                    super.onPageStarted(view, url, favicon)
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    // X-Requested-With 헤더를 제거하여 Google OAuth 차단 우회
+                    request?.requestHeaders?.remove("X-Requested-With")
+                    return super.shouldInterceptRequest(view, request)
                 }
 
                 override fun onPageFinished(view: WebView?, url: String?) {
@@ -81,14 +82,10 @@ class LoginActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
-                ): Boolean {
-                    // 모든 URL을 WebView 내에서 처리
-                    return false
-                }
+                ): Boolean = false
             }
 
             webChromeClient = object : WebChromeClient() {
-                // Google OAuth 팝업 처리
                 override fun onCreateWindow(
                     view: WebView?,
                     isDialog: Boolean,
@@ -97,7 +94,6 @@ class LoginActivity : AppCompatActivity() {
                 ): Boolean {
                     val popup = createPopupWebView()
                     popupWebView = popup
-
                     container.addView(popup, ViewGroup.LayoutParams(
                         ViewGroup.LayoutParams.MATCH_PARENT,
                         ViewGroup.LayoutParams.MATCH_PARENT
@@ -129,12 +125,18 @@ class LoginActivity : AppCompatActivity() {
             CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
 
             webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?,
+                    request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    request?.requestHeaders?.remove("X-Requested-With")
+                    return super.shouldInterceptRequest(view, request)
+                }
+
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    // OAuth 완료 후 claude.ai로 돌아오면 팝업 닫기
-                    if (url != null && url.contains("claude.ai")) {
+                    if (url != null && url.contains("claude.ai") && !url.contains("login")) {
                         closePopup()
-                        // 메인 WebView 리로드하여 쿠키 확인
                         mainWebView.reload()
                     }
                     checkForSessionKey(url)
@@ -143,9 +145,7 @@ class LoginActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView?,
                     request: WebResourceRequest?
-                ): Boolean {
-                    return false
-                }
+                ): Boolean = false
             }
 
             webChromeClient = object : WebChromeClient() {
