@@ -30,6 +30,7 @@ class UsageMonitorService : Service() {
         const val NOTIFICATION_ID = 1001
         const val ALERT_CHANNEL_ID = "claude_usage_alert"
         const val ACTION_STOP = "com.claudeusage.widget.STOP_SERVICE"
+        const val ACTION_NOTIFY_UPDATE = "com.claudeusage.widget.NOTIFY_UPDATE"
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, UsageMonitorService::class.java))
@@ -52,9 +53,13 @@ class UsageMonitorService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_NOTIFY_UPDATE -> {
+                // 앱에서 새로고침 후 알림 즉시 갱신
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(loadSavedUsage()))
+                return START_STICKY
+            }
         }
         startForeground(NOTIFICATION_ID, buildNotification(loadSavedUsage()))
         startPolling()

@@ -386,6 +386,14 @@ class MainActivity : AppCompatActivity() {
         PreferenceManager.getDefaultSharedPreferences(this).edit()
             .putString("last_usage", json)
             .apply()
+
+        // 서비스가 실행 중이면 알림도 즉시 갱신
+        if (isServiceRunning) {
+            val intent = Intent(this, UsageMonitorService::class.java).apply {
+                action = "com.claudeusage.widget.NOTIFY_UPDATE"
+            }
+            startService(intent)
+        }
     }
 
     private fun displayUsageFromJson(json: String) {
