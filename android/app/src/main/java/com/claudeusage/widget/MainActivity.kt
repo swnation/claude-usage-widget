@@ -55,6 +55,9 @@ class MainActivity : AppCompatActivity() {
         requestNotificationPermission()
         initViews()
         loadSettings()
+
+        // 앱 시작 시 업데이트 확인
+        AppUpdater(this).checkForUpdate()
     }
 
     override fun onDestroy() {
