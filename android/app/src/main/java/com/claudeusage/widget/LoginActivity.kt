@@ -2,7 +2,9 @@ package com.claudeusage.widget
 
 import android.annotation.SuppressLint
 import android.os.Bundle
+import android.os.Message
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.Button
@@ -13,8 +15,7 @@ import androidx.preference.PreferenceManager
 
 /**
  * WebView로 claude.ai에 로그인.
- * 팝업 없이 단일 WebView에서 처리 (Google OAuth 호환).
- * 로그인 후 "로그인 완료" 버튼 → 쿠키만 저장하고 종료.
+ * Google OAuth 팝업 지원 — 팝업에서 인증 완료 후 자동으로 메인으로 복귀.
  */
 class LoginActivity : AppCompatActivity() {
 
@@ -29,6 +30,7 @@ class LoginActivity : AppCompatActivity() {
     private lateinit var container: FrameLayout
     private lateinit var mainWebView: WebView
     private lateinit var doneButton: Button
+    private var popupWebView: WebView? = null
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,8 +44,8 @@ class LoginActivity : AppCompatActivity() {
             settings.domStorageEnabled = true
             settings.userAgentString = CHROME_UA
             settings.databaseEnabled = true
-            settings.setSupportMultipleWindows(false)
-            settings.javaScriptCanOpenWindowsAutomatically = false
+            settings.setSupportMultipleWindows(true)
+            settings.javaScriptCanOpenWindowsAutomatically = true
 
             webViewClient = object : WebViewClient() {
                 override fun shouldInterceptRequest(
@@ -55,6 +57,31 @@ class LoginActivity : AppCompatActivity() {
                 override fun shouldOverrideUrlLoading(
                     view: WebView?, request: WebResourceRequest?
                 ): Boolean = false
+            }
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onCreateWindow(
+                    view: WebView?, isDialog: Boolean,
+                    isUserGesture: Boolean, resultMsg: Message?
+                ): Boolean {
+                    // Google OAuth 팝업용 WebView 생성
+                    popupWebView = createPopupWebView()
+                    container.addView(popupWebView, ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT
+                    ))
+                    mainWebView.visibility = View.GONE
+                    doneButton.visibility = View.GONE
+
+                    val transport = resultMsg?.obj as? WebView.WebViewTransport
+                    transport?.webView = popupWebView
+                    resultMsg?.sendToTarget()
+                    return true
+                }
+
+                override fun onCloseWindow(window: WebView?) {
+                    closePopup()
+                }
             }
         }
 
@@ -88,8 +115,55 @@ class LoginActivity : AppCompatActivity() {
         mainWebView.loadUrl(CLAUDE_URL)
     }
 
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun createPopupWebView(): WebView {
+        return WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.userAgentString = CHROME_UA
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?, request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    request?.requestHeaders?.remove("X-Requested-With")
+                    return super.shouldInterceptRequest(view, request)
+                }
+
+                override fun shouldOverrideUrlLoading(
+                    view: WebView?, request: WebResourceRequest?
+                ): Boolean {
+                    val url = request?.url?.toString() ?: return false
+                    // OAuth 완료 후 claude.ai로 돌아오면 팝업 닫고 메인에서 로드
+                    if (url.contains("claude.ai") && !url.contains("accounts.google")) {
+                        closePopup()
+                        mainWebView.loadUrl(url)
+                        return true
+                    }
+                    return false
+                }
+            }
+
+            webChromeClient = object : WebChromeClient() {
+                override fun onCloseWindow(window: WebView?) {
+                    closePopup()
+                }
+            }
+        }
+    }
+
+    private fun closePopup() {
+        popupWebView?.let {
+            container.removeView(it)
+            it.destroy()
+        }
+        popupWebView = null
+        mainWebView.visibility = View.VISIBLE
+        doneButton.visibility = View.VISIBLE
+    }
+
     private fun onDoneClicked() {
-        // 현재 URL이 claude.ai 메인 페이지인지 확인
         val currentUrl = mainWebView.url ?: ""
         if (!currentUrl.contains("claude.ai") ||
             currentUrl.contains("/login") ||
@@ -116,11 +190,13 @@ class LoginActivity : AppCompatActivity() {
 
     @Deprecated("Use OnBackPressedCallback")
     override fun onBackPressed() {
-        if (mainWebView.canGoBack()) mainWebView.goBack()
+        if (popupWebView != null) closePopup()
+        else if (mainWebView.canGoBack()) mainWebView.goBack()
         else super.onBackPressed()
     }
 
     override fun onDestroy() {
+        popupWebView?.destroy()
         mainWebView.destroy()
         super.onDestroy()
     }
