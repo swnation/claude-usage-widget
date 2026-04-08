@@ -6,7 +6,7 @@ on:
       version:
         description: 'Version (e.g. 1.1.0)'
         required: true
-        default: '1.1.0'
+        default: '1.2.0'
 
 jobs:
   release:
@@ -31,12 +31,24 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Build Debug APK
+      - name: Decode Keystore
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
+
+      - name: Build Signed APK
         working-directory: android
-        run: gradle assembleDebug
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          gradle assembleRelease \
+            -Pandroid.injected.signing.store.file=$PWD/app/keystore.jks \
+            -Pandroid.injected.signing.store.password=$KEYSTORE_PASSWORD \
+            -Pandroid.injected.signing.key.alias=$KEY_ALIAS \
+            -Pandroid.injected.signing.key.password=$KEY_PASSWORD
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/debug/app-debug.apk claude-usage-widget-v${{ github.event.inputs.version }}.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk claude-usage-widget-v${{ github.event.inputs.version }}.apk
 
       - name: Create or Update Release
         uses: softprops/action-gh-release@v2
@@ -45,8 +57,10 @@ jobs:
           name: v${{ github.event.inputs.version }}
           body: |
             ## Claude 사용량 위젯 v${{ github.event.inputs.version }}
-
             APK를 다운로드하여 설치하세요.
           files: claude-usage-widget-v${{ github.event.inputs.version }}.apk
           make_latest: true
           prerelease: false
+
+      - name: Cleanup
+        run: rm -f android/app/keystore.jks
