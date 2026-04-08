@@ -7,15 +7,33 @@
     android:background="#DD1a1a2e"
     android:padding="12dp">
 
-    <!-- 타이틀 -->
-    <TextView
+    <!-- 타이틀 + 새로고침 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="⬡ Claude"
-        android:textColor="#c084fc"
-        android:textSize="13sp"
-        android:textStyle="bold"
-        android:layout_marginBottom="8dp" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="⬡ Claude"
+            android:textColor="#c084fc"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widgetRefreshBtn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="↻"
+            android:textColor="#888899"
+            android:textSize="18sp"
+            android:paddingStart="12dp"
+            android:paddingEnd="4dp" />
+    </LinearLayout>
 
     <!-- 현재 세션 -->
     <TextView
