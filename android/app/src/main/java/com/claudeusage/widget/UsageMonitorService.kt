@@ -14,10 +14,6 @@ import com.google.gson.Gson
 import java.util.Timer
 import java.util.TimerTask
 
-/**
- * 포그라운드 서비스 — 상단 알림에 Claude 사용량 표시.
- * 개선: 프로그레스바 색상, 80% 경고 알림, 세션 만료 알림.
- */
 class UsageMonitorService : Service() {
 
     companion object {
@@ -50,7 +46,13 @@ class UsageMonitorService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { stopSelf(); return START_NOT_STICKY }
+            ACTION_STOP -> {
+                // 서비스 상태 저장
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putBoolean("service_running", false).apply()
+                stopSelf()
+                return START_NOT_STICKY
+            }
             ACTION_NOTIFY_UPDATE -> {
                 val usage = loadSavedUsage()
                 notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
@@ -60,11 +62,37 @@ class UsageMonitorService : Service() {
         }
         startForeground(NOTIFICATION_ID, buildNotification(loadSavedUsage()))
         startPolling()
-        return START_STICKY
+        return START_STICKY  // 시스템이 서비스를 종료해도 자동 재시작
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { timer?.cancel(); timer = null; super.onDestroy() }
+
+    override fun onDestroy() {
+        timer?.cancel()
+        timer = null
+        // 서비스가 예기치 않게 종료되면 재시작
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (prefs.getBoolean("service_running", false)) {
+            // 시스템이 죽인 경우 → 재시작 예약
+            try {
+                val restartIntent = Intent(this, UsageMonitorService::class.java)
+                startForegroundService(restartIntent)
+            } catch (_: Exception) {}
+        }
+        super.onDestroy()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // 앱이 최근 앱에서 제거되어도 서비스 유지
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        if (prefs.getBoolean("service_running", false)) {
+            try {
+                val restartIntent = Intent(this, UsageMonitorService::class.java)
+                startForegroundService(restartIntent)
+            } catch (_: Exception) {}
+        }
+        super.onTaskRemoved(rootIntent)
+    }
 
     private fun createNotificationChannels() {
         NotificationChannel(CHANNEL_ID, "Claude 사용량", NotificationManager.IMPORTANCE_LOW).apply {
@@ -95,20 +123,17 @@ class UsageMonitorService : Service() {
         }
     }
 
-    /** 5. 80% 도달 시 별도 경고 알림 (진동 + 소리) */
     private fun checkAlerts(usage: PlanUsage?) {
         if (usage == null) return
 
-        // 세션 80% 경고
         usage.session?.let {
             if (it.usedPercent >= 80 && !sessionAlertSent) {
                 sessionAlertSent = true
                 sendAlert("세션 ${it.percentText} 사용됨", "한도에 가까워지고 있습니다. ${it.resetTimeText()}")
             }
-            if (it.usedPercent < 20) sessionAlertSent = false  // 리셋 후 초기화
+            if (it.usedPercent < 20) sessionAlertSent = false
         }
 
-        // 주간 80% 경고
         usage.weekly?.let {
             if (it.usedPercent >= 80 && !weeklyAlertSent) {
                 weeklyAlertSent = true
@@ -117,7 +142,6 @@ class UsageMonitorService : Service() {
             if (it.usedPercent < 20) weeklyAlertSent = false
         }
 
-        // 2. 세션 만료 감지
         if (usage.error != null && usage.error.contains("만료")) {
             sendAlert("세션 만료", "다시 로그인이 필요합니다.")
         }
@@ -147,9 +171,7 @@ class UsageMonitorService : Service() {
         catch (_: Exception) { null }
     }
 
-    /** 1. 프로그레스바 색상 (초록/노랑/빨강) */
     private fun buildNotification(usage: PlanUsage?): Notification {
-        // 4. 알림 탭하면 앱 열리면서 자동 갱신
         val openPI = PendingIntent.getActivity(this, 0,
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -180,20 +202,17 @@ class UsageMonitorService : Service() {
             }
             else -> {
                 val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
-
-                // 프로그레스바 색상
                 val colorRes = when {
                     sessionPct >= 90 -> android.R.color.holo_red_light
                     sessionPct >= 70 -> android.R.color.holo_orange_light
                     else -> android.R.color.holo_green_light
                 }
-                val color = getColor(colorRes)
 
                 builder.setContentTitle(usage.notificationTitle())
                     .setContentText(usage.notificationShort())
                     .setStyle(NotificationCompat.BigTextStyle().bigText(usage.notificationExpanded()))
                     .setProgress(100, sessionPct, false)
-                    .setColor(color)
+                    .setColor(getColor(colorRes))
                     .setColorized(true)
             }
         }
