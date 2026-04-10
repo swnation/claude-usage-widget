@@ -24,14 +24,18 @@ class AppUpdater(private val activity: Activity) {
 
     companion object {
         const val GITHUB_REPO = "swnation/claude-usage-widget"
-        const val CURRENT_VERSION = "1.3.0"
     }
 
     private val executor = Executors.newSingleThreadExecutor()
 
-    /** 앱 시작 시 호출: 설치 권한 확인 + 업데이트 체크 */
+    /** 앱의 실제 versionName을 읽음 (하드코딩 X) */
+    private fun getCurrentVersion(): String {
+        return try {
+            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0.0.0"
+        } catch (_: Exception) { "0.0.0" }
+    }
+
     fun checkForUpdate() {
-        requestInstallPermission()
         executor.execute {
             try {
                 val url = URL("https://api.github.com/repos/$GITHUB_REPO/releases/latest")
@@ -48,6 +52,7 @@ class AppUpdater(private val activity: Activity) {
                 val tagName = json.get("tag_name")?.asString ?: return@execute
                 val latestVersion = tagName.removePrefix("v")
                 val releaseNotes = json.get("body")?.asString ?: ""
+                val currentVersion = getCurrentVersion()
 
                 var apkUrl: String? = null
                 json.getAsJsonArray("assets")?.forEach { asset ->
@@ -58,32 +63,13 @@ class AppUpdater(private val activity: Activity) {
                     }
                 }
 
-                if (apkUrl == null || !isNewerVersion(latestVersion, CURRENT_VERSION)) return@execute
+                if (apkUrl == null || !isNewerVersion(latestVersion, currentVersion)) return@execute
 
                 val downloadUrl = apkUrl!!
                 activity.runOnUiThread {
                     showUpdateDialog(latestVersion, releaseNotes, downloadUrl)
                 }
             } catch (_: Exception) {}
-        }
-    }
-
-    /** 출처 불분명 앱 설치 권한 확인 및 요청 */
-    private fun requestInstallPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (!activity.packageManager.canRequestPackageInstalls()) {
-                AlertDialog.Builder(activity)
-                    .setTitle("설치 권한 필요")
-                    .setMessage("앱 업데이트를 위해 '출처를 알 수 없는 앱 설치' 권한이 필요합니다.")
-                    .setPositiveButton("설정으로 이동") { _, _ ->
-                        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
-                            data = Uri.parse("package:${activity.packageName}")
-                        }
-                        activity.startActivity(intent)
-                    }
-                    .setNegativeButton("나중에", null)
-                    .show()
-            }
         }
     }
 
@@ -103,7 +89,7 @@ class AppUpdater(private val activity: Activity) {
         // 설치 권한 없으면 먼저 요청
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
             !activity.packageManager.canRequestPackageInstalls()) {
-            requestInstallPermission()
+            requestInstallPermission(downloadUrl, version, notes)
             return
         }
 
@@ -111,6 +97,20 @@ class AppUpdater(private val activity: Activity) {
             .setTitle("새 버전: v$version")
             .setMessage(notes.ifEmpty { "새 버전이 있습니다." })
             .setPositiveButton("업데이트") { _, _ -> downloadAndInstall(downloadUrl) }
+            .setNegativeButton("나중에", null)
+            .show()
+    }
+
+    private fun requestInstallPermission(downloadUrl: String, version: String, notes: String) {
+        AlertDialog.Builder(activity)
+            .setTitle("설치 권한 필요")
+            .setMessage("앱 업데이트를 위해 '출처를 알 수 없는 앱 설치' 권한이 필요합니다.")
+            .setPositiveButton("설정으로 이동") { _, _ ->
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${activity.packageName}")
+                }
+                activity.startActivity(intent)
+            }
             .setNegativeButton("나중에", null)
             .show()
     }
