@@ -11,8 +11,8 @@ android {
         applicationId = "com.claudeusage.widget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "1.4.1"
+        versionCode = 10
+        versionName = "1.4.2"
     }
 
     buildTypes {
