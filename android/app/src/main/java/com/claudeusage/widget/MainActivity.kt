@@ -50,11 +50,20 @@ class MainActivity : AppCompatActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
-        requestNotificationPermission()
         initViews()
         loadSettings()
-        handleAutoRefreshIntent(intent)
-        AppUpdater(this).checkForUpdate()
+
+        // 첫 실행 시 권한 설정
+        if (PermissionSetup.isFirstRun(this)) {
+            PermissionSetup(this).checkAndRequest {
+                PermissionSetup.markSetupDone(this)
+                handleAutoRefreshIntent(intent)
+                AppUpdater(this).checkForUpdate()
+            }
+        } else {
+            handleAutoRefreshIntent(intent)
+            AppUpdater(this).checkForUpdate()
+        }
     }
 
     override fun onResume() {
@@ -94,16 +103,6 @@ class MainActivity : AppCompatActivity() {
         stopAutoRefresh()
         scrapeWebView?.destroy()
         super.onDestroy()
-    }
-
-    private fun requestNotificationPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
-        }
     }
 
     private fun initViews() {
@@ -159,10 +158,8 @@ class MainActivity : AppCompatActivity() {
             saveServiceState()
         }
         refreshButton.setOnClickListener { fetchUsageViaScraping() }
-
         overlayButton.setOnClickListener {
             if (floatingOverlay == null) floatingOverlay = FloatingOverlay(applicationContext)
-
             if (floatingOverlay!!.isShowing()) {
                 floatingOverlay!!.hide()
             } else {
@@ -175,7 +172,6 @@ class MainActivity : AppCompatActivity() {
             }
             updateOverlayButton()
         }
-
         saveButton.setOnClickListener {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
                 .putString("refresh_interval", refreshInput.text.toString().trim()).apply()
@@ -279,17 +275,10 @@ class MainActivity : AppCompatActivity() {
         view?.evaluateJavascript("""
             (function() {
                 const body = document.body ? document.body.innerText : '';
-
                 const percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
-
-                // 리셋 시간: 모든 패턴 수집
                 const allResets = [];
-
-                // "3시간 23분 후 재설정"
                 var r1 = body.match(/\d+시간[\s\d]*분?\s*후\s*재설정/g);
                 if (r1) r1.forEach(function(m) { allResets.push(m); });
-
-                // "금 3:00 오후에 재설정" — 재설정 앞 최대 20글자
                 var r2 = body.match(/.{1,20}에\s*재설정/g);
                 if (r2) r2.forEach(function(m) {
                     var t = m.trim();
@@ -297,12 +286,10 @@ class MainActivity : AppCompatActivity() {
                         allResets.push(t);
                     }
                 });
-
                 var barValues = [];
                 document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
                     barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
                 });
-
                 return JSON.stringify({
                     url: window.location.href,
                     percentMatches: percentMatches,
@@ -328,7 +315,6 @@ class MainActivity : AppCompatActivity() {
             val percentMatches = json?.getAsJsonArray("percentMatches")
             val resetMatches = try { json?.getAsJsonArray("resetMatches") } catch (_: Exception) { null }
             val barValues = try { json?.getAsJsonArray("barValues") } catch (_: Exception) { null }
-
             val percents = mutableListOf<Int>()
             percentMatches?.forEach {
                 val match = Regex("(\\d+)%").find(it.asString)
@@ -336,14 +322,12 @@ class MainActivity : AppCompatActivity() {
             }
             val resets = mutableListOf<String>()
             resetMatches?.forEach { resets.add(it.asString) }
-
             if (percents.isEmpty() && barValues != null) {
                 barValues.forEach {
                     val v = it.asString.toIntOrNull()
                     if (v != null && v in 0..100) percents.add(v)
                 }
             }
-
             if (percents.isNotEmpty()) {
                 val usage = PlanUsage(
                     planName = "Max",
