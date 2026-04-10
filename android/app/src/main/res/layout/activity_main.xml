@@ -10,7 +10,6 @@
         android:orientation="vertical"
         android:padding="24dp">
 
-        <!-- 헤더 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -28,7 +27,6 @@
             android:textSize="14sp"
             android:layout_marginBottom="16dp" />
 
-        <!-- 로그인 상태 + 버튼 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -49,7 +47,7 @@
                 android:id="@+id/loginButton"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:text="claude.ai 로그���"
+                android:text="claude.ai 로그인"
                 android:backgroundTint="#c084fc"
                 android:textColor="#ffffff"
                 android:textSize="13sp" />
@@ -58,14 +56,13 @@
                 android:id="@+id/logoutButton"
                 android:layout_width="wrap_content"
                 android:layout_height="40dp"
-                android:text="로그아��"
+                android:text="로그아웃"
                 android:backgroundTint="#2a2a4a"
                 android:textColor="#f87171"
                 android:textSize="13sp"
                 android:visibility="gone" />
         </LinearLayout>
 
-        <!-- 모델별 사용량 카드 -->
         <LinearLayout
             android:id="@+id/modelsContainer"
             android:layout_width="match_parent"
@@ -73,12 +70,12 @@
             android:orientation="vertical"
             android:layout_marginBottom="16dp" />
 
-        <!-- 버튼 -->
+        <!-- 버튼 3개: 모니터링 + 오버레이 + 새로고침 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="12dp">
+            android:layout_marginBottom="8dp">
 
             <Button
                 android:id="@+id/toggleButton"
@@ -88,7 +85,7 @@
                 android:text="모니터링 시작"
                 android:backgroundTint="#c084fc"
                 android:textColor="#ffffff"
-                android:layout_marginEnd="8dp" />
+                android:layout_marginEnd="4dp" />
 
             <Button
                 android:id="@+id/refreshButton"
@@ -100,7 +97,16 @@
                 android:textColor="#e0e0e0" />
         </LinearLayout>
 
-        <!-- 상태 -->
+        <Button
+            android:id="@+id/overlayButton"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:text="플로팅 오버레이 켜기"
+            android:backgroundTint="#22223a"
+            android:textColor="#c084fc"
+            android:textSize="13sp"
+            android:layout_marginBottom="12dp" />
+
         <TextView
             android:id="@+id/statusText"
             android:layout_width="match_parent"
@@ -110,7 +116,6 @@
             android:textSize="12sp"
             android:layout_marginBottom="24dp" />
 
-        <!-- 설정 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

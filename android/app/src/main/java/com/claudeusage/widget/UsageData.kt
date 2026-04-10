@@ -1,15 +1,9 @@
 package com.claudeusage.widget
 
-/**
- * Claude 앱 사용량 화면과 동일한 데이터 구조.
- *
- * - 현재 세션: 5시간 윈도우 사용량 (%)
- * - 주간 한도: 모든 모델 통합 주간 사용량 (%)
- */
 data class UsageLimit(
-    val label: String,           // "현재 세션", "주간 한도" 등
-    val usedPercent: Double,     // 0~100
-    val resetsAt: String,        // ISO 8601 또는 표시용 문자열
+    val label: String,
+    val usedPercent: Double,
+    val resetsAt: String,
 ) {
     val isNearLimit: Boolean get() = usedPercent >= 70
     val isAtLimit: Boolean get() = usedPercent >= 95
@@ -34,7 +28,7 @@ data class UsageLimit(
                 }
             }
         } catch (e: Exception) {
-            resetsAt  // 파싱 실패 시 원본 그대로
+            resetsAt
         }
     }
 
@@ -43,14 +37,13 @@ data class UsageLimit(
 
 data class PlanUsage(
     val planName: String = "Max",
-    val session: UsageLimit? = null,    // 현재 세션 (5시간)
-    val weekly: UsageLimit? = null,     // 주간 한도
+    val session: UsageLimit? = null,
+    val weekly: UsageLimit? = null,
     val lastUpdated: String = "",
     val error: String? = null,
 ) {
     fun notificationTitle(): String {
         val s = session
-        val w = weekly
         val emoji = when {
             s != null && s.usedPercent >= 90 -> "🔴"
             s != null && s.usedPercent >= 70 -> "🟡"
@@ -58,7 +51,7 @@ data class PlanUsage(
         }
         val parts = mutableListOf<String>()
         s?.let { parts.add("세션 ${it.percentText}") }
-        w?.let { parts.add("주간 ${it.percentText}") }
+        weekly?.let { parts.add("주간 ${it.percentText}") }
         return "$emoji ${parts.joinToString(" │ ")}"
     }
 
@@ -66,6 +59,11 @@ data class PlanUsage(
         val parts = mutableListOf<String>()
         session?.let { parts.add("세션 ${it.percentText}") }
         weekly?.let { parts.add("주간 ${it.percentText}") }
+        // 주간 리셋 시간 추가
+        weekly?.let {
+            val reset = it.resetTimeText()
+            if (reset.isNotEmpty()) parts.add(reset)
+        }
         return parts.joinToString(" │ ")
     }
 

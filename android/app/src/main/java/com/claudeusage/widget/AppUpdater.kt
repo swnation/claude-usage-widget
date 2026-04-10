@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -19,18 +20,20 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.util.concurrent.Executors
 
-/**
- * GitHub Release에서 최신 버전 확인 → 다운로드 → 설치.
- * 사용자 경험: 다이얼로그 → "업데이트" 탭 → 자동 다운 → 설치 화면 열림.
- */
 class AppUpdater(private val activity: Activity) {
 
     companion object {
         const val GITHUB_REPO = "swnation/claude-usage-widget"
-        const val CURRENT_VERSION = "1.0.0"
     }
 
     private val executor = Executors.newSingleThreadExecutor()
+
+    /** 앱의 실제 versionName을 읽음 (하드코딩 X) */
+    private fun getCurrentVersion(): String {
+        return try {
+            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0.0.0"
+        } catch (_: Exception) { "0.0.0" }
+    }
 
     fun checkForUpdate() {
         executor.execute {
@@ -49,8 +52,8 @@ class AppUpdater(private val activity: Activity) {
                 val tagName = json.get("tag_name")?.asString ?: return@execute
                 val latestVersion = tagName.removePrefix("v")
                 val releaseNotes = json.get("body")?.asString ?: ""
+                val currentVersion = getCurrentVersion()
 
-                // APK 다운로드 URL 찾기
                 var apkUrl: String? = null
                 json.getAsJsonArray("assets")?.forEach { asset ->
                     val assetObj = asset.asJsonObject
@@ -60,15 +63,13 @@ class AppUpdater(private val activity: Activity) {
                     }
                 }
 
-                if (apkUrl == null || !isNewerVersion(latestVersion, CURRENT_VERSION)) return@execute
+                if (apkUrl == null || !isNewerVersion(latestVersion, currentVersion)) return@execute
 
                 val downloadUrl = apkUrl!!
                 activity.runOnUiThread {
                     showUpdateDialog(latestVersion, releaseNotes, downloadUrl)
                 }
-            } catch (_: Exception) {
-                // 업데이트 체크 실패는 무시
-            }
+            } catch (_: Exception) {}
         }
     }
 
@@ -85,11 +86,30 @@ class AppUpdater(private val activity: Activity) {
     }
 
     private fun showUpdateDialog(version: String, notes: String, downloadUrl: String) {
+        // 설치 권한 없으면 먼저 요청
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()) {
+            requestInstallPermission(downloadUrl, version, notes)
+            return
+        }
+
         AlertDialog.Builder(activity)
             .setTitle("새 버전: v$version")
             .setMessage(notes.ifEmpty { "새 버전이 있습니다." })
-            .setPositiveButton("업데이트") { _, _ ->
-                downloadAndInstall(downloadUrl)
+            .setPositiveButton("업데이트") { _, _ -> downloadAndInstall(downloadUrl) }
+            .setNegativeButton("나중에", null)
+            .show()
+    }
+
+    private fun requestInstallPermission(downloadUrl: String, version: String, notes: String) {
+        AlertDialog.Builder(activity)
+            .setTitle("설치 권한 필요")
+            .setMessage("앱 업데이트를 위해 '출처를 알 수 없는 앱 설치' 권한이 필요합니다.")
+            .setPositiveButton("설정으로 이동") { _, _ ->
+                val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                    data = Uri.parse("package:${activity.packageName}")
+                }
+                activity.startActivity(intent)
             }
             .setNegativeButton("나중에", null)
             .show()
@@ -98,27 +118,21 @@ class AppUpdater(private val activity: Activity) {
     private fun downloadAndInstall(downloadUrl: String) {
         Toast.makeText(activity, "다운로드 중...", Toast.LENGTH_SHORT).show()
 
-        val request = DownloadManager.Request(Uri.parse(downloadUrl))
-            .setTitle("Claude 사용량 업데이트")
-            .setDescription("새 버전을 다운로드하고 있습니다")
-            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(
-                Environment.DIRECTORY_DOWNLOADS,
-                "claude-usage-widget.apk"
-            )
-
-        val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-
-        // 기존 파일 삭제
         val file = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
             "claude-usage-widget.apk"
         )
         if (file.exists()) file.delete()
 
+        val request = DownloadManager.Request(Uri.parse(downloadUrl))
+            .setTitle("Claude 사용량 업데이트")
+            .setDescription("새 버전을 다운로드하고 있습니다")
+            .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "claude-usage-widget.apk")
+
+        val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val downloadId = dm.enqueue(request)
 
-        // 다운로드 완료 시 설치 실행
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
@@ -130,31 +144,18 @@ class AppUpdater(private val activity: Activity) {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            activity.registerReceiver(
-                receiver,
-                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE),
-                Context.RECEIVER_EXPORTED
-            )
+            activity.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE), Context.RECEIVER_EXPORTED)
         } else {
-            activity.registerReceiver(
-                receiver,
-                IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE)
-            )
+            activity.registerReceiver(receiver, IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE))
         }
     }
 
     private fun installApk(file: File) {
-        val uri = FileProvider.getUriForFile(
-            activity,
-            "${activity.packageName}.fileprovider",
-            file
-        )
-
+        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
-
         activity.startActivity(intent)
     }
 }
