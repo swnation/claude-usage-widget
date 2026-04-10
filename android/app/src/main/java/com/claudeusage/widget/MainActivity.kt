@@ -85,9 +85,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Deprecated("Use OnBackPressedCallback")
-    override fun onBackPressed() {
-        moveTaskToBack(true)
-    }
+    override fun onBackPressed() { moveTaskToBack(true) }
 
     override fun onDestroy() {
         stopAutoRefresh()
@@ -101,8 +99,7 @@ class MainActivity : AppCompatActivity() {
             != PackageManager.PERMISSION_GRANTED
         ) {
             ActivityCompat.requestPermissions(
-                this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100
-            )
+                this, arrayOf(Manifest.permission.POST_NOTIFICATIONS), 100)
         }
     }
 
@@ -121,13 +118,9 @@ class MainActivity : AppCompatActivity() {
         loginButton.setOnClickListener {
             loginLauncher.launch(Intent(this, LoginActivity::class.java))
         }
-
         logoutButton.setOnClickListener {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .remove("session_key")
-                .remove("logged_in")
-                .remove("last_usage")
-                .apply()
+                .remove("session_key").remove("logged_in").remove("last_usage").apply()
             CookieManager.getInstance().removeAllCookies(null)
             updateLoginUI(false)
             if (isServiceRunning) {
@@ -140,7 +133,6 @@ class MainActivity : AppCompatActivity() {
             planNameText.text = ""
             statusText.text = "로그아웃됨"
         }
-
         toggleButton.setOnClickListener {
             val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
                 .getBoolean("logged_in", false)
@@ -162,13 +154,10 @@ class MainActivity : AppCompatActivity() {
             }
             saveServiceState()
         }
-
         refreshButton.setOnClickListener { fetchUsageViaScraping() }
-
         saveButton.setOnClickListener {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("refresh_interval", refreshInput.text.toString().trim())
-                .apply()
+                .putString("refresh_interval", refreshInput.text.toString().trim()).apply()
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show()
             startAutoRefresh()
         }
@@ -177,13 +166,10 @@ class MainActivity : AppCompatActivity() {
     private fun loadSettings() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         refreshInput.setText(prefs.getString("refresh_interval", "120"))
-
         val loggedIn = prefs.getBoolean("logged_in", false)
         updateLoginUI(loggedIn)
-
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
-
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) displayUsageFromJson(lastUsage)
     }
@@ -193,13 +179,10 @@ class MainActivity : AppCompatActivity() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val intervalMs = (prefs.getString("refresh_interval", "120")?.toLongOrNull() ?: 120) * 1000
         if (intervalMs < 30000) return
-
         autoRefreshRunnable = object : Runnable {
             override fun run() {
                 if (PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                        .getBoolean("logged_in", false)) {
-                    fetchUsageViaScraping()
-                }
+                        .getBoolean("logged_in", false)) fetchUsageViaScraping()
                 handler.postDelayed(this, intervalMs)
             }
         }
@@ -259,8 +242,7 @@ class MainActivity : AppCompatActivity() {
             }
             scrapeWebView = wv
             (findViewById<View>(android.R.id.content) as? android.view.ViewGroup)?.addView(
-                wv, ViewGroup.LayoutParams(400, 800)
-            )
+                wv, ViewGroup.LayoutParams(400, 800))
             wv.loadUrl("https://claude.ai/settings/usage")
         } catch (e: Exception) {
             statusText.text = "스크래핑 오류: ${e.message}"
@@ -271,21 +253,37 @@ class MainActivity : AppCompatActivity() {
         view?.evaluateJavascript("""
             (function() {
                 const body = document.body ? document.body.innerText : '';
+
+                // 퍼센트: "XX% 사용됨"
                 const percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
 
-                // 두 패턴을 각각 수집해서 합침
-                const resets1 = body.match(/\d+시간\s*\d*분?\s*후\s*재설정/g) || [];
-                const resets2 = body.match(/[가-힣]+\s+\d+:\d+\s+[가-힣]+에\s*재설정/g) || [];
-                const resetMatches = resets1.concat(resets2);
+                // 리셋 시간 - 모든 "재설정" 포함 문장을 잡음
+                const allResets = [];
 
+                // 패턴1: "3시간 23분 후 재설정"
+                const r1 = body.match(/\d+시간[\s\d]*분?\s*후\s*재설정/g);
+                if (r1) r1.forEach(function(m) { allResets.push(m); });
+
+                // 패턴2: "금 3:00 오후에 재설정"
+                const r2 = body.match(/.{1,10}재설정/g);
+                if (r2) r2.forEach(function(m) {
+                    var t = m.trim();
+                    // 패턴1과 중복 제거, "재설정" 단독 제거
+                    if (t.length > 3 && allResets.indexOf(t) === -1 && !t.match(/^\d+시간/)) {
+                        allResets.push(t);
+                    }
+                });
+
+                // 프로그레스바
                 const barValues = [];
                 document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
                     barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
                 });
+
                 return JSON.stringify({
                     url: window.location.href,
                     percentMatches: percentMatches,
-                    resetMatches: resetMatches,
+                    resetMatches: allResets,
                     barValues: barValues
                 });
             })();
