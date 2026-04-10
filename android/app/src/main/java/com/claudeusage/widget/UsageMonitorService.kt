@@ -30,10 +30,14 @@ class UsageMonitorService : Service() {
         const val ACTION_NOTIFY_UPDATE = "com.claudeusage.widget.NOTIFY_UPDATE"
 
         fun start(context: Context) {
-            context.startForegroundService(Intent(context, UsageMonitorService::class.java))
+            try { context.startForegroundService(Intent(context, UsageMonitorService::class.java)) }
+            catch (_: Exception) {}
         }
 
         fun stop(context: Context) {
+            // 먼저 플래그를 동기적으로 저장
+            PreferenceManager.getDefaultSharedPreferences(context).edit()
+                .putBoolean("service_running", false).commit()
             context.stopService(Intent(context, UsageMonitorService::class.java))
         }
     }
@@ -45,6 +49,7 @@ class UsageMonitorService : Service() {
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
     private var isScraping = false
+    private var isStopping = false
 
     override fun onCreate() {
         super.onCreate()
@@ -55,8 +60,13 @@ class UsageMonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
+                isStopping = true
+                timer?.cancel()
+                timer = null
                 PreferenceManager.getDefaultSharedPreferences(this).edit()
-                    .putBoolean("service_running", false).apply()
+                    .putBoolean("service_running", false).commit()
+                notificationManager.cancel(NOTIFICATION_ID)
+                stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -67,7 +77,9 @@ class UsageMonitorService : Service() {
                 return START_STICKY
             }
         }
-        startForeground(NOTIFICATION_ID, buildNotification(loadSavedUsage()))
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification(loadSavedUsage()))
+        } catch (_: Exception) {}
         startPolling()
         return START_STICKY
     }
@@ -81,19 +93,24 @@ class UsageMonitorService : Service() {
             try { scrapeWebView?.destroy() } catch (_: Exception) {}
             scrapeWebView = null
         }
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        if (prefs.getBoolean("service_running", false)) {
-            try { startForegroundService(Intent(this, UsageMonitorService::class.java)) }
-            catch (_: Exception) {}
+        // 의도적 종료가 아닌 경우에만 재시작
+        if (!isStopping) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            if (prefs.getBoolean("service_running", false)) {
+                try { startForegroundService(Intent(this, UsageMonitorService::class.java)) }
+                catch (_: Exception) {}
+            }
         }
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        if (prefs.getBoolean("service_running", false)) {
-            try { startForegroundService(Intent(this, UsageMonitorService::class.java)) }
-            catch (_: Exception) {}
+        if (!isStopping) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            if (prefs.getBoolean("service_running", false)) {
+                try { startForegroundService(Intent(this, UsageMonitorService::class.java)) }
+                catch (_: Exception) {}
+            }
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -119,7 +136,7 @@ class UsageMonitorService : Service() {
         timer = Timer().apply {
             scheduleAtFixedRate(object : TimerTask() {
                 override fun run() {
-                    handler.post { scrapeUsage() }
+                    if (!isStopping) handler.post { scrapeUsage() }
                 }
             }, 0, intervalMs.coerceAtLeast(30000))
         }
@@ -127,7 +144,7 @@ class UsageMonitorService : Service() {
 
     @SuppressLint("SetJavaScriptEnabled")
     private fun scrapeUsage() {
-        if (isScraping) return
+        if (isScraping || isStopping) return
         isScraping = true
 
         try {
@@ -163,16 +180,13 @@ class UsageMonitorService : Service() {
             scrapeWebView = wv
             wv.loadUrl("https://claude.ai/settings/usage")
 
-            // 30초 타임아웃 — 멈추면 강제 정리
             handler.postDelayed({
                 if (isScraping) cleanupScrape()
             }, 30000)
-
         } catch (_: Exception) {
             cleanupScrape()
-            // WebView 실패 시 저장된 데이터로 알림 갱신
             val usage = loadSavedUsage()
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+            if (usage != null) notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
         }
     }
 
@@ -239,9 +253,10 @@ class UsageMonitorService : Service() {
                 PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putString("last_usage", gson.toJson(usage)).apply()
 
-                notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
-                checkAlerts(usage)
-
+                if (!isStopping) {
+                    notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+                    checkAlerts(usage)
+                }
                 try { UsageWidgetProvider.updateAll(this) } catch (_: Exception) {}
             }
         } catch (_: Exception) {}
@@ -263,7 +278,7 @@ class UsageMonitorService : Service() {
         usage.session?.let {
             if (it.usedPercent >= 80 && !sessionAlertSent) {
                 sessionAlertSent = true
-                sendAlert("세션 ${it.percentText} 사용됨", "한도에 가까워지고 있습니다. ${it.resetTimeText()}")
+                sendAlert("세션 ${it.percentText} 사용됨", "한도에 가까워지고 있습니다.")
             }
             if (it.usedPercent < 20) sessionAlertSent = false
         }
