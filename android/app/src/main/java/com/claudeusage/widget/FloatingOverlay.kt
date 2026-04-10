@@ -18,8 +18,9 @@ import com.google.gson.Gson
 
 /**
  * 다른 앱 위에 떠 있는 작은 오버레이 — 5시간 세션 사용량 실시간 표시.
+ * 싱글톤 — 앱 재시작 시 중복 생성 방지.
  */
-class FloatingOverlay(private val context: Context) {
+class FloatingOverlay private constructor(private val context: Context) {
 
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
@@ -80,6 +81,7 @@ class FloatingOverlay(private val context: Context) {
         overlayView = textView
         windowManager?.addView(textView, params)
         startUpdating(textView)
+        saveState(true)
     }
 
     fun hide() {
@@ -89,9 +91,15 @@ class FloatingOverlay(private val context: Context) {
             try { windowManager?.removeView(it) } catch (_: Exception) {}
         }
         overlayView = null
+        saveState(false)
     }
 
     fun isShowing(): Boolean = overlayView != null
+
+    private fun saveState(showing: Boolean) {
+        PreferenceManager.getDefaultSharedPreferences(context).edit()
+            .putBoolean("overlay_showing", showing).apply()
+    }
 
     private fun startUpdating(textView: TextView) {
         updateRunnable = object : Runnable {
@@ -117,6 +125,19 @@ class FloatingOverlay(private val context: Context) {
     }
 
     companion object {
+        @Volatile
+        private var instance: FloatingOverlay? = null
+
+        fun getInstance(context: Context): FloatingOverlay {
+            return instance ?: synchronized(this) {
+                instance ?: FloatingOverlay(context.applicationContext).also { instance = it }
+            }
+        }
+
+        fun wasShowing(context: Context): Boolean =
+            PreferenceManager.getDefaultSharedPreferences(context)
+                .getBoolean("overlay_showing", false)
+
         fun hasPermission(context: Context): Boolean = Settings.canDrawOverlays(context)
 
         fun requestPermission(context: Context) {
