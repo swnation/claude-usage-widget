@@ -24,12 +24,14 @@ class MainActivity : AppCompatActivity() {
     private var isServiceRunning = false
     private var scrapeWebView: WebView? = null
     private var autoRefreshRunnable: Runnable? = null
+    private var floatingOverlay: FloatingOverlay? = null
 
     private lateinit var statusText: TextView
     private lateinit var planNameText: TextView
     private lateinit var usageContainer: LinearLayout
     private lateinit var toggleButton: Button
     private lateinit var refreshButton: Button
+    private lateinit var overlayButton: Button
     private lateinit var loginButton: Button
     private lateinit var logoutButton: Button
     private lateinit var loginStatus: TextView
@@ -63,6 +65,7 @@ class MainActivity : AppCompatActivity() {
             fetchUsageViaScraping()
             startAutoRefresh()
         }
+        updateOverlayButton()
     }
 
     override fun onPause() {
@@ -109,6 +112,7 @@ class MainActivity : AppCompatActivity() {
         usageContainer = findViewById(R.id.modelsContainer)
         toggleButton = findViewById(R.id.toggleButton)
         refreshButton = findViewById(R.id.refreshButton)
+        overlayButton = findViewById(R.id.overlayButton)
         loginButton = findViewById(R.id.loginButton)
         logoutButton = findViewById(R.id.logoutButton)
         loginStatus = findViewById(R.id.loginStatus)
@@ -155,12 +159,34 @@ class MainActivity : AppCompatActivity() {
             saveServiceState()
         }
         refreshButton.setOnClickListener { fetchUsageViaScraping() }
+
+        overlayButton.setOnClickListener {
+            if (floatingOverlay == null) floatingOverlay = FloatingOverlay(applicationContext)
+
+            if (floatingOverlay!!.isShowing()) {
+                floatingOverlay!!.hide()
+            } else {
+                if (!FloatingOverlay.hasPermission(this)) {
+                    FloatingOverlay.requestPermission(this)
+                    Toast.makeText(this, "권한 허용 후 다시 눌러주세요", Toast.LENGTH_SHORT).show()
+                } else {
+                    floatingOverlay!!.show()
+                }
+            }
+            updateOverlayButton()
+        }
+
         saveButton.setOnClickListener {
             PreferenceManager.getDefaultSharedPreferences(this).edit()
                 .putString("refresh_interval", refreshInput.text.toString().trim()).apply()
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show()
             startAutoRefresh()
         }
+    }
+
+    private fun updateOverlayButton() {
+        val showing = floatingOverlay?.isShowing() == true
+        overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
     }
 
     private fun loadSettings() {
@@ -254,28 +280,25 @@ class MainActivity : AppCompatActivity() {
             (function() {
                 const body = document.body ? document.body.innerText : '';
 
-                // 퍼센트: "XX% 사용됨"
                 const percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
 
-                // 리셋 시간 - 모든 "재설정" 포함 문장을 잡음
+                // 리셋 시간: 모든 패턴 수집
                 const allResets = [];
 
-                // 패턴1: "3시간 23분 후 재설정"
-                const r1 = body.match(/\d+시간[\s\d]*분?\s*후\s*재설정/g);
+                // "3시간 23분 후 재설정"
+                var r1 = body.match(/\d+시간[\s\d]*분?\s*후\s*재설정/g);
                 if (r1) r1.forEach(function(m) { allResets.push(m); });
 
-                // 패턴2: "금 3:00 오후에 재설정"
-                const r2 = body.match(/.{1,10}재설정/g);
+                // "금 3:00 오후에 재설정" — 재설정 앞 최대 20글자
+                var r2 = body.match(/.{1,20}에\s*재설정/g);
                 if (r2) r2.forEach(function(m) {
                     var t = m.trim();
-                    // 패턴1과 중복 제거, "재설정" 단독 제거
                     if (t.length > 3 && allResets.indexOf(t) === -1 && !t.match(/^\d+시간/)) {
                         allResets.push(t);
                     }
                 });
 
-                // 프로그레스바
-                const barValues = [];
+                var barValues = [];
                 document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
                     barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
                 });
