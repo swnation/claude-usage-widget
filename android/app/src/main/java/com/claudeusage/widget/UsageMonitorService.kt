@@ -1,5 +1,6 @@
 package com.claudeusage.widget
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,10 +8,18 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.webkit.CookieManager
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
 import com.google.gson.Gson
+import com.google.gson.JsonObject
 import java.util.Timer
 import java.util.TimerTask
 
@@ -41,7 +50,10 @@ class UsageMonitorService : Service() {
     }
 
     private lateinit var notificationManager: NotificationManager
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var timer: Timer? = null
+    private var scrapeWebView: WebView? = null
+    private var isScraping = false
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
 
@@ -80,6 +92,8 @@ class UsageMonitorService : Service() {
     override fun onDestroy() {
         timer?.cancel()
         timer = null
+        try { scrapeWebView?.destroy() } catch (_: Exception) {}
+        scrapeWebView = null
         super.onDestroy()
     }
 
@@ -104,12 +118,128 @@ class UsageMonitorService : Service() {
         timer = Timer().apply {
             scheduleAtFixedRate(object : TimerTask() {
                 override fun run() {
-                    val usage = loadSavedUsage()
-                    notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
-                    checkAlerts(usage)
+                    mainHandler.post { fetchUsageInBackground() }
                 }
             }, intervalMs.coerceAtLeast(30000), intervalMs.coerceAtLeast(30000))
         }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun fetchUsageInBackground() {
+        if (isScraping) return
+        val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
+            .getBoolean("logged_in", false)
+        if (!loggedIn) return
+
+        isScraping = true
+        try {
+            scrapeWebView?.destroy()
+            scrapeWebView = null
+
+            val wv = WebView(this).apply {
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.userAgentString = LoginActivity.CHROME_UA
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(
+                        view: WebView?, request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        request?.requestHeaders?.remove("X-Requested-With")
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        mainHandler.postDelayed({ scrapeAndUpdate(view) }, 3000)
+                    }
+                }
+            }
+            scrapeWebView = wv
+            wv.loadUrl("https://claude.ai/settings/usage")
+        } catch (_: Exception) {
+            isScraping = false
+        }
+    }
+
+    private fun scrapeAndUpdate(view: WebView?) {
+        view?.evaluateJavascript("""
+            (function() {
+                var body = document.body ? document.body.innerText : '';
+                var percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
+                var allResets = [];
+                var r1 = body.match(/\d+시간[\s\d]*분?\s*후\s*재설정/g);
+                if (r1) r1.forEach(function(m) { allResets.push(m); });
+                var r2 = body.match(/.{1,20}에\s*재설정/g);
+                if (r2) r2.forEach(function(m) {
+                    var t = m.trim();
+                    if (t.length > 3 && allResets.indexOf(t) === -1 && !t.match(/^\d+시간/)) {
+                        allResets.push(t);
+                    }
+                });
+                var barValues = [];
+                document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
+                    barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
+                });
+                return JSON.stringify({
+                    url: window.location.href,
+                    percentMatches: percentMatches,
+                    resetMatches: allResets,
+                    barValues: barValues
+                });
+            })();
+        """.trimIndent()) { result -> handleScrapeResult(result) }
+    }
+
+    private fun handleScrapeResult(jsResult: String?) {
+        try {
+            val raw = jsResult?.trim()
+                ?.removeSurrounding("\"")
+                ?.replace("\\\"", "\"")
+                ?.replace("\\\\", "\\")
+                ?.replace("\\/", "/")
+                ?.replace("\\n", "\n")
+                ?: "{}"
+            val gson = Gson()
+            val json = gson.fromJson(raw, JsonObject::class.java)
+            val percentMatches = json?.getAsJsonArray("percentMatches")
+            val resetMatches = try { json?.getAsJsonArray("resetMatches") } catch (_: Exception) { null }
+            val barValues = try { json?.getAsJsonArray("barValues") } catch (_: Exception) { null }
+
+            val percents = mutableListOf<Int>()
+            percentMatches?.forEach {
+                val match = Regex("(\\d+)%").find(it.asString)
+                if (match != null) percents.add(match.groupValues[1].toInt())
+            }
+            val resets = mutableListOf<String>()
+            resetMatches?.forEach { resets.add(it.asString) }
+
+            if (percents.isEmpty() && barValues != null) {
+                barValues.forEach {
+                    val v = it.asString.toIntOrNull()
+                    if (v != null && v in 0..100) percents.add(v)
+                }
+            }
+
+            if (percents.isNotEmpty()) {
+                val usage = PlanUsage(
+                    planName = "Max",
+                    session = UsageLimit("현재 세션", percents[0].toDouble(), resets.getOrNull(0) ?: ""),
+                    weekly = if (percents.size > 1)
+                        UsageLimit("주간 한도", percents[1].toDouble(), resets.getOrNull(1) ?: "") else null,
+                    lastUpdated = java.time.Instant.now().toString(),
+                )
+                val usageJson = gson.toJson(usage)
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putString("last_usage", usageJson).apply()
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+                checkAlerts(usage)
+                UsageWidgetProvider.updateAll(this)
+            }
+        } catch (_: Exception) {}
+
+        try { scrapeWebView?.destroy() } catch (_: Exception) {}
+        scrapeWebView = null
+        isScraping = false
     }
 
     private fun checkAlerts(usage: PlanUsage?) {

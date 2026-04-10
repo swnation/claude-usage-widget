@@ -74,6 +74,12 @@ class MainActivity : AppCompatActivity() {
             fetchUsageViaScraping()
             startAutoRefresh()
         }
+        // 프로세스 재시작 후 오버레이 복원
+        floatingOverlay = FloatingOverlay.getInstance(applicationContext)
+        if (FloatingOverlay.wasShowing(this) && !floatingOverlay!!.isShowing()
+            && FloatingOverlay.hasPermission(this)) {
+            floatingOverlay!!.show()
+        }
         updateOverlayButton()
     }
 
@@ -159,7 +165,7 @@ class MainActivity : AppCompatActivity() {
         }
         refreshButton.setOnClickListener { fetchUsageViaScraping() }
         overlayButton.setOnClickListener {
-            if (floatingOverlay == null) floatingOverlay = FloatingOverlay(applicationContext)
+            floatingOverlay = FloatingOverlay.getInstance(applicationContext)
             if (floatingOverlay!!.isShowing()) {
                 floatingOverlay!!.hide()
             } else {
@@ -181,7 +187,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateOverlayButton() {
-        val showing = floatingOverlay?.isShowing() == true
+        val showing = floatingOverlay?.isShowing() == true || FloatingOverlay.wasShowing(this)
         overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
     }
 
