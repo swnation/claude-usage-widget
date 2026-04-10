@@ -1,5 +1,6 @@
 package com.claudeusage.widget
 
+import android.annotation.SuppressLint
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -7,7 +8,11 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.view.View
+import android.webkit.*
 import androidx.core.app.NotificationCompat
 import androidx.preference.PreferenceManager
 import com.google.gson.Gson
@@ -34,9 +39,12 @@ class UsageMonitorService : Service() {
     }
 
     private lateinit var notificationManager: NotificationManager
+    private val handler = Handler(Looper.getMainLooper())
     private var timer: Timer? = null
+    private var scrapeWebView: WebView? = null
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
+    private var isScraping = false
 
     override fun onCreate() {
         super.onCreate()
@@ -47,7 +55,6 @@ class UsageMonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_STOP -> {
-                // 서비스 상태 저장
                 PreferenceManager.getDefaultSharedPreferences(this).edit()
                     .putBoolean("service_running", false).apply()
                 stopSelf()
@@ -62,7 +69,7 @@ class UsageMonitorService : Service() {
         }
         startForeground(NOTIFICATION_ID, buildNotification(loadSavedUsage()))
         startPolling()
-        return START_STICKY  // 시스템이 서비스를 종료해도 자동 재시작
+        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -70,26 +77,23 @@ class UsageMonitorService : Service() {
     override fun onDestroy() {
         timer?.cancel()
         timer = null
-        // 서비스가 예기치 않게 종료되면 재시작
+        handler.post {
+            try { scrapeWebView?.destroy() } catch (_: Exception) {}
+            scrapeWebView = null
+        }
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (prefs.getBoolean("service_running", false)) {
-            // 시스템이 죽인 경우 → 재시작 예약
-            try {
-                val restartIntent = Intent(this, UsageMonitorService::class.java)
-                startForegroundService(restartIntent)
-            } catch (_: Exception) {}
+            try { startForegroundService(Intent(this, UsageMonitorService::class.java)) }
+            catch (_: Exception) {}
         }
         super.onDestroy()
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        // 앱이 최근 앱에서 제거되어도 서비스 유지
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         if (prefs.getBoolean("service_running", false)) {
-            try {
-                val restartIntent = Intent(this, UsageMonitorService::class.java)
-                startForegroundService(restartIntent)
-            } catch (_: Exception) {}
+            try { startForegroundService(Intent(this, UsageMonitorService::class.java)) }
+            catch (_: Exception) {}
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -115,17 +119,147 @@ class UsageMonitorService : Service() {
         timer = Timer().apply {
             scheduleAtFixedRate(object : TimerTask() {
                 override fun run() {
-                    val usage = loadSavedUsage()
-                    notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
-                    checkAlerts(usage)
+                    handler.post { scrapeUsage() }
                 }
-            }, intervalMs, intervalMs)
+            }, 0, intervalMs.coerceAtLeast(30000))
         }
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun scrapeUsage() {
+        if (isScraping) return
+        isScraping = true
+
+        try {
+            scrapeWebView?.destroy()
+            scrapeWebView = null
+
+            val wv = WebView(applicationContext).apply {
+                visibility = View.GONE
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.userAgentString = LoginActivity.CHROME_UA
+                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+
+                webViewClient = object : WebViewClient() {
+                    override fun shouldInterceptRequest(
+                        view: WebView?, request: WebResourceRequest?
+                    ): WebResourceResponse? {
+                        request?.requestHeaders?.remove("X-Requested-With")
+                        return super.shouldInterceptRequest(view, request)
+                    }
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        handler.postDelayed({ extractData(view) }, 3000)
+                    }
+                    override fun onReceivedError(view: WebView?, request: WebResourceRequest?,
+                        error: WebResourceError?) {
+                        super.onReceivedError(view, request, error)
+                        cleanupScrape()
+                    }
+                }
+            }
+
+            scrapeWebView = wv
+            wv.loadUrl("https://claude.ai/settings/usage")
+
+            // 30초 타임아웃 — 멈추면 강제 정리
+            handler.postDelayed({
+                if (isScraping) cleanupScrape()
+            }, 30000)
+
+        } catch (_: Exception) {
+            cleanupScrape()
+            // WebView 실패 시 저장된 데이터로 알림 갱신
+            val usage = loadSavedUsage()
+            notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+        }
+    }
+
+    private fun extractData(view: WebView?) {
+        view?.evaluateJavascript("""
+            (function() {
+                const body = document.body ? document.body.innerText : '';
+                const percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
+                const resetMatches = body.match(/[\d시간분\s]+후\s*재설정/g) ||
+                                     body.match(/[가-힣]+\s+\d+:\d+\s+[가-힣]+에\s*재설정/g) || [];
+                const barValues = [];
+                document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
+                    barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
+                });
+                return JSON.stringify({
+                    url: window.location.href,
+                    percentMatches: percentMatches,
+                    resetMatches: resetMatches,
+                    barValues: barValues
+                });
+            })();
+        """.trimIndent()) { result -> handleResult(result) }
+    }
+
+    private fun handleResult(jsResult: String?) {
+        try {
+            val raw = jsResult?.trim()
+                ?.removeSurrounding("\"")
+                ?.replace("\\\"", "\"")
+                ?.replace("\\\\", "\\")
+                ?.replace("\\/", "/")
+                ?: "{}"
+
+            val gson = Gson()
+            val json = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
+
+            val percents = mutableListOf<Int>()
+            json?.getAsJsonArray("percentMatches")?.forEach {
+                val match = Regex("(\\d+)%").find(it.asString)
+                if (match != null) percents.add(match.groupValues[1].toInt())
+            }
+
+            if (percents.isEmpty()) {
+                try { json?.getAsJsonArray("barValues")?.forEach {
+                    val v = it.asString.toIntOrNull()
+                    if (v != null && v in 0..100) percents.add(v)
+                } } catch (_: Exception) {}
+            }
+
+            val resets = mutableListOf<String>()
+            try { json?.getAsJsonArray("resetMatches")?.forEach {
+                resets.add(it.asString)
+            } } catch (_: Exception) {}
+
+            if (percents.isNotEmpty()) {
+                val usage = PlanUsage(
+                    planName = "Max",
+                    session = UsageLimit("현재 세션", percents[0].toDouble(), resets.getOrNull(0) ?: ""),
+                    weekly = if (percents.size > 1)
+                        UsageLimit("주간 한도", percents[1].toDouble(), resets.getOrNull(1) ?: "") else null,
+                    lastUpdated = java.time.Instant.now().toString(),
+                )
+
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putString("last_usage", gson.toJson(usage)).apply()
+
+                notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+                checkAlerts(usage)
+
+                try { UsageWidgetProvider.updateAll(this) } catch (_: Exception) {}
+            }
+        } catch (_: Exception) {}
+
+        cleanupScrape()
+    }
+
+    private fun cleanupScrape() {
+        isScraping = false
+        try {
+            scrapeWebView?.stopLoading()
+            scrapeWebView?.destroy()
+        } catch (_: Exception) {}
+        scrapeWebView = null
     }
 
     private fun checkAlerts(usage: PlanUsage?) {
         if (usage == null) return
-
         usage.session?.let {
             if (it.usedPercent >= 80 && !sessionAlertSent) {
                 sessionAlertSent = true
@@ -133,7 +267,6 @@ class UsageMonitorService : Service() {
             }
             if (it.usedPercent < 20) sessionAlertSent = false
         }
-
         usage.weekly?.let {
             if (it.usedPercent >= 80 && !weeklyAlertSent) {
                 weeklyAlertSent = true
@@ -141,17 +274,12 @@ class UsageMonitorService : Service() {
             }
             if (it.usedPercent < 20) weeklyAlertSent = false
         }
-
-        if (usage.error != null && usage.error.contains("만료")) {
-            sendAlert("세션 만료", "다시 로그인이 필요합니다.")
-        }
     }
 
     private fun sendAlert(title: String, text: String) {
         val openPI = PendingIntent.getActivity(this, 0,
             Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
         val notification = NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setContentTitle("⚠️ $title")
@@ -160,7 +288,6 @@ class UsageMonitorService : Service() {
             .setAutoCancel(true)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
-
         notificationManager.notify(ALERT_NOTIFICATION_ID, notification)
     }
 
@@ -178,7 +305,6 @@ class UsageMonitorService : Service() {
                 putExtra("auto_refresh", true)
             },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-
         val stopPI = PendingIntent.getService(this, 1,
             Intent(this, UsageMonitorService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
@@ -194,7 +320,7 @@ class UsageMonitorService : Service() {
         when {
             usage == null -> {
                 builder.setContentTitle("Claude 사용량")
-                    .setContentText("앱에서 새로고침하세요")
+                    .setContentText("불러오는 중...")
             }
             usage.error != null -> {
                 builder.setContentTitle("⚠️ Claude 사용량")
@@ -207,7 +333,6 @@ class UsageMonitorService : Service() {
                     sessionPct >= 70 -> android.R.color.holo_orange_light
                     else -> android.R.color.holo_green_light
                 }
-
                 builder.setContentTitle(usage.notificationTitle())
                     .setContentText(usage.notificationShort())
                     .setStyle(NotificationCompat.BigTextStyle().bigText(usage.notificationExpanded()))
