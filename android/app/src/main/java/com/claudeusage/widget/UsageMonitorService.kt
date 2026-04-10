@@ -14,11 +14,6 @@ import com.google.gson.Gson
 import java.util.Timer
 import java.util.TimerTask
 
-/**
- * 포그라운드 서비스 — 상단 알림에 Claude 사용량 표시.
- * WebView 없음 — SharedPreferences의 last_usage만 읽어서 알림 갱신.
- * 데이터 갱신은 앱(MainActivity)의 onResume에서 자동 수행.
- */
 class UsageMonitorService : Service() {
 
     companion object {
@@ -187,17 +182,10 @@ class UsageMonitorService : Service() {
             }
             else -> {
                 val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
-                val colorRes = when {
-                    sessionPct >= 90 -> android.R.color.holo_red_light
-                    sessionPct >= 70 -> android.R.color.holo_orange_light
-                    else -> android.R.color.holo_green_light
-                }
                 builder.setContentTitle(usage.notificationTitle())
                     .setContentText(usage.notificationShort())
                     .setStyle(NotificationCompat.BigTextStyle().bigText(usage.notificationExpanded()))
                     .setProgress(100, sessionPct, false)
-                    .setColor(getColor(colorRes))
-                    .setColorized(true)
             }
         }
         return builder.build()
