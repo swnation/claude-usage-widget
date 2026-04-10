@@ -7,13 +7,13 @@
     android:background="#DD1a1a2e"
     android:padding="12dp">
 
-    <!-- 타이틀 + 새로고침 -->
+    <!-- 헤더: 타이틀 + 업데이트 시간 + 새로고침 -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:gravity="center_vertical"
-        android:layout_marginBottom="8dp">
+        android:layout_marginBottom="6dp">
 
         <TextView
             android:layout_width="0dp"
@@ -21,8 +21,17 @@
             android:layout_weight="1"
             android:text="⬡ Claude"
             android:textColor="#c084fc"
-            android:textSize="13sp"
+            android:textSize="14sp"
             android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widgetUpdateTime"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text=""
+            android:textColor="#555566"
+            android:textSize="10sp"
+            android:layout_marginEnd="8dp" />
 
         <TextView
             android:id="@+id/widgetRefreshBtn"
@@ -31,18 +40,11 @@
             android:text="↻"
             android:textColor="#888899"
             android:textSize="18sp"
-            android:paddingStart="12dp"
+            android:paddingStart="8dp"
             android:paddingEnd="4dp" />
     </LinearLayout>
 
-    <!-- 현재 세션 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="세션"
-        android:textColor="#888899"
-        android:textSize="11sp" />
-
+    <!-- 세션: 라벨 + 바 + 퍼센트 (한 줄) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -50,11 +52,18 @@
         android:gravity="center_vertical"
         android:layout_marginBottom="2dp">
 
+        <TextView
+            android:layout_width="40dp"
+            android:layout_height="wrap_content"
+            android:text="세션"
+            android:textColor="#888899"
+            android:textSize="12sp" />
+
         <ProgressBar
             android:id="@+id/widgetSessionBar"
             style="@android:style/Widget.ProgressBar.Horizontal"
             android:layout_width="0dp"
-            android:layout_height="8dp"
+            android:layout_height="10dp"
             android:layout_weight="1"
             android:max="100"
             android:progress="0"
@@ -63,43 +72,47 @@
 
         <TextView
             android:id="@+id/widgetSessionPercent"
-            android:layout_width="wrap_content"
+            android:layout_width="44dp"
             android:layout_height="wrap_content"
             android:text="--%"
             android:textColor="#e0e0e0"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:layout_marginStart="8dp" />
+            android:gravity="end"
+            android:layout_marginStart="6dp" />
     </LinearLayout>
 
+    <!-- 세션 리셋 시간 -->
     <TextView
         android:id="@+id/widgetSessionReset"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:text=""
-        android:textColor="#888899"
+        android:textColor="#666677"
         android:textSize="10sp"
-        android:layout_marginBottom="6dp" />
+        android:paddingStart="40dp"
+        android:layout_marginBottom="4dp" />
 
-    <!-- 주간 한도 -->
-    <TextView
-        android:layout_width="match_parent"
-        android:layout_height="wrap_content"
-        android:text="주간"
-        android:textColor="#888899"
-        android:textSize="11sp" />
-
+    <!-- 주간: 라벨 + 바 + 퍼센트 (한 줄) -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:gravity="center_vertical">
+        android:gravity="center_vertical"
+        android:layout_marginBottom="2dp">
+
+        <TextView
+            android:layout_width="40dp"
+            android:layout_height="wrap_content"
+            android:text="주간"
+            android:textColor="#888899"
+            android:textSize="12sp" />
 
         <ProgressBar
             android:id="@+id/widgetWeeklyBar"
             style="@android:style/Widget.ProgressBar.Horizontal"
             android:layout_width="0dp"
-            android:layout_height="8dp"
+            android:layout_height="10dp"
             android:layout_weight="1"
             android:max="100"
             android:progress="0"
@@ -108,12 +121,23 @@
 
         <TextView
             android:id="@+id/widgetWeeklyPercent"
-            android:layout_width="wrap_content"
+            android:layout_width="44dp"
             android:layout_height="wrap_content"
             android:text="--%"
             android:textColor="#e0e0e0"
             android:textSize="14sp"
             android:textStyle="bold"
-            android:layout_marginStart="8dp" />
+            android:gravity="end"
+            android:layout_marginStart="6dp" />
     </LinearLayout>
+
+    <!-- 주간 리셋 시간 -->
+    <TextView
+        android:id="@+id/widgetWeeklyReset"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textColor="#666677"
+        android:textSize="10sp"
+        android:paddingStart="40dp" />
 </LinearLayout>
