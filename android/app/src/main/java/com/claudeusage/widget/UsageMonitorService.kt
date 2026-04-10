@@ -49,11 +49,16 @@ class UsageMonitorService : Service() {
         }
     }
 
+    private companion object Timeout {
+        const val SCRAPE_TIMEOUT_MS = 30_000L  // 30초 타임아웃
+    }
+
     private lateinit var notificationManager: NotificationManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private var timer: Timer? = null
     private var scrapeWebView: WebView? = null
     private var isScraping = false
+    private var scrapeTimeoutRunnable: Runnable? = null
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
 
@@ -92,6 +97,7 @@ class UsageMonitorService : Service() {
     override fun onDestroy() {
         timer?.cancel()
         timer = null
+        cancelScrapeTimeout()
         try { scrapeWebView?.destroy() } catch (_: Exception) {}
         scrapeWebView = null
         super.onDestroy()
@@ -125,6 +131,35 @@ class UsageMonitorService : Service() {
     }
 
     @SuppressLint("SetJavaScriptEnabled")
+    private fun getOrCreateWebView(): WebView {
+        scrapeWebView?.let { return it }
+        val wv = WebView(this).apply {
+            settings.javaScriptEnabled = true
+            settings.domStorageEnabled = true
+            settings.userAgentString = LoginActivity.CHROME_UA
+            CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+            webViewClient = object : WebViewClient() {
+                override fun shouldInterceptRequest(
+                    view: WebView?, request: WebResourceRequest?
+                ): WebResourceResponse? {
+                    request?.requestHeaders?.remove("X-Requested-With")
+                    return super.shouldInterceptRequest(view, request)
+                }
+                override fun onPageFinished(view: WebView?, url: String?) {
+                    super.onPageFinished(view, url)
+                    mainHandler.postDelayed({ scrapeAndUpdate(view) }, 3000)
+                }
+                override fun onReceivedError(view: WebView?, errorCode: Int,
+                    description: String?, failingUrl: String?) {
+                    super.onReceivedError(view, errorCode, description, failingUrl)
+                    finishScraping()
+                }
+            }
+        }
+        scrapeWebView = wv
+        return wv
+    }
+
     private fun fetchUsageInBackground() {
         if (isScraping) return
         val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
@@ -132,33 +167,28 @@ class UsageMonitorService : Service() {
         if (!loggedIn) return
 
         isScraping = true
+        startScrapeTimeout()
         try {
-            scrapeWebView?.destroy()
-            scrapeWebView = null
-
-            val wv = WebView(this).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.userAgentString = LoginActivity.CHROME_UA
-                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView?, request: WebResourceRequest?
-                    ): WebResourceResponse? {
-                        request?.requestHeaders?.remove("X-Requested-With")
-                        return super.shouldInterceptRequest(view, request)
-                    }
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        super.onPageFinished(view, url)
-                        mainHandler.postDelayed({ scrapeAndUpdate(view) }, 3000)
-                    }
-                }
-            }
-            scrapeWebView = wv
-            wv.loadUrl("https://claude.ai/settings/usage")
+            getOrCreateWebView().loadUrl("https://claude.ai/settings/usage")
         } catch (_: Exception) {
-            isScraping = false
+            finishScraping()
         }
+    }
+
+    private fun startScrapeTimeout() {
+        cancelScrapeTimeout()
+        scrapeTimeoutRunnable = Runnable { finishScraping() }
+        mainHandler.postDelayed(scrapeTimeoutRunnable!!, SCRAPE_TIMEOUT_MS)
+    }
+
+    private fun cancelScrapeTimeout() {
+        scrapeTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
+        scrapeTimeoutRunnable = null
+    }
+
+    private fun finishScraping() {
+        cancelScrapeTimeout()
+        isScraping = false
     }
 
     private fun scrapeAndUpdate(view: WebView?) {
@@ -237,9 +267,7 @@ class UsageMonitorService : Service() {
             }
         } catch (_: Exception) {}
 
-        try { scrapeWebView?.destroy() } catch (_: Exception) {}
-        scrapeWebView = null
-        isScraping = false
+        finishScraping()
     }
 
     private fun checkAlerts(usage: PlanUsage?) {
