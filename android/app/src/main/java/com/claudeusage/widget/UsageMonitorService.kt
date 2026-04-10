@@ -12,6 +12,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.webkit.CookieManager
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
@@ -32,6 +33,7 @@ class UsageMonitorService : Service() {
         const val ALERT_NOTIFICATION_ID = 2001
         const val ACTION_STOP = "com.claudeusage.widget.STOP_SERVICE"
         const val ACTION_NOTIFY_UPDATE = "com.claudeusage.widget.NOTIFY_UPDATE"
+        private const val SCRAPE_TIMEOUT_MS = 30_000L
 
         fun start(context: Context) {
             try {
@@ -49,16 +51,13 @@ class UsageMonitorService : Service() {
         }
     }
 
-    private companion object Timeout {
-        const val SCRAPE_TIMEOUT_MS = 30_000L  // 30초 타임아웃
-    }
-
     private lateinit var notificationManager: NotificationManager
     private val mainHandler = Handler(Looper.getMainLooper())
     private var timer: Timer? = null
     private var scrapeWebView: WebView? = null
     private var isScraping = false
     private var scrapeTimeoutRunnable: Runnable? = null
+    private var scrapeDelayedRunnable: Runnable? = null
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
 
@@ -98,6 +97,8 @@ class UsageMonitorService : Service() {
         timer?.cancel()
         timer = null
         cancelScrapeTimeout()
+        scrapeDelayedRunnable?.let { mainHandler.removeCallbacks(it) }
+        scrapeDelayedRunnable = null
         try { scrapeWebView?.destroy() } catch (_: Exception) {}
         scrapeWebView = null
         super.onDestroy()
@@ -147,12 +148,17 @@ class UsageMonitorService : Service() {
                 }
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    mainHandler.postDelayed({ scrapeAndUpdate(view) }, 3000)
+                    scrapeDelayedRunnable?.let { mainHandler.removeCallbacks(it) }
+                    val runnable = Runnable { scrapeAndUpdate(view) }
+                    scrapeDelayedRunnable = runnable
+                    mainHandler.postDelayed(runnable, 3000)
                 }
-                override fun onReceivedError(view: WebView?, errorCode: Int,
-                    description: String?, failingUrl: String?) {
-                    super.onReceivedError(view, errorCode, description, failingUrl)
-                    finishScraping()
+                override fun onReceivedError(
+                    view: WebView, request: WebResourceRequest,
+                    error: WebResourceError
+                ) {
+                    super.onReceivedError(view, request, error)
+                    if (request.isForMainFrame) finishScraping()
                 }
             }
         }
@@ -188,10 +194,13 @@ class UsageMonitorService : Service() {
 
     private fun finishScraping() {
         cancelScrapeTimeout()
+        scrapeDelayedRunnable?.let { mainHandler.removeCallbacks(it) }
+        scrapeDelayedRunnable = null
         isScraping = false
     }
 
     private fun scrapeAndUpdate(view: WebView?) {
+        if (!isScraping) return
         view?.evaluateJavascript("""
             (function() {
                 var body = document.body ? document.body.innerText : '';
