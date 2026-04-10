@@ -28,7 +28,6 @@ class UsageWidgetProvider : AppWidgetProvider() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action == ACTION_REFRESH) {
-            // 새로고침 버튼 → 앱 열기 + 자동 갱신
             val openIntent = Intent(context, MainActivity::class.java).apply {
                 putExtra("auto_refresh", true)
                 flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -63,21 +62,34 @@ class UsageWidgetProvider : AppWidgetProvider() {
         } else null
 
         if (usage != null) {
+            // 세션
             val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
             views.setTextViewText(R.id.widgetSessionPercent, "${sessionPct}%")
             views.setProgressBar(R.id.widgetSessionBar, 100, sessionPct, false)
             views.setTextViewText(R.id.widgetSessionReset, usage.session?.resetTimeText() ?: "")
 
+            // 주간
             val weeklyPct = usage.weekly?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
             views.setTextViewText(R.id.widgetWeeklyPercent, "${weeklyPct}%")
             views.setProgressBar(R.id.widgetWeeklyBar, 100, weeklyPct, false)
+            views.setTextViewText(R.id.widgetWeeklyReset, usage.weekly?.resetTimeText() ?: "")
+
+            // 마지막 업데이트 시간
+            val updateTime = try {
+                val instant = java.time.Instant.parse(usage.lastUpdated)
+                val localTime = instant.atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+                localTime.toString().take(5)
+            } catch (_: Exception) { "" }
+            views.setTextViewText(R.id.widgetUpdateTime, updateTime)
         } else {
             views.setTextViewText(R.id.widgetSessionPercent, "--%")
             views.setTextViewText(R.id.widgetWeeklyPercent, "--%")
-            views.setTextViewText(R.id.widgetSessionReset, "새로고침 필요")
+            views.setTextViewText(R.id.widgetSessionReset, "")
+            views.setTextViewText(R.id.widgetWeeklyReset, "")
+            views.setTextViewText(R.id.widgetUpdateTime, "새로고침 필요")
         }
 
-        // 위젯 본체 탭 → 앱 열기
+        // 위젯 탭 → 앱 열기
         val openIntent = Intent(context, MainActivity::class.java).apply {
             putExtra("auto_refresh", true)
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -86,7 +98,7 @@ class UsageWidgetProvider : AppWidgetProvider() {
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         views.setOnClickPendingIntent(R.id.widgetRoot, openPI)
 
-        // 새로고침 버튼 탭 → 앱 열기 + 갱신
+        // 새로고침 버튼
         val refreshIntent = Intent(context, UsageWidgetProvider::class.java).apply {
             action = ACTION_REFRESH
         }
