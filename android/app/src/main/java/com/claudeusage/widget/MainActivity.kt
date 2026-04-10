@@ -57,7 +57,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        // 앱이 포그라운드로 돌아올 때 즉시 갱신 + 타이머 재시작
         val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
             .getBoolean("logged_in", false)
         if (loggedIn) {
@@ -68,7 +67,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // 백그라운드로 갈 때 타이머 정지 (배터리 절약)
         stopAutoRefresh()
     }
 
@@ -187,10 +185,7 @@ class MainActivity : AppCompatActivity() {
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
 
         val lastUsage = prefs.getString("last_usage", null)
-        if (lastUsage != null) {
-            displayUsageFromJson(lastUsage)
-        }
-        // onResume에서 자동 갱신 시작하므로 여기서는 안 함
+        if (lastUsage != null) displayUsageFromJson(lastUsage)
     }
 
     private fun startAutoRefresh() {
@@ -238,20 +233,17 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun fetchUsageViaScraping() {
         statusText.text = "불러오는 중..."
-
         try {
             scrapeWebView?.let {
                 (it.parent as? android.view.ViewGroup)?.removeView(it)
                 it.destroy()
             }
-
             val wv = WebView(this).apply {
                 visibility = View.GONE
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
                 settings.userAgentString = LoginActivity.CHROME_UA
                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-
                 webViewClient = object : WebViewClient() {
                     override fun shouldInterceptRequest(
                         view: WebView?, request: WebResourceRequest?
@@ -265,7 +257,6 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
-
             scrapeWebView = wv
             (findViewById<View>(android.R.id.content) as? android.view.ViewGroup)?.addView(
                 wv, ViewGroup.LayoutParams(400, 800)
@@ -281,8 +272,12 @@ class MainActivity : AppCompatActivity() {
             (function() {
                 const body = document.body ? document.body.innerText : '';
                 const percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
-                const resetMatches = body.match(/[\d시간분\s]+후\s*재설정/g) ||
-                                     body.match(/[가-힣]+\s+\d+:\d+\s+[가-힣]+에\s*재설정/g) || [];
+
+                // 두 패턴을 각각 수집해서 합침
+                const resets1 = body.match(/\d+시간\s*\d*분?\s*후\s*재설정/g) || [];
+                const resets2 = body.match(/[가-힣]+\s+\d+:\d+\s+[가-힣]+에\s*재설정/g) || [];
+                const resetMatches = resets1.concat(resets2);
+
                 const barValues = [];
                 document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
                     barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
@@ -291,8 +286,7 @@ class MainActivity : AppCompatActivity() {
                     url: window.location.href,
                     percentMatches: percentMatches,
                     resetMatches: resetMatches,
-                    barValues: barValues,
-                    bodyPreview: body.substring(0, 500)
+                    barValues: barValues
                 });
             })();
         """.trimIndent()) { result -> handleScrapeResult(result) }
@@ -306,11 +300,9 @@ class MainActivity : AppCompatActivity() {
             ?.replace("\\/", "/")
             ?.replace("\\n", "\n")
             ?: "{}"
-
         try {
             val gson = com.google.gson.Gson()
             val json = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
-
             val url = json?.get("url")?.asString ?: ""
             val percentMatches = json?.getAsJsonArray("percentMatches")
             val resetMatches = try { json?.getAsJsonArray("resetMatches") } catch (_: Exception) { null }
@@ -321,7 +313,6 @@ class MainActivity : AppCompatActivity() {
                 val match = Regex("(\\d+)%").find(it.asString)
                 if (match != null) percents.add(match.groupValues[1].toInt())
             }
-
             val resets = mutableListOf<String>()
             resetMatches?.forEach { resets.add(it.asString) }
 
@@ -354,7 +345,6 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             statusText.text = "오류: ${e.message}"
         }
-
         try { scrapeWebView?.let {
             (it.parent as? android.view.ViewGroup)?.removeView(it)
             it.destroy()
@@ -391,9 +381,9 @@ class MainActivity : AppCompatActivity() {
         PreferenceManager.getDefaultSharedPreferences(this).edit()
             .putString("last_usage", json).apply()
         if (isServiceRunning) {
-            startService(Intent(this, UsageMonitorService::class.java).apply {
+            try { startService(Intent(this, UsageMonitorService::class.java).apply {
                 action = "com.claudeusage.widget.NOTIFY_UPDATE"
-            })
+            }) } catch (_: Exception) {}
         }
         UsageWidgetProvider.updateAll(this)
     }
