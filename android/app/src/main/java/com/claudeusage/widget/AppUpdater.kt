@@ -9,6 +9,7 @@ import android.content.IntentFilter
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
+import android.provider.Settings
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -23,12 +24,14 @@ class AppUpdater(private val activity: Activity) {
 
     companion object {
         const val GITHUB_REPO = "swnation/claude-usage-widget"
-        const val CURRENT_VERSION = "1.2.0"
+        const val CURRENT_VERSION = "1.3.0"
     }
 
     private val executor = Executors.newSingleThreadExecutor()
 
+    /** 앱 시작 시 호출: 설치 권한 확인 + 업데이트 체크 */
     fun checkForUpdate() {
+        requestInstallPermission()
         executor.execute {
             try {
                 val url = URL("https://api.github.com/repos/$GITHUB_REPO/releases/latest")
@@ -65,6 +68,25 @@ class AppUpdater(private val activity: Activity) {
         }
     }
 
+    /** 출처 불분명 앱 설치 권한 확인 및 요청 */
+    private fun requestInstallPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            if (!activity.packageManager.canRequestPackageInstalls()) {
+                AlertDialog.Builder(activity)
+                    .setTitle("설치 권한 필요")
+                    .setMessage("앱 업데이트를 위해 '출처를 알 수 없는 앱 설치' 권한이 필요합니다.")
+                    .setPositiveButton("설정으로 이동") { _, _ ->
+                        val intent = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = Uri.parse("package:${activity.packageName}")
+                        }
+                        activity.startActivity(intent)
+                    }
+                    .setNegativeButton("나중에", null)
+                    .show()
+            }
+        }
+    }
+
     private fun isNewerVersion(latest: String, current: String): Boolean {
         val l = latest.split(".").map { it.toIntOrNull() ?: 0 }
         val c = current.split(".").map { it.toIntOrNull() ?: 0 }
@@ -78,6 +100,13 @@ class AppUpdater(private val activity: Activity) {
     }
 
     private fun showUpdateDialog(version: String, notes: String, downloadUrl: String) {
+        // 설치 권한 없으면 먼저 요청
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            !activity.packageManager.canRequestPackageInstalls()) {
+            requestInstallPermission()
+            return
+        }
+
         AlertDialog.Builder(activity)
             .setTitle("새 버전: v$version")
             .setMessage(notes.ifEmpty { "새 버전이 있습니다." })
