@@ -1,6 +1,8 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const crypto = require('crypto');
 
 // ── 상수 ──
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
@@ -503,8 +505,6 @@ function showObsLoginWindow() {
 // ────────────────────────────
 //  Anthropic Admin API
 // ────────────────────────────
-const https = require('https');
-const crypto = require('crypto');
 
 // ── Admin 키 암호화 (AES-256-GCM, PBKDF2) ──
 const KEY_SALT = 'claude-widget-keys-v1';
@@ -536,52 +536,58 @@ function decryptKeys(encrypted, pin) {
   } catch (_) { return null; }
 }
 
-function saveKeysToDriveDesktop(token, encrypted) {
-  return new Promise(async (resolve) => {
-    try {
-      // 폴더 찾기/생성
-      const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='Claude Usage Widget' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`, token);
-      let folderId;
-      if (folders?.files?.length) {
-        folderId = folders.files[0].id;
-      } else {
-        // 폴더 생성
-        const createRes = await new Promise((r) => {
-          const body = JSON.stringify({ name: 'Claude Usage Widget', mimeType: 'application/vnd.google-apps.folder' });
-          const req = https.request({ hostname: 'www.googleapis.com', path: '/drive/v3/files?fields=id', method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-          }, (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>r(JSON.parse(d))); });
-          req.write(body); req.end();
-        });
-        folderId = createRes.id;
-      }
+async function saveKeysToDriveDesktop(token, encrypted) {
+  try {
+    // 폴더 찾기/생성
+    const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='Claude Usage Widget' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`, token);
+    let folderId;
+    if (folders?.files?.length) {
+      folderId = folders.files[0].id;
+    } else {
+      const createRes = await drivePost(token, '/drive/v3/files?fields=id',
+        JSON.stringify({ name: 'Claude Usage Widget', mimeType: 'application/vnd.google-apps.folder' }));
+      folderId = createRes.id;
+    }
 
-      // 기존 파일 찾기
-      const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='admin_keys_backup.json' and '${folderId}' in parents and trashed=false`)}&fields=files(id)`, token);
-      const content = JSON.stringify({ encrypted, updatedAt: new Date().toISOString() });
+    const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='admin_keys_backup.json' and '${folderId}' in parents and trashed=false`)}&fields=files(id)`, token);
+    const content = JSON.stringify({ encrypted, updatedAt: new Date().toISOString() });
 
-      if (files?.files?.length) {
-        // 업데이트
-        await new Promise((r) => {
-          const req = https.request({ hostname: 'www.googleapis.com', path: `/upload/drive/v3/files/${files.files[0].id}?uploadType=media`, method: 'PATCH',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-          }, (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>r(d)); });
-          req.write(content); req.end();
-        });
-      } else {
-        // 생성
-        const boundary = 'widget_bound_x7';
-        const meta = JSON.stringify({ name: 'admin_keys_backup.json', parents: [folderId], mimeType: 'application/json' });
-        const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
-        await new Promise((r) => {
-          const req = https.request({ hostname: 'www.googleapis.com', path: '/upload/drive/v3/files?uploadType=multipart&fields=id', method: 'POST',
-            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` }
-          }, (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>r(d)); });
-          req.write(body); req.end();
-        });
-      }
-      resolve(true);
-    } catch (_) { resolve(false); }
+    if (files?.files?.length) {
+      await driveWrite(token, 'PATCH', `/upload/drive/v3/files/${files.files[0].id}?uploadType=media`, content);
+    } else {
+      const boundary = 'widget_bound_x7';
+      const meta = JSON.stringify({ name: 'admin_keys_backup.json', parents: [folderId], mimeType: 'application/json' });
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+      await driveWrite(token, 'POST', '/upload/drive/v3/files?uploadType=multipart&fields=id', body, `multipart/related; boundary=${boundary}`);
+    }
+    return true;
+  } catch (_) { return false; }
+}
+
+// Drive 쓰기 유틸리티
+function drivePost(token, apiPath, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: 'www.googleapis.com', path: apiPath, method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.write(body); req.end();
+  });
+}
+
+function driveWrite(token, method, apiPath, body, contentType) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: 'www.googleapis.com', path: apiPath, method,
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': contentType || 'application/json' }
+    }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => resolve(d));
+    });
+    req.on('error', reject);
+    req.write(body); req.end();
   });
 }
 
@@ -719,7 +725,8 @@ ipcMain.handle('toggle-widget', () => toggleWidget());
 ipcMain.handle('obs-login', () => showObsLoginWindow());
 ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
 ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
-  // 현재 키 맵 구성
+  if (!['anthropic', 'openai'].includes(type)) return { error: 'Invalid type' };
+  if (!pin || pin.length < 4) return { error: 'PIN은 4자리 이상' };
   const keys = {};
   if (settings.adminKey) keys.anthropic = settings.adminKey;
   if (settings.openaiKey) keys.openai = settings.openaiKey;
@@ -740,6 +747,7 @@ ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
   return { saved: true, driveBackup: false };
 });
 ipcMain.handle('restore-admin-keys', async (_, pin) => {
+  if (!pin || typeof pin !== 'string') return { error: 'PIN 필요' };
   if (!settings.googleToken) return { error: '오랑붕쌤 연결 필요' };
   const encrypted = await loadKeysFromDriveDesktop(settings.googleToken);
   if (!encrypted) return { error: 'Drive에 백업 없음' };
