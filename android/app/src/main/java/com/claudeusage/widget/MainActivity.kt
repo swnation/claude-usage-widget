@@ -246,25 +246,10 @@ class MainActivity : AppCompatActivity() {
             obsLoginLauncher.launch(Intent(this, ObsLoginActivity::class.java))
         }
 
-        // Admin API 키 저장
-        adminKeySave.setOnClickListener {
-            val key = adminKeyInput.text.toString().trim()
-            if (key == "****") return@setOnClickListener
-            PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("anthropic_admin_key", key).apply()
-            Toast.makeText(this, if (key.isNotEmpty()) "Claude Admin 키 저장됨" else "삭제됨",
-                Toast.LENGTH_SHORT).show()
-            if (key.isNotEmpty()) fetchAdminCosts()
-        }
-        openaiKeySave.setOnClickListener {
-            val key = openaiKeyInput.text.toString().trim()
-            if (key == "****") return@setOnClickListener
-            PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("openai_admin_key", key).apply()
-            Toast.makeText(this, if (key.isNotEmpty()) "OpenAI Admin 키 저장됨" else "삭제됨",
-                Toast.LENGTH_SHORT).show()
-            if (key.isNotEmpty()) fetchAdminCosts()
-        }
+        // Admin API 키 저장 (암호화)
+        adminKeySave.setOnClickListener { promptPinAndSaveKeys("anthropic") }
+        openaiKeySave.setOnClickListener { promptPinAndSaveKeys("openai") }
+        findViewById<Button>(R.id.adminKeyRestore).setOnClickListener { restoreKeysFromDrive() }
     }
 
     private fun updateOverlayButton() {
@@ -404,6 +389,137 @@ class MainActivity : AppCompatActivity() {
                         if (gptActual != null) putFloat("actual_gpt_month", gptActual.toFloat())
                     }
                     .apply()
+            }
+        }.start()
+    }
+
+    // ── Admin 키 암호화 저장/복원 ──
+    private fun promptPinAndSaveKeys(type: String) {
+        val keyInput = if (type == "anthropic") adminKeyInput else openaiKeyInput
+        val key = keyInput.text.toString().trim()
+        if (key == "****" || key.isEmpty()) return
+
+        val pinInput = EditText(this).apply {
+            hint = "PIN (4자리 이상)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setPadding(48, 24, 48, 24)
+        }
+
+        android.app.AlertDialog.Builder(this)
+            .setTitle("🔐 Admin 키 암호화")
+            .setMessage("키를 암호화할 PIN을 입력하세요")
+            .setView(pinInput)
+            .setPositiveButton("저장") { _, _ ->
+                val pin = pinInput.text.toString()
+                if (pin.length < 4) {
+                    Toast.makeText(this, "PIN은 4자리 이상이어야 합니다", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                saveAdminKeyEncrypted(type, key, pin)
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun saveAdminKeyEncrypted(type: String, key: String, pin: String) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        // 기존 키 데이터 로드
+        val keysJson = prefs.getString("admin_keys_plain", "{}") ?: "{}"
+        val keys = try {
+            com.google.gson.Gson().fromJson(keysJson, com.google.gson.JsonObject::class.java)
+        } catch (_: Exception) { com.google.gson.JsonObject() }
+
+        // 키 추가/업데이트
+        keys.addProperty(type, key)
+        val keysStr = keys.toString()
+
+        // 암호화
+        val encrypted = KeyEncryption.encrypt(keysStr, pin)
+
+        // 로컬 저장 (암호화된 상태)
+        prefs.edit()
+            .putString("admin_keys_encrypted", encrypted)
+            .remove("admin_keys_plain") // 평문 제거
+            .putString("anthropic_admin_key", if (keys.has("anthropic")) keys.get("anthropic").asString else "")
+            .putString("openai_admin_key", if (keys.has("openai")) keys.get("openai").asString else "")
+            .apply()
+
+        Toast.makeText(this, "🔐 Admin 키 암호화 저장됨", Toast.LENGTH_SHORT).show()
+
+        // Drive 백업 (Google 토큰 있으면)
+        val token = prefs.getString("google_oauth_token", null)
+        if (!token.isNullOrEmpty()) {
+            Thread {
+                val ok = DriveApiClient.saveKeysToDrive(token, encrypted)
+                handler.post {
+                    if (ok) Toast.makeText(this, "☁️ Drive 백업 완료", Toast.LENGTH_SHORT).show()
+                }
+            }.start()
+        }
+
+        if (keys.has("anthropic") || keys.has("openai")) fetchAdminCosts()
+    }
+
+    private fun restoreKeysFromDrive() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) {
+            Toast.makeText(this, "오랑붕쌤 연결이 필요합니다", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        Toast.makeText(this, "Drive에서 키 불러오는 중...", Toast.LENGTH_SHORT).show()
+
+        Thread {
+            val encrypted = DriveApiClient.loadKeysFromDrive(token)
+            handler.post {
+                if (encrypted == null) {
+                    Toast.makeText(this, "Drive에 백업된 키가 없습니다", Toast.LENGTH_SHORT).show()
+                    return@post
+                }
+
+                // PIN 입력 받기
+                val pinInput = EditText(this).apply {
+                    hint = "백업 시 설정한 PIN"
+                    inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                        android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    setPadding(48, 24, 48, 24)
+                }
+
+                android.app.AlertDialog.Builder(this)
+                    .setTitle("🔓 키 복원")
+                    .setMessage("암호화 해제 PIN을 입력하세요")
+                    .setView(pinInput)
+                    .setPositiveButton("복원") { _, _ ->
+                        val pin = pinInput.text.toString()
+                        val decrypted = KeyEncryption.decrypt(encrypted, pin)
+                        if (decrypted == null) {
+                            Toast.makeText(this, "❌ PIN이 틀립니다", Toast.LENGTH_SHORT).show()
+                            return@setPositiveButton
+                        }
+                        try {
+                            val keys = com.google.gson.JsonParser.parseString(decrypted).asJsonObject
+                            val anthropic = if (keys.has("anthropic")) keys.get("anthropic").asString else ""
+                            val openai = if (keys.has("openai")) keys.get("openai").asString else ""
+
+                            prefs.edit()
+                                .putString("admin_keys_encrypted", encrypted)
+                                .putString("anthropic_admin_key", anthropic)
+                                .putString("openai_admin_key", openai)
+                                .apply()
+
+                            if (anthropic.isNotEmpty()) adminKeyInput.setText("****")
+                            if (openai.isNotEmpty()) openaiKeyInput.setText("****")
+                            Toast.makeText(this, "🔓 키 복원 완료", Toast.LENGTH_SHORT).show()
+                            if (anthropic.isNotEmpty() || openai.isNotEmpty()) fetchAdminCosts()
+                        } catch (_: Exception) {
+                            Toast.makeText(this, "키 데이터 파싱 실패", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
             }
         }.start()
     }

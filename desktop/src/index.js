@@ -99,17 +99,33 @@ function setObsState(connected) {
   $('#obsBtn').textContent = connected ? '재연결' : '연결';
 }
 
-// Admin API 키
-$('#anthropicKeySave').onclick = async () => {
-  const key = $('#anthropicKeyInput').value.trim();
-  if (key === '****') return;
-  await window.api.saveAdminKey('anthropic', key);
-};
-$('#openaiKeySave').onclick = async () => {
-  const key = $('#openaiKeyInput').value.trim();
-  if (key === '****') return;
-  await window.api.saveAdminKey('openai', key);
-};
+// Admin API 키 (암호화 저장)
+$('#anthropicKeySave').onclick = () => promptPinAndSave('anthropic');
+$('#openaiKeySave').onclick = () => promptPinAndSave('openai');
+$('#adminKeyRestore').onclick = () => promptPinAndRestore();
+
+function promptPinAndSave(type) {
+  const input = type === 'anthropic' ? '#anthropicKeyInput' : '#openaiKeyInput';
+  const key = $(input).value.trim();
+  if (key === '****' || !key) return;
+  const pin = prompt('🔐 키 암호화 PIN (4자리 이상):');
+  if (!pin || pin.length < 4) { alert('PIN은 4자리 이상이어야 합니다'); return; }
+  window.api.saveAdminKeyEncrypted(type, key, pin).then(r => {
+    $('#adminCostText').textContent = r.driveBackup
+      ? '🔐 암호화 저장 + ☁️ Drive 백업 완료' : '🔐 암호화 저장됨 (Drive 미연결)';
+  });
+}
+
+function promptPinAndRestore() {
+  const pin = prompt('🔓 백업 복원 PIN:');
+  if (!pin) return;
+  window.api.restoreAdminKeys(pin).then(r => {
+    if (r.error) { $('#adminCostText').textContent = `❌ ${r.error}`; return; }
+    if (r.anthropic) $('#anthropicKeyInput').value = '****';
+    if (r.openai) $('#openaiKeyInput').value = '****';
+    $('#adminCostText').textContent = '🔓 키 복원 완료';
+  });
+}
 
 window.api.onAdminCostUpdate(({ results, estimated }) => {
   const lines = [];

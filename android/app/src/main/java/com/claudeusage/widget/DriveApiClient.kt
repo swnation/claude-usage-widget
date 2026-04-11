@@ -163,4 +163,87 @@ object DriveApiClient {
             conn.disconnect()
         }
     }
+
+    // ── Admin 키 Drive 백업/복원 ──
+    private const val KEYS_FOLDER = "Claude Usage Widget"
+    private const val KEYS_FILE = "admin_keys_backup.json"
+
+    /**
+     * 암호화된 Admin 키를 Drive에 저장한다.
+     * @param encryptedData PIN으로 암호화된 키 데이터 (Base64 문자열)
+     */
+    fun saveKeysToDrive(token: String, encryptedData: String): Boolean {
+        return try {
+            val folderId = getOrCreateFolder(token, KEYS_FOLDER)
+            val content = """{"encrypted":"$encryptedData","updatedAt":"${java.time.Instant.now()}"}"""
+
+            // 기존 파일 있으면 업데이트, 없으면 생성
+            val existingId = searchFile(token, KEYS_FILE, folderId)
+            if (existingId != null) {
+                httpPatch(
+                    "https://www.googleapis.com/upload/drive/v3/files/$existingId?uploadType=media",
+                    token, content
+                )
+            } else {
+                httpPostMultipart(token, KEYS_FILE, folderId, content)
+            }
+            true
+        } catch (_: Exception) { false }
+    }
+
+    /**
+     * Drive에서 암호화된 Admin 키를 불러온다.
+     * @return 암호화된 키 데이터 (Base64) 또는 null
+     */
+    fun loadKeysFromDrive(token: String): String? {
+        return try {
+            val folderId = searchFolder(token, KEYS_FOLDER) ?: return null
+            val fileId = searchFile(token, KEYS_FILE, folderId) ?: return null
+            val json = readFile(token, fileId) ?: return null
+            json.get("encrypted")?.asString
+        } catch (_: Exception) { null }
+    }
+
+    private fun getOrCreateFolder(token: String, name: String): String {
+        val existing = searchFolder(token, name)
+        if (existing != null) return existing
+
+        val meta = """{"name":"$name","mimeType":"application/vnd.google-apps.folder"}"""
+        val conn = URL("https://www.googleapis.com/drive/v3/files?fields=id").openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.doOutput = true
+        conn.outputStream.write(meta.toByteArray())
+        val body = conn.inputStream.bufferedReader().readText()
+        conn.disconnect()
+        return JsonParser.parseString(body).asJsonObject.get("id").asString
+    }
+
+    private fun httpPatch(urlStr: String, token: String, content: String) {
+        val conn = URL(urlStr).openConnection() as HttpURLConnection
+        conn.requestMethod = "PATCH"
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Content-Type", "application/json")
+        conn.doOutput = true
+        conn.outputStream.write(content.toByteArray())
+        conn.inputStream.bufferedReader().readText()
+        conn.disconnect()
+    }
+
+    private fun httpPostMultipart(token: String, fileName: String, parentId: String, content: String) {
+        val boundary = "widget_bound_x7"
+        val meta = """{"name":"$fileName","parents":["$parentId"],"mimeType":"application/json"}"""
+        val body = "--$boundary\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n$meta\r\n--$boundary\r\nContent-Type: application/json\r\n\r\n$content\r\n--$boundary--"
+
+        val conn = URL("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id")
+            .openConnection() as HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.setRequestProperty("Authorization", "Bearer $token")
+        conn.setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
+        conn.doOutput = true
+        conn.outputStream.write(body.toByteArray())
+        conn.inputStream.bufferedReader().readText()
+        conn.disconnect()
+    }
 }

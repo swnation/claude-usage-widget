@@ -504,6 +504,97 @@ function showObsLoginWindow() {
 //  Anthropic Admin API
 // ────────────────────────────
 const https = require('https');
+const crypto = require('crypto');
+
+// ── Admin 키 암호화 (AES-256-GCM, PBKDF2) ──
+const KEY_SALT = 'claude-widget-keys-v1';
+const KEY_ITERATIONS = 100000;
+
+function deriveKeyFromPin(pin) {
+  return crypto.pbkdf2Sync(pin, KEY_SALT, KEY_ITERATIONS, 32, 'sha256');
+}
+
+function encryptKeys(data, pin) {
+  const key = deriveKeyFromPin(pin);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, encrypted, tag]).toString('base64');
+}
+
+function decryptKeys(encrypted, pin) {
+  try {
+    const buf = Buffer.from(encrypted, 'base64');
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(buf.length - 16);
+    const cipherText = buf.subarray(12, buf.length - 16);
+    const key = deriveKeyFromPin(pin);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');
+  } catch (_) { return null; }
+}
+
+function saveKeysToDriveDesktop(token, encrypted) {
+  return new Promise(async (resolve) => {
+    try {
+      // 폴더 찾기/생성
+      const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='Claude Usage Widget' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`, token);
+      let folderId;
+      if (folders?.files?.length) {
+        folderId = folders.files[0].id;
+      } else {
+        // 폴더 생성
+        const createRes = await new Promise((r) => {
+          const body = JSON.stringify({ name: 'Claude Usage Widget', mimeType: 'application/vnd.google-apps.folder' });
+          const req = https.request({ hostname: 'www.googleapis.com', path: '/drive/v3/files?fields=id', method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+          }, (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>r(JSON.parse(d))); });
+          req.write(body); req.end();
+        });
+        folderId = createRes.id;
+      }
+
+      // 기존 파일 찾기
+      const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='admin_keys_backup.json' and '${folderId}' in parents and trashed=false`)}&fields=files(id)`, token);
+      const content = JSON.stringify({ encrypted, updatedAt: new Date().toISOString() });
+
+      if (files?.files?.length) {
+        // 업데이트
+        await new Promise((r) => {
+          const req = https.request({ hostname: 'www.googleapis.com', path: `/upload/drive/v3/files/${files.files[0].id}?uploadType=media`, method: 'PATCH',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+          }, (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>r(d)); });
+          req.write(content); req.end();
+        });
+      } else {
+        // 생성
+        const boundary = 'widget_bound_x7';
+        const meta = JSON.stringify({ name: 'admin_keys_backup.json', parents: [folderId], mimeType: 'application/json' });
+        const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+        await new Promise((r) => {
+          const req = https.request({ hostname: 'www.googleapis.com', path: '/upload/drive/v3/files?uploadType=multipart&fields=id', method: 'POST',
+            headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': `multipart/related; boundary=${boundary}` }
+          }, (res) => { let d=''; res.on('data',c=>d+=c); res.on('end',()=>r(d)); });
+          req.write(body); req.end();
+        });
+      }
+      resolve(true);
+    } catch (_) { resolve(false); }
+  });
+}
+
+async function loadKeysFromDriveDesktop(token) {
+  try {
+    const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='Claude Usage Widget' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`, token);
+    if (!folders?.files?.length) return null;
+    const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='admin_keys_backup.json' and '${folders.files[0].id}' in parents and trashed=false`)}&fields=files(id)`, token);
+    if (!files?.files?.length) return null;
+    const data = await driveGet(`https://www.googleapis.com/drive/v3/files/${files.files[0].id}?alt=media`, token);
+    return data?.encrypted || null;
+  } catch (_) { return null; }
+}
 
 function adminApiRequest(hostname, path, headers) {
   return new Promise((resolve) => {
@@ -627,11 +718,42 @@ ipcMain.handle('logout', async () => {
 ipcMain.handle('toggle-widget', () => toggleWidget());
 ipcMain.handle('obs-login', () => showObsLoginWindow());
 ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
-ipcMain.handle('save-admin-key', (_, type, key) => {
+ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
+  // 현재 키 맵 구성
+  const keys = {};
+  if (settings.adminKey) keys.anthropic = settings.adminKey;
+  if (settings.openaiKey) keys.openai = settings.openaiKey;
+  keys[type] = key;
+
+  // 암호화
+  const encrypted = encryptKeys(JSON.stringify(keys), pin);
+  settings.adminKeysEncrypted = encrypted;
   if (type === 'anthropic') settings.adminKey = key;
-  else if (type === 'openai') settings.openaiKey = key;
+  else settings.openaiKey = key;
   saveSettings();
-  fetchAllAdminCosts();
+
+  // Drive 백업
+  if (settings.googleToken) {
+    await saveKeysToDriveDesktop(settings.googleToken, encrypted);
+    return { saved: true, driveBackup: true };
+  }
+  return { saved: true, driveBackup: false };
+});
+ipcMain.handle('restore-admin-keys', async (_, pin) => {
+  if (!settings.googleToken) return { error: '오랑붕쌤 연결 필요' };
+  const encrypted = await loadKeysFromDriveDesktop(settings.googleToken);
+  if (!encrypted) return { error: 'Drive에 백업 없음' };
+  const decrypted = decryptKeys(encrypted, pin);
+  if (!decrypted) return { error: 'PIN 틀림' };
+  try {
+    const keys = JSON.parse(decrypted);
+    settings.adminKey = keys.anthropic || '';
+    settings.openaiKey = keys.openai || '';
+    settings.adminKeysEncrypted = encrypted;
+    saveSettings();
+    if (settings.adminKey || settings.openaiKey) fetchAllAdminCosts();
+    return { success: true, anthropic: !!settings.adminKey, openai: !!settings.openaiKey };
+  } catch (_) { return { error: '데이터 파싱 실패' }; }
 });
 ipcMain.handle('get-admin-keys', () => ({
   anthropic: settings.adminKey ? '****' : '',

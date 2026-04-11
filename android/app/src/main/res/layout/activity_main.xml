@@ -228,6 +228,16 @@
                     android:textSize="11sp" />
             </LinearLayout>
 
+            <Button
+                android:id="@+id/adminKeyRestore"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:text="☁️ Drive에서 키 불러오기"
+                android:backgroundTint="#22223a"
+                android:textColor="#888899"
+                android:textSize="11sp"
+                android:layout_marginTop="4dp" />
+
             <TextView
                 android:id="@+id/adminCostText"
                 android:layout_width="match_parent"
