@@ -1,0 +1,30 @@
+{
+  "name": "claude-usage-widget",
+  "version": "1.5.1",
+  "description": "Claude 사용량 모니터링 위젯 (Windows)",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.claudeusage.widget",
+    "productName": "Claude Usage Widget",
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ]
+  }
+}
