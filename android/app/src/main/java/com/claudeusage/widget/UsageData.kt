@@ -85,14 +85,25 @@ data class ApiCostData(
 
 // ── AI 정의 (오랑붕쌤과 동일) ──
 object AiDefs {
-    data class AiDef(val id: String, val name: String, val color: String)
+    data class AiDef(
+        val id: String,
+        val name: String,
+        val color: String,
+        val usageUrl: String,       // 비용 확인 사이트
+        val hasAdminApi: Boolean,    // Admin API 지원 여부
+    )
 
     val ALL = listOf(
-        AiDef("gpt", "GPT", "#10a37f"),
-        AiDef("claude", "Claude", "#c96442"),
-        AiDef("gemini", "Gemini", "#4285f4"),
-        AiDef("grok", "Grok", "#1DA1F2"),
-        AiDef("perp", "Perplexity", "#20808d"),
+        AiDef("gpt", "GPT", "#10a37f",
+            "https://platform.openai.com/usage", true),
+        AiDef("claude", "Claude", "#c96442",
+            "https://console.anthropic.com/settings/billing", true),
+        AiDef("gemini", "Gemini", "#4285f4",
+            "https://aistudio.google.com/apikey", false),
+        AiDef("grok", "Grok", "#1DA1F2",
+            "https://console.x.ai/", false),
+        AiDef("perp", "Perplexity", "#20808d",
+            "https://www.perplexity.ai/settings/api", false),
     )
 
     fun find(id: String): AiDef? = ALL.find { it.id == id }

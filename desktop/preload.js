@@ -25,5 +25,6 @@ contextBridge.exposeInMainWorld('api', {
   },
   onStatusUpdate: (cb) => {
     ipcRenderer.on('status-update', (_, msg) => cb(msg));
-  }
+  },
+  openExternal: (url) => ipcRenderer.invoke('open-external', url),
 });

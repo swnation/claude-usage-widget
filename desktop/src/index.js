@@ -14,11 +14,11 @@ let currentMode = 'CLAUDE_ONLY';
 
 // ── AI 정의 ──
 const AI_DEFS = {
-  gpt:    { name: 'GPT',        color: '#10a37f' },
-  claude: { name: 'Claude',     color: '#c96442' },
-  gemini: { name: 'Gemini',     color: '#4285f4' },
-  grok:   { name: 'Grok',       color: '#1DA1F2' },
-  perp:   { name: 'Perplexity', color: '#20808d' },
+  gpt:    { name: 'GPT',        color: '#10a37f', url: 'https://platform.openai.com/usage' },
+  claude: { name: 'Claude',     color: '#c96442', url: 'https://console.anthropic.com/settings/billing' },
+  gemini: { name: 'Gemini',     color: '#4285f4', url: 'https://aistudio.google.com/apikey' },
+  grok:   { name: 'Grok',       color: '#1DA1F2', url: 'https://console.x.ai/' },
+  perp:   { name: 'Perplexity', color: '#20808d', url: 'https://www.perplexity.ai/settings/api' },
 };
 
 // 초기 로딩
@@ -207,14 +207,25 @@ function renderCost(data) {
   byAI.innerHTML = '';
 
   (data.byAI || []).filter(ai => ai.monthCost > 0).forEach(ai => {
-    const def = AI_DEFS[ai.aiId] || { name: ai.name, color: '#888' };
+    const def = AI_DEFS[ai.aiId] || { name: ai.name, color: '#888', url: null };
     const row = document.createElement('div');
-    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px';
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px';
+    const nameEl = def.url
+      ? `<a href="#" class="ai-link" data-url="${def.url}" style="flex:1;color:${def.color};text-decoration:underline;cursor:pointer">${def.name}</a>`
+      : `<span style="flex:1;color:#aaa">${def.name}</span>`;
     row.innerHTML = `
       <div style="width:8px;height:8px;border-radius:50%;background:${def.color}"></div>
-      <span style="flex:1;color:#aaa">${def.name}</span>
+      ${nameEl}
       <span style="font-family:monospace">$${ai.monthCost.toFixed(4)}</span>
     `;
     byAI.appendChild(row);
+  });
+
+  // AI 링크 클릭 핸들러
+  byAI.querySelectorAll('.ai-link').forEach(el => {
+    el.onclick = (e) => {
+      e.preventDefault();
+      window.api.openExternal(el.dataset.url);
+    };
   });
 }

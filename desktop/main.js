@@ -11,11 +11,11 @@ const SCRAPE_TIMEOUT_MS = 30000;
 
 // ── AI 정의 (오랑붕쌤과 동일) ──
 const AI_DEFS = {
-  gpt:    { name: 'GPT',        color: '#10a37f' },
-  claude: { name: 'Claude',     color: '#c96442' },
-  gemini: { name: 'Gemini',     color: '#4285f4' },
-  grok:   { name: 'Grok',       color: '#1DA1F2' },
-  perp:   { name: 'Perplexity', color: '#20808d' },
+  gpt:    { name: 'GPT',        color: '#10a37f', usageUrl: 'https://platform.openai.com/usage' },
+  claude: { name: 'Claude',     color: '#c96442', usageUrl: 'https://console.anthropic.com/settings/billing' },
+  gemini: { name: 'Gemini',     color: '#4285f4', usageUrl: 'https://aistudio.google.com/apikey' },
+  grok:   { name: 'Grok',       color: '#1DA1F2', usageUrl: 'https://console.x.ai/' },
+  perp:   { name: 'Perplexity', color: '#20808d', usageUrl: 'https://www.perplexity.ai/settings/api' },
 };
 
 // ── 상태 ──
@@ -646,6 +646,10 @@ ipcMain.handle('get-admin-keys', () => ({
   openai: settings.openaiKey ? '****' : '',
 }));
 ipcMain.handle('fetch-admin-cost', () => fetchAllAdminCosts());
+ipcMain.handle('open-external', (_, url) => {
+  const { shell } = require('electron');
+  shell.openExternal(url);
+});
 ipcMain.handle('quit', () => app.quit());
 
 // ────────────────────────────

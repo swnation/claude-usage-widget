@@ -427,9 +427,10 @@ class MainActivity : AppCompatActivity() {
 
         costByAiContainer.removeAllViews()
         cost.byAI.filter { it.monthCost > 0 }.forEach { ai ->
+            val aiDef = AiDefs.find(ai.aiId)
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(8, 4, 8, 4)
+                setPadding(8, 6, 8, 6)
                 gravity = android.view.Gravity.CENTER_VERTICAL
             }
             // 색상 점
@@ -437,12 +438,19 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(16, 16).apply { marginEnd = 12 }
                 try { setBackgroundColor(Color.parseColor(ai.color)) } catch (_: Exception) {}
             }
-            // AI 이름
+            // AI 이름 (클릭 → 비용 확인 사이트)
             val name = TextView(this).apply {
                 text = ai.name
-                setTextColor(0xFFaaaaaa.toInt())
+                setTextColor(try { Color.parseColor(ai.color) } catch (_: Exception) { 0xFFaaaaaa.toInt() })
                 textSize = 12f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                if (aiDef?.usageUrl != null) {
+                    paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+                    setOnClickListener {
+                        startActivity(Intent(Intent.ACTION_VIEW,
+                            android.net.Uri.parse(aiDef.usageUrl)))
+                    }
+                }
             }
             // 이번달 비용
             val monthCost = TextView(this).apply {
