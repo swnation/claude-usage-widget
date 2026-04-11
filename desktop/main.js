@@ -102,27 +102,33 @@ function updateTrayFromUsage() {
 const SCRAPE_JS = `
 (function() {
   var body = document.body ? document.body.innerText : '';
-  var percentMatches = body.match(/(\\d+)%\\s*사용됨/g) || [];
-  var allResets = [];
-  var r1 = body.match(/\\d+시간[\\s\\d]*분?\\s*후\\s*재설정/g);
-  if (r1) r1.forEach(function(m) { allResets.push(m); });
-  var r2 = body.match(/.{1,20}에\\s*재설정/g);
-  if (r2) r2.forEach(function(m) {
-    var t = m.trim();
-    if (t.length > 3 && allResets.indexOf(t) === -1 && !t.match(/^\\d+시간/)) {
-      allResets.push(t);
-    }
-  });
+  var url = window.location.href;
+  var sessionIdx = body.indexOf('현재 세션');
+  var weeklyIdx = body.indexOf('주간 한도');
+
+  function extract(text) {
+    var pct = text.match(/(\\d+)%\\s*사용됨/);
+    var reset = text.match(/\\d+시간[\\s\\d]*분?\\s*후\\s*재설정/) ||
+                text.match(/.{1,20}에\\s*재설정/);
+    return { percent: pct ? parseInt(pct[1]) : -1,
+             reset: reset ? reset[0].trim() : '' };
+  }
+
+  var session = null, weekly = null;
+  if (sessionIdx >= 0) {
+    session = extract(body.substring(sessionIdx,
+      weeklyIdx >= 0 ? weeklyIdx : body.length));
+  }
+  if (weeklyIdx >= 0) {
+    weekly = extract(body.substring(weeklyIdx));
+  }
+
   var barValues = [];
   document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
     barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
   });
-  return JSON.stringify({
-    url: window.location.href,
-    percentMatches: percentMatches,
-    resetMatches: allResets,
-    barValues: barValues
-  });
+
+  return JSON.stringify({ url: url, session: session, weekly: weekly, barValues: barValues });
 })();
 `;
 
@@ -164,26 +170,28 @@ async function scrapeNow() {
       return;
     }
 
-    const percents = [];
-    (json.percentMatches || []).forEach(m => {
-      const match = m.match(/(\d+)%/);
-      if (match) percents.push(parseInt(match[1]));
-    });
-    const resets = json.resetMatches || [];
+    let sessionPct = json.session?.percent ?? -1;
+    let weeklyPct = json.weekly?.percent ?? -1;
+    const sessionReset = json.session?.reset || '';
+    const weeklyReset = json.weekly?.reset || '';
+    const barValues = json.barValues || [];
 
-    if (percents.length === 0 && json.barValues) {
-      json.barValues.forEach(v => {
-        const n = parseInt(v);
-        if (!isNaN(n) && n >= 0 && n <= 100) percents.push(n);
-      });
+    // fallback: progressbar
+    if (sessionPct < 0 && barValues.length > 0) {
+      const v = parseInt(barValues[0]);
+      if (!isNaN(v) && v >= 0 && v <= 100) sessionPct = v;
+    }
+    if (weeklyPct < 0 && barValues.length > 1) {
+      const v = parseInt(barValues[1]);
+      if (!isNaN(v) && v >= 0 && v <= 100) weeklyPct = v;
     }
 
-    if (percents.length > 0) {
+    if (sessionPct >= 0) {
       usageData = {
         planName: 'Max',
-        session: { label: '현재 세션', usedPercent: percents[0], resetTime: resets[0] || '' },
-        weekly: percents.length > 1
-          ? { label: '주간 한도', usedPercent: percents[1], resetTime: resets[1] || '' }
+        session: { label: '현재 세션', usedPercent: sessionPct, resetTime: sessionReset },
+        weekly: weeklyPct >= 0
+          ? { label: '주간 한도', usedPercent: weeklyPct, resetTime: weeklyReset }
           : null,
         lastUpdated: new Date().toISOString()
       };

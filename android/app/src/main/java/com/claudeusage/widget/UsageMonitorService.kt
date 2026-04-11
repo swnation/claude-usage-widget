@@ -204,27 +204,34 @@ class UsageMonitorService : Service() {
         view?.evaluateJavascript("""
             (function() {
                 var body = document.body ? document.body.innerText : '';
-                var percentMatches = body.match(/(\d+)%\s*사용됨/g) || [];
-                var allResets = [];
-                var r1 = body.match(/\d+시간[\s\d]*분?\s*후\s*재설정/g);
-                if (r1) r1.forEach(function(m) { allResets.push(m); });
-                var r2 = body.match(/.{1,20}에\s*재설정/g);
-                if (r2) r2.forEach(function(m) {
-                    var t = m.trim();
-                    if (t.length > 3 && allResets.indexOf(t) === -1 && !t.match(/^\d+시간/)) {
-                        allResets.push(t);
-                    }
-                });
+                var url = window.location.href;
+                var sessionIdx = body.indexOf('현재 세션');
+                var weeklyIdx = body.indexOf('주간 한도');
+
+                function extract(text) {
+                    var pct = text.match(/(\d+)%\s*사용됨/);
+                    var reset = text.match(/\d+시간[\s\d]*분?\s*후\s*재설정/) ||
+                                text.match(/.{1,20}에\s*재설정/);
+                    return { percent: pct ? parseInt(pct[1]) : -1,
+                             reset: reset ? reset[0].trim() : '' };
+                }
+
+                var session = null, weekly = null;
+                if (sessionIdx >= 0) {
+                    session = extract(body.substring(sessionIdx,
+                        weeklyIdx >= 0 ? weeklyIdx : body.length));
+                }
+                if (weeklyIdx >= 0) {
+                    weekly = extract(body.substring(weeklyIdx));
+                }
+
                 var barValues = [];
                 document.querySelectorAll('[role="progressbar"], progress, [aria-valuenow]').forEach(function(bar) {
                     barValues.push(bar.getAttribute('aria-valuenow') || bar.value || '');
                 });
-                return JSON.stringify({
-                    url: window.location.href,
-                    percentMatches: percentMatches,
-                    resetMatches: allResets,
-                    barValues: barValues
-                });
+
+                return JSON.stringify({ url: url, session: session,
+                    weekly: weekly, barValues: barValues });
             })();
         """.trimIndent()) { result -> handleScrapeResult(result) }
     }
@@ -240,31 +247,32 @@ class UsageMonitorService : Service() {
                 ?: "{}"
             val gson = Gson()
             val json = gson.fromJson(raw, JsonObject::class.java)
-            val percentMatches = json?.getAsJsonArray("percentMatches")
-            val resetMatches = try { json?.getAsJsonArray("resetMatches") } catch (_: Exception) { null }
+
+            val sessionObj = try { json?.getAsJsonObject("session") } catch (_: Exception) { null }
+            val weeklyObj = try { json?.getAsJsonObject("weekly") } catch (_: Exception) { null }
             val barValues = try { json?.getAsJsonArray("barValues") } catch (_: Exception) { null }
 
-            val percents = mutableListOf<Int>()
-            percentMatches?.forEach {
-                val match = Regex("(\\d+)%").find(it.asString)
-                if (match != null) percents.add(match.groupValues[1].toInt())
-            }
-            val resets = mutableListOf<String>()
-            resetMatches?.forEach { resets.add(it.asString) }
+            var sessionPct = sessionObj?.get("percent")?.asInt ?: -1
+            var weeklyPct = weeklyObj?.get("percent")?.asInt ?: -1
+            val sessionReset = sessionObj?.get("reset")?.asString ?: ""
+            val weeklyReset = weeklyObj?.get("reset")?.asString ?: ""
 
-            if (percents.isEmpty() && barValues != null) {
-                barValues.forEach {
-                    val v = it.asString.toIntOrNull()
-                    if (v != null && v in 0..100) percents.add(v)
-                }
+            // fallback: progressbar
+            if (sessionPct < 0 && barValues != null && barValues.size() > 0) {
+                val v = barValues[0].asString.toIntOrNull()
+                if (v != null && v in 0..100) sessionPct = v
+            }
+            if (weeklyPct < 0 && barValues != null && barValues.size() > 1) {
+                val v = barValues[1].asString.toIntOrNull()
+                if (v != null && v in 0..100) weeklyPct = v
             }
 
-            if (percents.isNotEmpty()) {
+            if (sessionPct >= 0) {
                 val usage = PlanUsage(
                     planName = "Max",
-                    session = UsageLimit("현재 세션", percents[0].toDouble(), resets.getOrNull(0) ?: ""),
-                    weekly = if (percents.size > 1)
-                        UsageLimit("주간 한도", percents[1].toDouble(), resets.getOrNull(1) ?: "") else null,
+                    session = UsageLimit("현재 세션", sessionPct.toDouble(), sessionReset),
+                    weekly = if (weeklyPct >= 0)
+                        UsageLimit("주간 한도", weeklyPct.toDouble(), weeklyReset) else null,
                     lastUpdated = java.time.Instant.now().toString(),
                 )
                 val usageJson = gson.toJson(usage)
