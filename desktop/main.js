@@ -24,7 +24,6 @@ let mainWin = null;
 let widgetWin = null;
 let loginWin = null;
 let scraperWin = null;
-let obsScraperWin = null;
 let scrapeTimer = null;
 let usageData = null;
 let costData = null;
@@ -254,107 +253,100 @@ async function scrapeNow() {
   isScraping = false;
 }
 
-// ── 오랑붕쌤 비용 스크래핑 ──
-const OBS_SCRAPE_JS = `
-(function() {
-  var kstNow = new Date(Date.now() + 9*3600*1000);
-  var today = kstNow.toISOString().slice(0,10);
-  var month = today.slice(0,7);
-  var result = { today: 0, month: 0, byAI: {} };
-  var found = false;
-  for (var i = 0; i < localStorage.length; i++) {
-    var key = localStorage.key(i);
-    if (key.indexOf('om_usage_') !== 0) continue;
-    found = true;
-    try {
-      var data = JSON.parse(localStorage.getItem(key));
-      var dates = Object.keys(data);
-      for (var d = 0; d < dates.length; d++) {
-        var date = dates[d];
-        var aiMap = data[date];
-        var aiIds = Object.keys(aiMap);
-        for (var a = 0; a < aiIds.length; a++) {
-          var aiId = aiIds[a];
-          var info = aiMap[aiId];
-          var cost = info.cost || 0;
-          if (!result.byAI[aiId]) result.byAI[aiId] = { today: 0, month: 0 };
-          if (date === today) {
-            result.today += cost;
-            result.byAI[aiId].today += cost;
-          }
-          if (date.indexOf(month) === 0) {
-            result.month += cost;
-            result.byAI[aiId].month += cost;
-          }
-        }
-      }
-    } catch(e) {}
-  }
-  result.hasData = found;
-  return JSON.stringify(result);
-})();
-`;
+// ── 오랑붕쌤 Drive API 직접 호출 ──
+const OBS_DOMAINS = [
+  ['Orangi Migraine', 'orangi_master.json'],
+  ['Orangi Mental', 'orangi_mental_master.json'],
+  ['Orangi Health', 'orangi_health_master.json'],
+  ['Bung Mental', 'bung_mental_master.json'],
+  ['Bung Health', 'bung_health_master.json'],
+  ['Bungruki Pregnancy', 'bungruki_master.json'],
+];
 
-function getObsScraperWindow() {
-  if (obsScraperWin && !obsScraperWin.isDestroyed()) return obsScraperWin;
-  obsScraperWin = new BrowserWindow({
-    show: false,
-    width: 800,
-    height: 600,
-    webPreferences: { contextIsolation: true, nodeIntegration: false }
+async function driveGet(urlPath, token) {
+  return new Promise((resolve, reject) => {
+    https.get(urlPath, { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode === 401) return reject(new Error('TOKEN_EXPIRED'));
+        if (res.statusCode !== 200) return resolve(null);
+        try { resolve(JSON.parse(data)); } catch(e) { resolve(null); }
+      });
+    }).on('error', reject);
   });
-  obsScraperWin.on('closed', () => { obsScraperWin = null; });
-  return obsScraperWin;
 }
 
-let isObsScraping = false;
+let isObsFetching = false;
 
 async function scrapeObsCost() {
-  if (isObsScraping) return;
+  if (isObsFetching) return;
   if (settings.displayMode === 'CLAUDE_ONLY') return;
-  if (!settings.obsLoggedIn) return;
+  if (!settings.googleToken) return;
 
-  isObsScraping = true;
-  const timeout = setTimeout(() => { isObsScraping = false; }, SCRAPE_TIMEOUT_MS);
+  isObsFetching = true;
+  const token = settings.googleToken;
 
   try {
-    const win = getObsScraperWindow();
-    await win.loadURL(OBS_URL);
-    await new Promise(r => setTimeout(r, 3500));
+    const now = new Date(Date.now() + 9*3600*1000);
+    const today = now.toISOString().slice(0,10);
+    const month = today.slice(0,7);
+    let todayTotal = 0, monthTotal = 0;
+    const byAIMap = {};
+    let anySuccess = false;
 
-    const raw = await win.webContents.executeJavaScript(OBS_SCRAPE_JS);
-    const json = JSON.parse(raw);
+    for (const [folderName, masterFile] of OBS_DOMAINS) {
+      try {
+        // 폴더 찾기
+        const q1 = encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+        const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q1}&fields=files(id)`, token);
+        if (!folders?.files?.length) continue;
+        const folderId = folders.files[0].id;
 
-    if (json.hasData) {
-      const byAI = [];
-      Object.entries(json.byAI || {}).forEach(([aiId, data]) => {
+        // 마스터 파일 찾기
+        const q2 = encodeURIComponent(`name='${masterFile}' and '${folderId}' in parents and trashed=false`);
+        const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q2}&fields=files(id)`, token);
+        if (!files?.files?.length) continue;
+        const fileId = files.files[0].id;
+
+        // 파일 읽기
+        const master = await driveGet(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, token);
+        if (!master?.usage_data) continue;
+
+        anySuccess = true;
+        for (const [date, aiMap] of Object.entries(master.usage_data)) {
+          for (const [aiId, info] of Object.entries(aiMap)) {
+            const cost = info.cost || 0;
+            if (!byAIMap[aiId]) byAIMap[aiId] = { today: 0, month: 0 };
+            if (date === today) { todayTotal += cost; byAIMap[aiId].today += cost; }
+            if (date.startsWith(month)) { monthTotal += cost; byAIMap[aiId].month += cost; }
+          }
+        }
+      } catch (e) {
+        if (e.message === 'TOKEN_EXPIRED') {
+          settings.googleToken = null;
+          settings.obsLoggedIn = false;
+          saveSettings();
+          broadcastStatus('토큰 만료 — 오랑붕쌤 재연결 필요');
+          isObsFetching = false;
+          return;
+        }
+      }
+    }
+
+    if (anySuccess) {
+      const byAI = Object.entries(byAIMap).map(([aiId, data]) => {
         const def = AI_DEFS[aiId] || { name: aiId, color: '#888' };
-        byAI.push({
-          aiId,
-          name: def.name,
-          color: def.color,
-          todayCost: data.today || 0,
-          monthCost: data.month || 0,
-        });
-      });
-      byAI.sort((a, b) => b.monthCost - a.monthCost);
+        return { aiId, name: def.name, color: def.color, todayCost: data.today, monthCost: data.month };
+      }).sort((a, b) => b.monthCost - a.monthCost);
 
-      costData = {
-        todayTotal: json.today || 0,
-        monthTotal: json.month || 0,
-        byAI,
-        lastUpdated: new Date().toISOString(),
-      };
-
+      costData = { todayTotal, monthTotal, byAI, bySys: [{ systemName: '오랑붕쌤', todayCost: todayTotal, monthCost: monthTotal }], lastUpdated: new Date().toISOString() };
       broadcastCost();
       updateTrayFromUsage();
     }
-  } catch (e) {
-    // 오랑붕쌤 스크래핑 실패 시 조용히 무시
-  }
+  } catch (_) {}
 
-  clearTimeout(timeout);
-  isObsScraping = false;
+  isObsFetching = false;
 }
 
 function startScrapeTimer() {
@@ -469,7 +461,7 @@ function showObsLoginWindow() {
   obsLoginWin.setMenuBarVisibility(false);
   obsLoginWin.loadURL(OBS_URL);
 
-  // 데이터 로드 감지: 주기적으로 localStorage 체크
+  // 토큰 감지: 주기적으로 S.token 체크
   let checkCount = 0;
   const checkInterval = setInterval(async () => {
     if (!obsLoginWin || obsLoginWin.isDestroyed()) {
@@ -480,19 +472,19 @@ function showObsLoginWindow() {
     if (checkCount > 60) { clearInterval(checkInterval); return; }
 
     try {
-      const hasData = await obsLoginWin.webContents.executeJavaScript(`
+      const result = await obsLoginWin.webContents.executeJavaScript(`
         (function() {
-          for (var i = 0; i < localStorage.length; i++) {
-            if (localStorage.key(i).indexOf('om_usage_') === 0) return true;
-          }
-          return false;
+          var token = (typeof S !== 'undefined' && S && S.token) ? S.token : null;
+          return JSON.stringify({ token: token });
         })();
       `);
-      if (hasData) {
+      const { token } = JSON.parse(result);
+      if (token) {
         clearInterval(checkInterval);
         settings.obsLoggedIn = true;
+        settings.googleToken = token;
         saveSettings();
-        broadcastStatus('오랑붕쌤 연결 완료');
+        broadcastStatus('오랑붕쌤 연결 완료 (Drive API)');
         if (mainWin && !mainWin.isDestroyed()) {
           mainWin.webContents.send('obs-status', true);
         }
@@ -673,7 +665,7 @@ app.on('window-all-closed', (e) => {
 
 app.on('before-quit', () => {
   stopScrapeTimer();
-  if (obsScraperWin && !obsScraperWin.isDestroyed()) obsScraperWin.destroy();
+  // Drive API 방식이라 별도 정리 불필요
 });
 
 // 단일 인스턴스 보장

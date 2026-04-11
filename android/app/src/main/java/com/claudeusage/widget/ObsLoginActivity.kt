@@ -11,13 +11,15 @@ import android.view.ViewGroup
 import android.webkit.*
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 
 /**
  * WebView로 오랑붕쌤 사이트에 Google 로그인.
- * 로그인 후 Drive에서 데이터 로드 → localStorage에 캐시 → 비용 스크래핑 가능.
+ * 로그인 후 S.token (Google OAuth 토큰)을 추출하여 저장.
+ * 이후 Drive API 직접 호출로 비용 데이터 조회.
  */
 class ObsLoginActivity : AppCompatActivity() {
 
@@ -29,6 +31,7 @@ class ObsLoginActivity : AppCompatActivity() {
     private lateinit var container: FrameLayout
     private lateinit var mainWebView: WebView
     private lateinit var doneButton: Button
+    private lateinit var statusLabel: TextView
     private var popupWebView: WebView? = null
     private val handler = Handler(Looper.getMainLooper())
 
@@ -54,8 +57,7 @@ class ObsLoginActivity : AppCompatActivity() {
 
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
-                    // 데이터 로드 완료 감지 (주기적 체크)
-                    startDataCheck()
+                    startTokenCheck()
                 }
             }
 
@@ -71,6 +73,7 @@ class ObsLoginActivity : AppCompatActivity() {
                     ))
                     mainWebView.visibility = View.GONE
                     doneButton.visibility = View.GONE
+                    statusLabel.visibility = View.GONE
 
                     val transport = resultMsg?.obj as? WebView.WebViewTransport
                     transport?.webView = popupWebView
@@ -89,13 +92,27 @@ class ObsLoginActivity : AppCompatActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
+        // 상태 라벨
+        statusLabel = TextView(this).apply {
+            text = "Google 로그인 후 토큰을 가져옵니다"
+            setTextColor(0xFFaaaaaa.toInt())
+            textSize = 12f
+            setPadding(32, 16, 32, 0)
+            setBackgroundColor(0xDD1a1a2e.toInt())
+        }
+        container.addView(statusLabel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ).apply { gravity = Gravity.BOTTOM; bottomMargin = 140 })
+
         doneButton = Button(this).apply {
-            text = "✓ 연결 완료"
-            setBackgroundColor(0xFF10a37f.toInt())
+            text = "Google 로그인 후 눌러주세요"
+            setBackgroundColor(0xFF555555.toInt())
             setTextColor(0xFFFFFFFF.toInt())
             textSize = 16f
             setPadding(48, 24, 48, 24)
             elevation = 8f
+            isEnabled = false
             setOnClickListener { onDoneClicked() }
         }
         container.addView(doneButton, FrameLayout.LayoutParams(
@@ -103,7 +120,7 @@ class ObsLoginActivity : AppCompatActivity() {
             FrameLayout.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.BOTTOM or Gravity.CENTER_HORIZONTAL
-            bottomMargin = 80
+            bottomMargin = 60
         })
 
         CookieManager.getInstance().apply {
@@ -152,73 +169,79 @@ class ObsLoginActivity : AppCompatActivity() {
         popupWebView = null
         mainWebView.visibility = View.VISIBLE
         doneButton.visibility = View.VISIBLE
+        statusLabel.visibility = View.VISIBLE
     }
 
-    private var dataCheckCount = 0
+    private var tokenCheckCount = 0
 
-    private fun startDataCheck() {
-        dataCheckCount = 0
-        checkForData()
+    private fun startTokenCheck() {
+        tokenCheckCount = 0
+        checkForToken()
     }
 
-    private fun checkForData() {
-        if (dataCheckCount > 30) return // 최대 30회 (60초)
-        dataCheckCount++
+    private fun checkForToken() {
+        if (tokenCheckCount > 60) return
+        tokenCheckCount++
 
         mainWebView.evaluateJavascript("""
             (function() {
-                var hasData = false;
-                for (var i = 0; i < localStorage.length; i++) {
-                    if (localStorage.key(i).indexOf('om_usage_') === 0) {
-                        hasData = true; break;
-                    }
-                }
-                var autoLogin = localStorage.getItem('om_auto_login') === 'true';
-                return JSON.stringify({ hasData: hasData, autoLogin: autoLogin });
+                var token = (typeof S !== 'undefined' && S && S.token) ? S.token : null;
+                return JSON.stringify({ token: token });
             })();
         """.trimIndent()) { result ->
             try {
                 val raw = result?.trim()?.removeSurrounding("\"")
                     ?.replace("\\\"", "\"") ?: "{}"
                 val json = com.google.gson.Gson().fromJson(raw, com.google.gson.JsonObject::class.java)
-                val hasData = json?.get("hasData")?.asBoolean ?: false
-                val autoLogin = json?.get("autoLogin")?.asBoolean ?: false
-
-                if (hasData) {
-                    doneButton.text = "✓ 데이터 확인됨 - 연결 완료"
-                    doneButton.setBackgroundColor(0xFF10a37f.toInt())
-                } else if (autoLogin) {
-                    doneButton.text = "⏳ 데이터 로딩 중..."
-                    handler.postDelayed({ checkForData() }, 2000)
-                } else {
-                    doneButton.text = "Google 로그인 후 눌러주세요"
+                val token = json?.get("token")?.let {
+                    if (it.isJsonNull) null else it.asString
                 }
-            } catch (_: Exception) {}
+
+                if (token != null && token.isNotEmpty()) {
+                    doneButton.text = "✓ 토큰 확인됨 - 연결 완료"
+                    doneButton.setBackgroundColor(0xFF10a37f.toInt())
+                    doneButton.isEnabled = true
+                    statusLabel.text = "Google OAuth 토큰 획득 완료"
+                    statusLabel.setTextColor(0xFF10a37f.toInt())
+                } else {
+                    statusLabel.text = "로그인 대기 중... (${tokenCheckCount})"
+                    handler.postDelayed({ checkForToken() }, 2000)
+                }
+            } catch (_: Exception) {
+                handler.postDelayed({ checkForToken() }, 2000)
+            }
         }
     }
 
     private fun onDoneClicked() {
         mainWebView.evaluateJavascript("""
             (function() {
-                var hasData = false;
-                for (var i = 0; i < localStorage.length; i++) {
-                    if (localStorage.key(i).indexOf('om_usage_') === 0) {
-                        hasData = true; break;
-                    }
-                }
-                return hasData;
+                var token = (typeof S !== 'undefined' && S && S.token) ? S.token : null;
+                return JSON.stringify({ token: token });
             })();
         """.trimIndent()) { result ->
-            val hasData = result?.trim() == "true"
-            if (hasData) {
-                PreferenceManager.getDefaultSharedPreferences(this).edit()
-                    .putBoolean("obs_logged_in", true).apply()
-                Toast.makeText(this, "오랑붕쌤 연결 성공!", Toast.LENGTH_SHORT).show()
-                setResult(RESULT_LOGGED_IN)
-                finish()
-            } else {
-                Toast.makeText(this, "먼저 Google 로그인 후 데이터가 로드될 때까지 기다려주세요",
-                    Toast.LENGTH_LONG).show()
+            try {
+                val raw = result?.trim()?.removeSurrounding("\"")
+                    ?.replace("\\\"", "\"") ?: "{}"
+                val json = com.google.gson.Gson().fromJson(raw, com.google.gson.JsonObject::class.java)
+                val token = json?.get("token")?.let {
+                    if (it.isJsonNull) null else it.asString
+                }
+
+                if (token != null && token.isNotEmpty()) {
+                    PreferenceManager.getDefaultSharedPreferences(this).edit()
+                        .putBoolean("obs_logged_in", true)
+                        .putString("google_oauth_token", token)
+                        .putLong("google_oauth_time", System.currentTimeMillis())
+                        .apply()
+                    Toast.makeText(this, "오랑붕쌤 연결 성공!", Toast.LENGTH_SHORT).show()
+                    setResult(RESULT_LOGGED_IN)
+                    finish()
+                } else {
+                    Toast.makeText(this, "먼저 Google 로그인을 완료하세요", Toast.LENGTH_LONG).show()
+                }
+            } catch (_: Exception) {
+                Toast.makeText(this, "토큰 추출 실패", Toast.LENGTH_SHORT).show()
             }
         }
     }

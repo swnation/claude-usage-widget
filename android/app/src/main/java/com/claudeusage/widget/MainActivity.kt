@@ -131,7 +131,6 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         stopAutoRefresh()
         scrapeWebView?.destroy()
-        obsScrapeWebView?.destroy()
         super.onDestroy()
     }
 
@@ -737,136 +736,44 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    // ── 오랑붕쌤 비용 스크래핑 (MainActivity에서 직접) ──
-    private var obsScrapeWebView: WebView? = null
-
-    @SuppressLint("SetJavaScriptEnabled")
+    // ── 오랑붕쌤 Drive API 직접 호출 ──
     private fun fetchObsCost() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
         if (mode == DisplayMode.CLAUDE_ONLY) return
 
-        val obsUrl = prefs.getString("obs_url", "https://swnation.github.io/OrangBoongSSem/")
-            ?: return
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) {
+            statusText.text = "오랑붕쌤 연결이 필요합니다"
+            return
+        }
 
-        try {
-            obsScrapeWebView?.let {
-                (it.parent as? ViewGroup)?.removeView(it)
-                it.destroy()
-            }
-            val wv = WebView(this).apply {
-                visibility = View.GONE
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.userAgentString = LoginActivity.CHROME_UA
-                webViewClient = object : WebViewClient() {
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        super.onPageFinished(view, url)
-                        handler.postDelayed({ scrapeObsCostPage(view) }, 3000)
-                    }
-                }
-            }
-            obsScrapeWebView = wv
-            (findViewById<View>(android.R.id.content) as? ViewGroup)?.addView(
-                wv, ViewGroup.LayoutParams(400, 800))
-            wv.loadUrl(obsUrl)
-        } catch (_: Exception) {}
-    }
+        statusText.text = "Drive에서 비용 데이터 조회 중..."
 
-    private fun scrapeObsCostPage(view: WebView?) {
-        view?.evaluateJavascript("""
-            (function() {
-                var kstNow = new Date(Date.now() + 9*3600*1000);
-                var today = kstNow.toISOString().slice(0,10);
-                var month = today.slice(0,7);
-                var result = { today: 0, month: 0, byAI: {} };
-                var found = false;
-                for (var i = 0; i < localStorage.length; i++) {
-                    var key = localStorage.key(i);
-                    if (key.indexOf('om_usage_') !== 0) continue;
-                    found = true;
-                    try {
-                        var data = JSON.parse(localStorage.getItem(key));
-                        var dates = Object.keys(data);
-                        for (var d = 0; d < dates.length; d++) {
-                            var date = dates[d];
-                            var aiMap = data[date];
-                            var aiIds = Object.keys(aiMap);
-                            for (var a = 0; a < aiIds.length; a++) {
-                                var aiId = aiIds[a];
-                                var info = aiMap[aiId];
-                                var cost = info.cost || 0;
-                                if (!result.byAI[aiId]) result.byAI[aiId] = { today: 0, month: 0 };
-                                if (date === today) {
-                                    result.today += cost;
-                                    result.byAI[aiId].today += cost;
-                                }
-                                if (date.indexOf(month) === 0) {
-                                    result.month += cost;
-                                    result.byAI[aiId].month += cost;
-                                }
-                            }
-                        }
-                    } catch(e) {}
-                }
-                result.hasData = found;
-                return JSON.stringify(result);
-            })();
-        """.trimIndent()) { result -> handleObsCostResult(result) }
-    }
+        Thread {
+            val result = DriveApiClient.fetchCostFromDrive(token)
 
-    private fun handleObsCostResult(jsResult: String?) {
-        try {
-            val raw = jsResult?.trim()
-                ?.removeSurrounding("\"")
-                ?.replace("\\\"", "\"")
-                ?.replace("\\\\", "\\")
-                ?.replace("\\/", "/")
-                ?.replace("\\n", "\n")
-                ?: "{}"
-
-            val gson = com.google.gson.Gson()
-            val json = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
-            val hasData = json?.get("hasData")?.asBoolean ?: false
-
-            if (hasData) {
-                val todayTotal = json?.get("today")?.asDouble ?: 0.0
-                val monthTotal = json?.get("month")?.asDouble ?: 0.0
-                val byAIObj = try { json?.getAsJsonObject("byAI") } catch (_: Exception) { null }
-
-                val breakdowns = mutableListOf<AiCostBreakdown>()
-                byAIObj?.entrySet()?.forEach { (aiId, value) ->
-                    val aiDef = AiDefs.find(aiId)
-                    val obj = value.asJsonObject
-                    breakdowns.add(AiCostBreakdown(
-                        aiId = aiId,
-                        name = aiDef?.name ?: aiId,
-                        color = aiDef?.color ?: "#888888",
-                        todayCost = obj.get("today")?.asDouble ?: 0.0,
-                        monthCost = obj.get("month")?.asDouble ?: 0.0,
-                    ))
+            handler.post {
+                if (result.tokenExpired) {
+                    prefs.edit().putBoolean("obs_logged_in", false)
+                        .remove("google_oauth_token").apply()
+                    updateObsUI(false)
+                    statusText.text = "토큰 만료 — 오랑붕쌤 재연결 필요"
+                    return@post
                 }
 
-                val costData = ApiCostData(
-                    todayTotal = todayTotal,
-                    monthTotal = monthTotal,
-                    byAI = breakdowns.sortedByDescending { it.monthCost },
-                    lastUpdated = java.time.Instant.now().toString(),
-                )
+                if (result.error != null) {
+                    statusText.text = "Drive 오류: ${result.error}"
+                    return@post
+                }
 
+                val costData = result.costData ?: return@post
                 displayCostData(costData)
-                PreferenceManager.getDefaultSharedPreferences(this).edit()
-                    .putString("last_api_cost", gson.toJson(costData)).apply()
+                prefs.edit().putString("last_api_cost",
+                    com.google.gson.Gson().toJson(costData)).apply()
                 UsageWidgetProvider.updateAll(this)
+                statusText.text = "마지막 업데이트: ${java.time.LocalTime.now().toString().take(5)}"
             }
-        } catch (_: Exception) {}
-
-        try {
-            obsScrapeWebView?.let {
-                (it.parent as? ViewGroup)?.removeView(it)
-                it.destroy()
-            }
-        } catch (_: Exception) {}
-        obsScrapeWebView = null
+        }.start()
     }
 }

@@ -61,11 +61,8 @@ class UsageMonitorService : Service() {
     private var scrapeDelayedRunnable: Runnable? = null
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
-    // 오랑붕쌤 스크래핑
-    private var obsWebView: WebView? = null
-    private var isObsScraping = false
-    private var obsTimeoutRunnable: Runnable? = null
-    private var obsDelayedRunnable: Runnable? = null
+    // 오랑붕쌤 Drive API
+    private var isObsFetching = false
 
     override fun onCreate() {
         super.onCreate()
@@ -107,10 +104,7 @@ class UsageMonitorService : Service() {
         scrapeDelayedRunnable = null
         try { scrapeWebView?.destroy() } catch (_: Exception) {}
         scrapeWebView = null
-        // 오랑붕쌤 정리
-        finishObsScraping()
-        try { obsWebView?.destroy() } catch (_: Exception) {}
-        obsWebView = null
+        isObsFetching = false
         super.onDestroy()
     }
 
@@ -306,161 +300,43 @@ class UsageMonitorService : Service() {
         finishScraping()
     }
 
-    // ── 오랑붕쌤 비용 스크래핑 ──
-    @SuppressLint("SetJavaScriptEnabled")
-    private fun getOrCreateObsWebView(): WebView {
-        obsWebView?.let { return it }
-        val wv = WebView(this).apply {
-            settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
-            settings.userAgentString = LoginActivity.CHROME_UA
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    obsDelayedRunnable?.let { mainHandler.removeCallbacks(it) }
-                    val runnable = Runnable { scrapeObsCost(view) }
-                    obsDelayedRunnable = runnable
-                    mainHandler.postDelayed(runnable, 3000)
-                }
-                override fun onReceivedError(
-                    view: WebView, request: WebResourceRequest,
-                    error: WebResourceError
-                ) {
-                    super.onReceivedError(view, request, error)
-                    if (request.isForMainFrame) finishObsScraping()
-                }
-            }
-        }
-        obsWebView = wv
-        return wv
-    }
-
+    // ── 오랑붕쌤 Drive API 직접 호출 ──
     private fun fetchObsCostInBackground() {
-        if (isObsScraping) return
+        if (isObsFetching) return
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
         if (mode == DisplayMode.CLAUDE_ONLY) return
 
-        val obsUrl = prefs.getString("obs_url", OBS_URL) ?: OBS_URL
-        if (obsUrl.isBlank()) return
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) return
 
-        isObsScraping = true
-        obsTimeoutRunnable = Runnable { finishObsScraping() }
-        mainHandler.postDelayed(obsTimeoutRunnable!!, SCRAPE_TIMEOUT_MS)
+        isObsFetching = true
+        Thread {
+            try {
+                val result = DriveApiClient.fetchCostFromDrive(token)
 
-        try {
-            getOrCreateObsWebView().loadUrl(obsUrl)
-        } catch (_: Exception) {
-            finishObsScraping()
-        }
-    }
-
-    private fun finishObsScraping() {
-        obsTimeoutRunnable?.let { mainHandler.removeCallbacks(it) }
-        obsTimeoutRunnable = null
-        obsDelayedRunnable?.let { mainHandler.removeCallbacks(it) }
-        obsDelayedRunnable = null
-        isObsScraping = false
-    }
-
-    private fun scrapeObsCost(view: WebView?) {
-        if (!isObsScraping) return
-        view?.evaluateJavascript("""
-            (function() {
-                var kstNow = new Date(Date.now() + 9*3600*1000);
-                var today = kstNow.toISOString().slice(0,10);
-                var month = today.slice(0,7);
-                var result = { today: 0, month: 0, byAI: {} };
-                var found = false;
-
-                for (var i = 0; i < localStorage.length; i++) {
-                    var key = localStorage.key(i);
-                    if (key.indexOf('om_usage_') !== 0) continue;
-                    found = true;
-                    try {
-                        var data = JSON.parse(localStorage.getItem(key));
-                        var dates = Object.keys(data);
-                        for (var d = 0; d < dates.length; d++) {
-                            var date = dates[d];
-                            var aiMap = data[date];
-                            var aiIds = Object.keys(aiMap);
-                            for (var a = 0; a < aiIds.length; a++) {
-                                var aiId = aiIds[a];
-                                var info = aiMap[aiId];
-                                var cost = info.cost || 0;
-                                if (!result.byAI[aiId]) result.byAI[aiId] = { today: 0, month: 0 };
-                                if (date === today) {
-                                    result.today += cost;
-                                    result.byAI[aiId].today += cost;
-                                }
-                                if (date.indexOf(month) === 0) {
-                                    result.month += cost;
-                                    result.byAI[aiId].month += cost;
-                                }
-                            }
-                        }
-                    } catch(e) {}
+                if (result.tokenExpired) {
+                    // 토큰 만료 → obs_logged_in 해제
+                    prefs.edit().putBoolean("obs_logged_in", false)
+                        .remove("google_oauth_token").apply()
+                    isObsFetching = false
+                    return@Thread
                 }
 
-                result.hasData = found;
-                return JSON.stringify(result);
-            })();
-        """.trimIndent()) { result -> handleObsScrapeResult(result) }
-    }
+                val costData = result.costData
+                if (costData != null) {
+                    val costJson = Gson().toJson(costData)
+                    prefs.edit().putString("last_api_cost", costJson).apply()
 
-    private fun handleObsScrapeResult(jsResult: String?) {
-        try {
-            val raw = jsResult?.trim()
-                ?.removeSurrounding("\"")
-                ?.replace("\\\"", "\"")
-                ?.replace("\\\\", "\\")
-                ?.replace("\\/", "/")
-                ?.replace("\\n", "\n")
-                ?: "{}"
-            val gson = Gson()
-            val json = gson.fromJson(raw, JsonObject::class.java)
-
-            val hasData = json?.get("hasData")?.asBoolean ?: false
-            if (!hasData) {
-                finishObsScraping()
-                return
-            }
-
-            val todayTotal = json?.get("today")?.asDouble ?: 0.0
-            val monthTotal = json?.get("month")?.asDouble ?: 0.0
-            val byAIObj = try { json?.getAsJsonObject("byAI") } catch (_: Exception) { null }
-
-            val breakdowns = mutableListOf<AiCostBreakdown>()
-            byAIObj?.entrySet()?.forEach { (aiId, value) ->
-                val aiDef = AiDefs.find(aiId)
-                val obj = value.asJsonObject
-                breakdowns.add(AiCostBreakdown(
-                    aiId = aiId,
-                    name = aiDef?.name ?: aiId,
-                    color = aiDef?.color ?: "#888888",
-                    todayCost = obj.get("today")?.asDouble ?: 0.0,
-                    monthCost = obj.get("month")?.asDouble ?: 0.0,
-                ))
-            }
-
-            val costData = ApiCostData(
-                todayTotal = todayTotal,
-                monthTotal = monthTotal,
-                byAI = breakdowns.sortedByDescending { it.monthCost },
-                lastUpdated = java.time.Instant.now().toString(),
-            )
-
-            val costJson = gson.toJson(costData)
-            PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("last_api_cost", costJson).apply()
-
-            // 알림 + 위젯 업데이트
-            val usage = loadSavedUsage()
-            notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
-            UsageWidgetProvider.updateAll(this)
-        } catch (_: Exception) {}
-
-        finishObsScraping()
+                    mainHandler.post {
+                        val usage = loadSavedUsage()
+                        notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+                        UsageWidgetProvider.updateAll(this)
+                    }
+                }
+            } catch (_: Exception) {}
+            isObsFetching = false
+        }.start()
     }
 
     private fun checkAlerts(usage: PlanUsage?) {
