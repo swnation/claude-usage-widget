@@ -3,6 +3,10 @@ package com.claudeusage.widget
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -279,7 +283,7 @@ class MainActivity : AppCompatActivity() {
 
         adminCostText.text = "Admin API 조회 중..."
 
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             val results = mutableListOf<String>()
             var claudeActual: Double? = null
             var gptActual: Double? = null
@@ -351,8 +355,8 @@ class MainActivity : AppCompatActivity() {
             }
 
             // 추정치와 비교
-            handler.post {
-                val costJson = PreferenceManager.getDefaultSharedPreferences(this)
+            withContext(Dispatchers.Main) {
+                val costJson = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
                     .getString("last_api_cost", null)
                 val estimatedClaude = if (costJson != null) {
                     try {
@@ -391,7 +395,7 @@ class MainActivity : AppCompatActivity() {
                     }
                     .apply()
             }
-        }.start()
+        }
     }
 
     // ── Admin 키 암호화 저장/복원 ──
@@ -452,12 +456,12 @@ class MainActivity : AppCompatActivity() {
         // Drive 백업 (Google 토큰 있으면)
         val token = prefs.getString("google_oauth_token", null)
         if (!token.isNullOrEmpty()) {
-            Thread {
+            lifecycleScope.launch(Dispatchers.IO) {
                 val ok = DriveApiClient.saveKeysToDrive(token, encrypted)
-                handler.post {
-                    if (ok) Toast.makeText(this, "☁️ Drive 백업 완료", Toast.LENGTH_SHORT).show()
+                withContext(Dispatchers.Main) {
+                    if (ok) Toast.makeText(this@MainActivity, "☁️ Drive 백업 완료", Toast.LENGTH_SHORT).show()
                 }
-            }.start()
+            }
         }
 
         if (keys.has("anthropic") || keys.has("openai")) fetchAdminCosts()
@@ -473,12 +477,12 @@ class MainActivity : AppCompatActivity() {
 
         Toast.makeText(this, "Drive에서 키 불러오는 중...", Toast.LENGTH_SHORT).show()
 
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             val encrypted = DriveApiClient.loadKeysFromDrive(token)
-            handler.post {
+            withContext(Dispatchers.Main) {
                 if (encrypted == null) {
-                    Toast.makeText(this, "Drive에 백업된 키가 없습니다", Toast.LENGTH_SHORT).show()
-                    return@post
+                    Toast.makeText(this@MainActivity, "Drive에 백업된 키가 없습니다", Toast.LENGTH_SHORT).show()
+                    return@withContext
                 }
 
                 // PIN 입력 받기
@@ -522,7 +526,7 @@ class MainActivity : AppCompatActivity() {
                     .setNegativeButton("취소", null)
                     .show()
             }
-        }.start()
+        }
     }
 
     private fun updateCostSectionVisibility() {
@@ -867,30 +871,30 @@ class MainActivity : AppCompatActivity() {
 
         statusText.text = "Drive에서 비용 데이터 조회 중..."
 
-        Thread {
+        lifecycleScope.launch(Dispatchers.IO) {
             val result = DriveApiClient.fetchCostFromDrive(token)
 
-            handler.post {
+            withContext(Dispatchers.Main) {
                 if (result.tokenExpired) {
                     prefs.edit().putBoolean("obs_logged_in", false)
                         .remove("google_oauth_token").apply()
                     updateObsUI(false)
                     statusText.text = "토큰 만료 — 오랑붕쌤 재연결 필요"
-                    return@post
+                    return@withContext
                 }
 
                 if (result.error != null) {
                     statusText.text = "Drive 오류: ${result.error}"
-                    return@post
+                    return@withContext
                 }
 
-                val costData = result.costData ?: return@post
+                val costData = result.costData ?: return@withContext
                 displayCostData(costData)
                 prefs.edit().putString("last_api_cost",
                     com.google.gson.Gson().toJson(costData)).apply()
-                UsageWidgetProvider.updateAll(this)
+                UsageWidgetProvider.updateAll(this@MainActivity)
                 statusText.text = "마지막 업데이트: ${java.time.LocalTime.now().toString().take(5)}"
             }
-        }.start()
+        }
     }
 }

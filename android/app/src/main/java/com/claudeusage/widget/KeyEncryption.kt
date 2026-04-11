@@ -42,6 +42,7 @@ object KeyEncryption {
     fun decrypt(encrypted: String, pin: String): String? {
         return try {
             val combined = Base64.decode(encrypted, Base64.NO_WRAP)
+            if (combined.size < IV_LENGTH + 16) return null // IV + 최소 GCM 태그
             val iv = combined.copyOfRange(0, IV_LENGTH)
             val cipherText = combined.copyOfRange(IV_LENGTH, combined.size)
             val key = deriveKey(pin)

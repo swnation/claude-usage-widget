@@ -11,8 +11,8 @@ android {
         applicationId = "com.claudeusage.widget"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.5.1"
+        versionCode = 14
+        versionName = "2.0.0"
     }
 
     buildTypes {
@@ -43,5 +43,6 @@ dependencies {
     implementation("com.google.code.gson:gson:2.11.0")
     implementation("androidx.preference:preference-ktx:1.2.1")
     implementation("androidx.lifecycle:lifecycle-service:2.8.7")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
     implementation("androidx.webkit:webkit:1.12.1")
 }

@@ -153,11 +153,11 @@ object DriveApiClient {
         conn.readTimeout = 15000
 
         return try {
-            if (conn.responseCode == 401) {
-                throw Exception("401 Unauthorized")
-            }
-            if (conn.responseCode != 200) return null
-            val body = conn.inputStream.bufferedReader().readText()
+            val code = conn.responseCode
+            if (code == 401) throw Exception("401 Unauthorized")
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.readText() ?: ""
+            if (code !in 200..299) return null
             JsonParser.parseString(body).asJsonObject
         } finally {
             conn.disconnect()
@@ -215,8 +215,10 @@ object DriveApiClient {
         conn.setRequestProperty("Content-Type", "application/json")
         conn.doOutput = true
         conn.outputStream.write(meta.toByteArray())
-        val body = conn.inputStream.bufferedReader().readText()
+        val stream = if (conn.responseCode in 200..299) conn.inputStream else conn.errorStream
+        val body = stream?.bufferedReader()?.readText() ?: ""
         conn.disconnect()
+        if (conn.responseCode !in 200..299) throw Exception("Folder create failed: ${conn.responseCode}")
         return JsonParser.parseString(body).asJsonObject.get("id").asString
     }
 
@@ -227,8 +229,11 @@ object DriveApiClient {
         conn.setRequestProperty("Content-Type", "application/json")
         conn.doOutput = true
         conn.outputStream.write(content.toByteArray())
-        conn.inputStream.bufferedReader().readText()
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        stream?.bufferedReader()?.readText()
         conn.disconnect()
+        if (code !in 200..299) throw Exception("Drive PATCH failed: $code")
     }
 
     private fun httpPostMultipart(token: String, fileName: String, parentId: String, content: String) {
@@ -243,7 +248,10 @@ object DriveApiClient {
         conn.setRequestProperty("Content-Type", "multipart/related; boundary=$boundary")
         conn.doOutput = true
         conn.outputStream.write(body.toByteArray())
-        conn.inputStream.bufferedReader().readText()
+        val code = conn.responseCode
+        val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+        stream?.bufferedReader()?.readText()
         conn.disconnect()
+        if (code !in 200..299) throw Exception("Drive POST failed: $code")
     }
 }

@@ -511,11 +511,15 @@ const KEY_SALT = 'claude-widget-keys-v1';
 const KEY_ITERATIONS = 100000;
 
 function deriveKeyFromPin(pin) {
-  return crypto.pbkdf2Sync(pin, KEY_SALT, KEY_ITERATIONS, 32, 'sha256');
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(pin, KEY_SALT, KEY_ITERATIONS, 32, 'sha256', (err, key) => {
+      if (err) reject(err); else resolve(key);
+    });
+  });
 }
 
-function encryptKeys(data, pin) {
-  const key = deriveKeyFromPin(pin);
+async function encryptKeys(data, pin) {
+  const key = await deriveKeyFromPin(pin);
   const iv = crypto.randomBytes(12);
   const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
   const encrypted = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
@@ -523,13 +527,14 @@ function encryptKeys(data, pin) {
   return Buffer.concat([iv, encrypted, tag]).toString('base64');
 }
 
-function decryptKeys(encrypted, pin) {
+async function decryptKeys(encrypted, pin) {
   try {
     const buf = Buffer.from(encrypted, 'base64');
+    if (buf.length < 12 + 16) return null; // IV + 최소 GCM 태그
+    const key = await deriveKeyFromPin(pin);
     const iv = buf.subarray(0, 12);
     const tag = buf.subarray(buf.length - 16);
     const cipherText = buf.subarray(12, buf.length - 16);
-    const key = deriveKeyFromPin(pin);
     const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
     decipher.setAuthTag(tag);
     return Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');
@@ -584,7 +589,10 @@ function driveWrite(token, method, apiPath, body, contentType) {
       headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': contentType || 'application/json' }
     }, (res) => {
       let d = ''; res.on('data', c => d += c);
-      res.on('end', () => resolve(d));
+      res.on('end', () => {
+        if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${d}`));
+        resolve(d);
+      });
     });
     req.on('error', reject);
     req.write(body); req.end();
@@ -733,7 +741,7 @@ ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
   keys[type] = key;
 
   // 암호화
-  const encrypted = encryptKeys(JSON.stringify(keys), pin);
+  const encrypted = await encryptKeys(JSON.stringify(keys), pin);
   settings.adminKeysEncrypted = encrypted;
   if (type === 'anthropic') settings.adminKey = key;
   else settings.openaiKey = key;
@@ -751,7 +759,7 @@ ipcMain.handle('restore-admin-keys', async (_, pin) => {
   if (!settings.googleToken) return { error: '오랑붕쌤 연결 필요' };
   const encrypted = await loadKeysFromDriveDesktop(settings.googleToken);
   if (!encrypted) return { error: 'Drive에 백업 없음' };
-  const decrypted = decryptKeys(encrypted, pin);
+  const decrypted = await decryptKeys(encrypted, pin);
   if (!decrypted) return { error: 'PIN 틀림' };
   try {
     const keys = JSON.parse(decrypted);
