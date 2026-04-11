@@ -513,51 +513,68 @@ function showObsLoginWindow() {
 // ────────────────────────────
 const https = require('https');
 
-async function fetchAnthropicCost(apiKey) {
+function adminApiRequest(hostname, path, headers) {
   return new Promise((resolve) => {
-    const options = {
-      hostname: 'api.anthropic.com',
-      path: '/v1/organizations/cost_report',
-      method: 'GET',
-      headers: {
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      }
-    };
-
-    const req = https.request(options, (res) => {
+    const req = https.request({ hostname, path, method: 'GET', headers }, (res) => {
       let data = '';
       res.on('data', (chunk) => data += chunk);
       res.on('end', () => {
-        try {
-          const json = JSON.parse(data);
-          if (mainWin && !mainWin.isDestroyed()) {
-            mainWin.webContents.send('admin-cost-update', {
-              success: res.statusCode === 200,
-              data: json,
-              statusCode: res.statusCode,
-            });
-          }
-          resolve(json);
-        } catch (e) {
-          resolve({ error: e.message });
-        }
+        try { resolve({ ok: res.statusCode === 200, status: res.statusCode, data: JSON.parse(data) }); }
+        catch (e) { resolve({ ok: false, error: e.message }); }
       });
     });
-
-    req.on('error', (e) => {
-      if (mainWin && !mainWin.isDestroyed()) {
-        mainWin.webContents.send('admin-cost-update', {
-          success: false,
-          error: e.message,
-        });
-      }
-      resolve({ error: e.message });
-    });
-
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
     req.setTimeout(10000, () => req.destroy());
     req.end();
   });
+}
+
+async function fetchAllAdminCosts() {
+  const results = { claude: null, gpt: null };
+
+  // Anthropic
+  if (settings.adminKey) {
+    const res = await adminApiRequest('api.anthropic.com', '/v1/organizations/cost_report', {
+      'x-api-key': settings.adminKey,
+      'anthropic-version': '2023-06-01',
+    });
+    if (res.ok && res.data?.total_cost != null) {
+      results.claude = { actual: res.data.total_cost };
+    } else {
+      results.claude = { error: res.error || `HTTP ${res.status}` };
+    }
+  }
+
+  // OpenAI
+  if (settings.openaiKey) {
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const tomorrow = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
+    const res = await adminApiRequest('api.openai.com',
+      `/v1/organization/costs?start_date=${monthStart}&end_date=${tomorrow}`, {
+      'Authorization': `Bearer ${settings.openaiKey}`,
+    });
+    if (res.ok) {
+      let total = 0;
+      (res.data?.data || []).forEach(bucket => {
+        (bucket.results || []).forEach(r => { total += r.amount?.value || 0; });
+      });
+      results.gpt = { actual: total };
+    } else {
+      results.gpt = { error: res.error || `HTTP ${res.status}` };
+    }
+  }
+
+  // 추정치와 비교하여 전송
+  const estimated = {};
+  if (costData?.byAI) {
+    costData.byAI.forEach(ai => { estimated[ai.aiId] = ai.monthCost; });
+  }
+
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('admin-cost-update', { results, estimated });
+  }
+  return results;
 }
 
 // ────────────────────────────
@@ -618,15 +635,17 @@ ipcMain.handle('logout', async () => {
 ipcMain.handle('toggle-widget', () => toggleWidget());
 ipcMain.handle('obs-login', () => showObsLoginWindow());
 ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
-ipcMain.handle('save-admin-key', (_, key) => {
-  settings.adminKey = key;
+ipcMain.handle('save-admin-key', (_, type, key) => {
+  if (type === 'anthropic') settings.adminKey = key;
+  else if (type === 'openai') settings.openaiKey = key;
   saveSettings();
-  if (key) fetchAnthropicCost(key);
+  fetchAllAdminCosts();
 });
-ipcMain.handle('get-admin-key', () => settings.adminKey ? '****' : '');
-ipcMain.handle('fetch-admin-cost', () => {
-  if (settings.adminKey) fetchAnthropicCost(settings.adminKey);
-});
+ipcMain.handle('get-admin-keys', () => ({
+  anthropic: settings.adminKey ? '****' : '',
+  openai: settings.openaiKey ? '****' : '',
+}));
+ipcMain.handle('fetch-admin-cost', () => fetchAllAdminCosts());
 ipcMain.handle('quit', () => app.quit());
 
 // ────────────────────────────

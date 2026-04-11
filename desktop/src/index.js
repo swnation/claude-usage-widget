@@ -43,11 +43,10 @@ const AI_DEFS = {
   setObsState(obsStatus);
 
   // Admin 키
-  const adminKey = await window.api.getAdminKey();
-  if (adminKey) {
-    $('#adminKeyInput').value = adminKey;
-    window.api.fetchAdminCost();
-  }
+  const adminKeys = await window.api.getAdminKeys();
+  if (adminKeys.anthropic) $('#anthropicKeyInput').value = adminKeys.anthropic;
+  if (adminKeys.openai) $('#openaiKeyInput').value = adminKeys.openai;
+  if (adminKeys.anthropic || adminKeys.openai) window.api.fetchAdminCost();
 })();
 
 // 실시간 업데이트 수신
@@ -101,23 +100,44 @@ function setObsState(connected) {
 }
 
 // Admin API 키
-$('#adminKeySave').onclick = async () => {
-  const key = $('#adminKeyInput').value.trim();
-  await window.api.saveAdminKey(key);
-  $('#adminCostText').textContent = key ? 'Admin 키 저장됨' : 'Admin 키 삭제됨';
+$('#anthropicKeySave').onclick = async () => {
+  const key = $('#anthropicKeyInput').value.trim();
+  if (key === '****') return;
+  await window.api.saveAdminKey('anthropic', key);
+};
+$('#openaiKeySave').onclick = async () => {
+  const key = $('#openaiKeyInput').value.trim();
+  if (key === '****') return;
+  await window.api.saveAdminKey('openai', key);
 };
 
-window.api.onAdminCostUpdate((result) => {
-  if (result.success) {
-    const total = result.data?.total_cost;
-    if (total != null) {
-      $('#adminCostText').textContent = `Anthropic 실제 청구: $${total.toFixed(4)}`;
+window.api.onAdminCostUpdate(({ results, estimated }) => {
+  const lines = [];
+  if (results.claude) {
+    if (results.claude.actual != null) {
+      lines.push(`Claude 실제: $${results.claude.actual.toFixed(4)}`);
+      const est = estimated?.claude || 0;
+      if (est > 0) {
+        const diff = results.claude.actual - est;
+        lines.push(`  차이: ${diff >= 0 ? '+' : ''}$${diff.toFixed(4)} (추정 $${est.toFixed(4)})`);
+      }
     } else {
-      $('#adminCostText').textContent = 'Anthropic: 응답 수신됨';
+      lines.push(`Claude: ${results.claude.error || '오류'}`);
     }
-  } else {
-    $('#adminCostText').textContent = `Admin API 오류: ${result.error || result.statusCode}`;
   }
+  if (results.gpt) {
+    if (results.gpt.actual != null) {
+      lines.push(`GPT 실제: $${results.gpt.actual.toFixed(4)}`);
+      const est = estimated?.gpt || 0;
+      if (est > 0) {
+        const diff = results.gpt.actual - est;
+        lines.push(`  차이: ${diff >= 0 ? '+' : ''}$${diff.toFixed(4)} (추정 $${est.toFixed(4)})`);
+      }
+    } else {
+      lines.push(`GPT: ${results.gpt.error || '오류'}`);
+    }
+  }
+  $('#adminCostText').textContent = lines.join('\n') || 'Admin API 키를 저장하세요';
 });
 logoutBtn.onclick = async () => {
   await window.api.logout();

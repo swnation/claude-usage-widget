@@ -134,7 +134,7 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
-        <!-- Anthropic Admin API 키 -->
+        <!-- Admin API 키 -->
         <LinearLayout
             android:id="@+id/adminApiSection"
             android:layout_width="match_parent"
@@ -145,15 +145,25 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Anthropic Admin API 키 (선택)"
+                android:text="Admin API 키 (실제 청구 비교용)"
                 android:textColor="#888899"
                 android:textSize="11sp"
                 android:layout_marginBottom="4dp" />
 
+            <!-- Anthropic -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal">
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="60dp"
+                    android:layout_height="40dp"
+                    android:text="Claude"
+                    android:textColor="#c96442"
+                    android:textSize="11sp"
+                    android:gravity="center_vertical" />
 
                 <EditText
                     android:id="@+id/adminKeyInput"
@@ -163,10 +173,10 @@
                     android:background="@drawable/input_background"
                     android:textColor="#e0e0e0"
                     android:textColorHint="#555566"
-                    android:hint="sk-admin-..."
+                    android:hint="sk-ant-admin-..."
                     android:inputType="textPassword"
                     android:padding="8dp"
-                    android:textSize="12sp"
+                    android:textSize="11sp"
                     android:layout_marginEnd="4dp" />
 
                 <Button
@@ -176,7 +186,46 @@
                     android:text="저장"
                     android:backgroundTint="#2a2a4a"
                     android:textColor="#c084fc"
-                    android:textSize="12sp" />
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- OpenAI -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="60dp"
+                    android:layout_height="40dp"
+                    android:text="GPT"
+                    android:textColor="#10a37f"
+                    android:textSize="11sp"
+                    android:gravity="center_vertical" />
+
+                <EditText
+                    android:id="@+id/openaiKeyInput"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="sk-admin-..."
+                    android:inputType="textPassword"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/openaiKeySave"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="저장"
+                    android:backgroundTint="#2a2a4a"
+                    android:textColor="#c084fc"
+                    android:textSize="11sp" />
             </LinearLayout>
 
             <TextView

@@ -22,13 +22,27 @@ data class AiCostBreakdown(
     val color: String,
     val todayCost: Double = 0.0,
     val monthCost: Double = 0.0,
+    val actualMonthCost: Double? = null, // Admin API 실제 비용 (있으면)
+) {
+    val hasDiff: Boolean get() = actualMonthCost != null
+    val monthDiff: Double? get() = actualMonthCost?.let { it - monthCost }
+}
+
+// ── 시스템별 비용 ──
+data class SystemCost(
+    val systemName: String,
+    val todayCost: Double = 0.0,
+    val monthCost: Double = 0.0,
 )
 
 // ── API 요금 데이터 ──
 data class ApiCostData(
-    val todayTotal: Double = 0.0,
-    val monthTotal: Double = 0.0,
+    val todayTotal: Double = 0.0,       // 추정 합계
+    val monthTotal: Double = 0.0,       // 추정 합계
+    val actualToday: Double? = null,    // Admin API 실제 (Claude+GPT)
+    val actualMonth: Double? = null,    // Admin API 실제 (Claude+GPT)
     val byAI: List<AiCostBreakdown> = emptyList(),
+    val bySys: List<SystemCost> = emptyList(),
     val lastUpdated: String = "",
     val error: String? = null,
 ) {
@@ -45,16 +59,25 @@ data class ApiCostData(
     }
 
     fun notificationTitle(): String {
-        return "💰 오늘 ${todayText()} │ 이번달 ${monthText()}"
+        val todayStr = if (actualToday != null) "$${String.format("%.4f", actualToday)}"
+            else todayText()
+        return "💰 오늘 $todayStr │ 이번달 ${monthText()}"
     }
 
     fun notificationExpanded(): String = buildString {
-        append("오늘: ${todayText()} (${todayKrw()})\n")
-        append("이번 달: ${monthText()} (${monthKrw()})\n")
+        append("추정: 오늘 ${todayText()} / 이번 달 ${monthText()}\n")
+        if (actualMonth != null) {
+            append("실제 (Admin API): $${String.format("%.4f", actualMonth)}\n")
+            val diff = actualMonth - monthTotal
+            val sign = if (diff >= 0) "+" else ""
+            append("차이: $sign$${String.format("%.4f", diff)}\n")
+        }
         if (byAI.isNotEmpty()) {
             append("\nAI별 이번 달:\n")
-            byAI.filter { it.monthCost > 0 }.forEach {
-                append("  ${it.name}: $${String.format("%.4f", it.monthCost)}\n")
+            byAI.filter { it.monthCost > 0 || (it.actualMonthCost ?: 0.0) > 0 }.forEach {
+                val est = "$${String.format("%.4f", it.monthCost)}"
+                val actual = it.actualMonthCost?.let { a -> " (실제: $${String.format("%.4f", a)})" } ?: ""
+                append("  ${it.name}: $est$actual\n")
             }
         }
     }
