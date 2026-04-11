@@ -11,6 +11,7 @@ import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.preference.PreferenceManager
 
@@ -406,7 +407,7 @@ class MainActivity : AppCompatActivity() {
             setPadding(48, 24, 48, 24)
         }
 
-        android.app.AlertDialog.Builder(this)
+        AlertDialog.Builder(this)
             .setTitle("🔐 Admin 키 암호화")
             .setMessage("키를 암호화할 PIN을 입력하세요")
             .setView(pinInput)
@@ -488,7 +489,7 @@ class MainActivity : AppCompatActivity() {
                     setPadding(48, 24, 48, 24)
                 }
 
-                android.app.AlertDialog.Builder(this)
+                AlertDialog.Builder(this)
                     .setTitle("🔓 키 복원")
                     .setMessage("암호화 해제 PIN을 입력하세요")
                     .setView(pinInput)

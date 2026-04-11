@@ -34,7 +34,6 @@ class UsageMonitorService : Service() {
         const val ACTION_STOP = "com.claudeusage.widget.STOP_SERVICE"
         const val ACTION_NOTIFY_UPDATE = "com.claudeusage.widget.NOTIFY_UPDATE"
         private const val SCRAPE_TIMEOUT_MS = 30_000L
-        private const val OBS_URL = "https://swnation.github.io/OrangBoongSSem/"
 
         fun start(context: Context) {
             try {
