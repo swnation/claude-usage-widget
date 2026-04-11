@@ -9,6 +9,13 @@ contextBridge.exposeInMainWorld('api', {
   login: () => ipcRenderer.invoke('login'),
   logout: () => ipcRenderer.invoke('logout'),
   toggleWidget: () => ipcRenderer.invoke('toggle-widget'),
+  obsLogin: () => ipcRenderer.invoke('obs-login'),
+  getObsStatus: () => ipcRenderer.invoke('get-obs-status'),
+  saveAdminKey: (key) => ipcRenderer.invoke('save-admin-key', key),
+  getAdminKey: () => ipcRenderer.invoke('get-admin-key'),
+  fetchAdminCost: () => ipcRenderer.invoke('fetch-admin-cost'),
+  onObsStatus: (cb) => { ipcRenderer.on('obs-status', (_, s) => cb(s)); },
+  onAdminCostUpdate: (cb) => { ipcRenderer.on('admin-cost-update', (_, d) => cb(d)); },
   quit: () => ipcRenderer.invoke('quit'),
   onUsageUpdate: (cb) => {
     ipcRenderer.on('usage-update', (_, data) => cb(data));

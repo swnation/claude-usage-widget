@@ -37,6 +37,17 @@ const AI_DEFS = {
 
   const cost = await window.api.getCost();
   if (cost) renderCost(cost);
+
+  // 오랑붕쌤 상태
+  const obsStatus = await window.api.getObsStatus();
+  setObsState(obsStatus);
+
+  // Admin 키
+  const adminKey = await window.api.getAdminKey();
+  if (adminKey) {
+    $('#adminKeyInput').value = adminKey;
+    window.api.fetchAdminCost();
+  }
 })();
 
 // 실시간 업데이트 수신
@@ -76,6 +87,38 @@ $$('input[name="displayMode"]').forEach(radio => {
 });
 
 loginBtn.onclick = () => window.api.login();
+
+// 오랑붕쌤 연결
+$('#obsBtn').onclick = () => window.api.obsLogin();
+window.api.onObsStatus((status) => setObsState(status));
+
+function setObsState(connected) {
+  const dot = $('#obsDot');
+  const text = $('#obsText');
+  dot.className = 'dot ' + (connected ? 'green' : 'gray');
+  text.textContent = connected ? '오랑붕쌤: 연결됨' : '오랑붕쌤: 연결 안됨';
+  $('#obsBtn').textContent = connected ? '재연결' : '연결';
+}
+
+// Admin API 키
+$('#adminKeySave').onclick = async () => {
+  const key = $('#adminKeyInput').value.trim();
+  await window.api.saveAdminKey(key);
+  $('#adminCostText').textContent = key ? 'Admin 키 저장됨' : 'Admin 키 삭제됨';
+};
+
+window.api.onAdminCostUpdate((result) => {
+  if (result.success) {
+    const total = result.data?.total_cost;
+    if (total != null) {
+      $('#adminCostText').textContent = `Anthropic 실제 청구: $${total.toFixed(4)}`;
+    } else {
+      $('#adminCostText').textContent = 'Anthropic: 응답 수신됨';
+    }
+  } else {
+    $('#adminCostText').textContent = `Admin API 오류: ${result.error || result.statusCode}`;
+  }
+});
 logoutBtn.onclick = async () => {
   await window.api.logout();
   setLoginState(false);

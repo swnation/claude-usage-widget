@@ -41,6 +41,13 @@ class MainActivity : AppCompatActivity() {
     private lateinit var costMonthText: TextView
     private lateinit var costMonthKrw: TextView
     private lateinit var costByAiContainer: LinearLayout
+    // 오랑붕쌤 연결
+    private lateinit var obsStatus: TextView
+    private lateinit var obsConnectButton: Button
+    // Admin API
+    private lateinit var adminKeyInput: EditText
+    private lateinit var adminKeySave: Button
+    private lateinit var adminCostText: TextView
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -48,6 +55,15 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == LoginActivity.RESULT_LOGGED_IN) {
             updateLoginUI(true)
             fetchUsageViaScraping()
+        }
+    }
+
+    private val obsLoginLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == ObsLoginActivity.RESULT_LOGGED_IN) {
+            updateObsUI(true)
+            fetchObsCost()
         }
     }
 
@@ -137,6 +153,13 @@ class MainActivity : AppCompatActivity() {
         costMonthText = findViewById(R.id.costMonthText)
         costMonthKrw = findViewById(R.id.costMonthKrw)
         costByAiContainer = findViewById(R.id.costByAiContainer)
+        // 오랑붕쌤 연결
+        obsStatus = findViewById(R.id.obsStatus)
+        obsConnectButton = findViewById(R.id.obsConnectButton)
+        // Admin API
+        adminKeyInput = findViewById(R.id.adminKeyInput)
+        adminKeySave = findViewById(R.id.adminKeySave)
+        adminCostText = findViewById(R.id.adminCostText)
 
         loginButton.setOnClickListener {
             loginLauncher.launch(Intent(this, LoginActivity::class.java))
@@ -214,11 +237,79 @@ class MainActivity : AppCompatActivity() {
         modeRadioGroup.setOnCheckedChangeListener { _, _ ->
             updateCostSectionVisibility()
         }
+
+        // 오랑붕쌤 연결
+        obsConnectButton.setOnClickListener {
+            obsLoginLauncher.launch(Intent(this, ObsLoginActivity::class.java))
+        }
+
+        // Admin API 키 저장
+        adminKeySave.setOnClickListener {
+            val key = adminKeyInput.text.toString().trim()
+            PreferenceManager.getDefaultSharedPreferences(this).edit()
+                .putString("anthropic_admin_key", key).apply()
+            Toast.makeText(this, if (key.isNotEmpty()) "Admin 키 저장됨" else "Admin 키 삭제됨",
+                Toast.LENGTH_SHORT).show()
+            if (key.isNotEmpty()) fetchAnthropicCost(key)
+        }
     }
 
     private fun updateOverlayButton() {
         val showing = floatingOverlay?.isShowing() == true || FloatingOverlay.wasShowing(this)
         overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
+    }
+
+    private fun updateObsUI(connected: Boolean) {
+        if (connected) {
+            obsStatus.text = "오랑붕쌤: ✓ 연결됨"
+            obsStatus.setTextColor(getColor(android.R.color.holo_green_light))
+            obsConnectButton.text = "재연결"
+        } else {
+            obsStatus.text = "오랑붕쌤: 연결 안됨"
+            obsStatus.setTextColor(0xFF888899.toInt())
+            obsConnectButton.text = "오랑붕쌤 연결"
+        }
+    }
+
+    private fun fetchAnthropicCost(apiKey: String) {
+        Thread {
+            try {
+                val url = java.net.URL("https://api.anthropic.com/v1/organizations/cost_report")
+                val conn = url.openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("x-api-key", apiKey)
+                conn.setRequestProperty("anthropic-version", "2023-06-01")
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
+
+                if (conn.responseCode == 200) {
+                    val body = conn.inputStream.bufferedReader().readText()
+                    handler.post {
+                        adminCostText.text = "Anthropic 실제 청구: 조회 성공"
+                        // JSON 파싱하여 비용 표시
+                        try {
+                            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            val totalCost = json.get("total_cost")?.asDouble
+                            if (totalCost != null) {
+                                adminCostText.text = "Anthropic 실제 청구: $${String.format("%.4f", totalCost)}"
+                            }
+                        } catch (_: Exception) {
+                            adminCostText.text = "Anthropic: 응답 파싱 중..."
+                        }
+                    }
+                } else {
+                    val errBody = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    handler.post {
+                        adminCostText.text = "Admin API 오류: ${conn.responseCode}"
+                    }
+                }
+                conn.disconnect()
+            } catch (e: Exception) {
+                handler.post {
+                    adminCostText.text = "Admin API 연결 실패: ${e.message}"
+                }
+            }
+        }.start()
     }
 
     private fun updateCostSectionVisibility() {
@@ -285,6 +376,17 @@ class MainActivity : AppCompatActivity() {
             DisplayMode.BOTH -> modeRadioGroup.check(R.id.modeBoth)
         }
         updateCostSectionVisibility()
+
+        // 오랑붕쌤 상태
+        val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
+        updateObsUI(obsLoggedIn)
+
+        // Admin API 키
+        val adminKey = prefs.getString("anthropic_admin_key", "")
+        if (!adminKey.isNullOrEmpty()) {
+            adminKeyInput.setText("****")
+            fetchAnthropicCost(adminKey)
+        }
 
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) displayUsageFromJson(lastUsage)
@@ -379,9 +481,14 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 오랑붕쌤 비용 스크래핑 (API_COST_ONLY 또는 BOTH)
+        // 오랑붕쌤 비용 스크래핑 (API_COST_ONLY 또는 BOTH, 로그인된 경우만)
         if (mode != DisplayMode.CLAUDE_ONLY) {
-            fetchObsCost()
+            val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
+            if (obsLoggedIn) {
+                fetchObsCost()
+            } else {
+                statusText.text = "오랑붕쌤 연결이 필요합니다"
+            }
         }
     }
 

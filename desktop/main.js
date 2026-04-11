@@ -312,6 +312,7 @@ let isObsScraping = false;
 async function scrapeObsCost() {
   if (isObsScraping) return;
   if (settings.displayMode === 'CLAUDE_ONLY') return;
+  if (!settings.obsLoggedIn) return;
 
   isObsScraping = true;
   const timeout = setTimeout(() => { isObsScraping = false; }, SCRAPE_TIMEOUT_MS);
@@ -451,6 +452,115 @@ function toggleWidget() {
 }
 
 // ────────────────────────────
+//  윈도우: 오랑붕쌤 로그인
+// ────────────────────────────
+let obsLoginWin = null;
+
+function showObsLoginWindow() {
+  if (obsLoginWin && !obsLoginWin.isDestroyed()) {
+    obsLoginWin.show();
+    obsLoginWin.focus();
+    return;
+  }
+  obsLoginWin = new BrowserWindow({
+    width: 900, height: 700,
+    webPreferences: { contextIsolation: true, nodeIntegration: false }
+  });
+  obsLoginWin.setMenuBarVisibility(false);
+  obsLoginWin.loadURL(OBS_URL);
+
+  // 데이터 로드 감지: 주기적으로 localStorage 체크
+  let checkCount = 0;
+  const checkInterval = setInterval(async () => {
+    if (!obsLoginWin || obsLoginWin.isDestroyed()) {
+      clearInterval(checkInterval);
+      return;
+    }
+    checkCount++;
+    if (checkCount > 60) { clearInterval(checkInterval); return; }
+
+    try {
+      const hasData = await obsLoginWin.webContents.executeJavaScript(`
+        (function() {
+          for (var i = 0; i < localStorage.length; i++) {
+            if (localStorage.key(i).indexOf('om_usage_') === 0) return true;
+          }
+          return false;
+        })();
+      `);
+      if (hasData) {
+        clearInterval(checkInterval);
+        settings.obsLoggedIn = true;
+        saveSettings();
+        broadcastStatus('오랑붕쌤 연결 완료');
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('obs-status', true);
+        }
+        obsLoginWin.close();
+        scrapeObsCost();
+      }
+    } catch (_) {}
+  }, 2000);
+
+  obsLoginWin.on('closed', () => {
+    clearInterval(checkInterval);
+    obsLoginWin = null;
+  });
+}
+
+// ────────────────────────────
+//  Anthropic Admin API
+// ────────────────────────────
+const https = require('https');
+
+async function fetchAnthropicCost(apiKey) {
+  return new Promise((resolve) => {
+    const options = {
+      hostname: 'api.anthropic.com',
+      path: '/v1/organizations/cost_report',
+      method: 'GET',
+      headers: {
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+      }
+    };
+
+    const req = https.request(options, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (mainWin && !mainWin.isDestroyed()) {
+            mainWin.webContents.send('admin-cost-update', {
+              success: res.statusCode === 200,
+              data: json,
+              statusCode: res.statusCode,
+            });
+          }
+          resolve(json);
+        } catch (e) {
+          resolve({ error: e.message });
+        }
+      });
+    });
+
+    req.on('error', (e) => {
+      if (mainWin && !mainWin.isDestroyed()) {
+        mainWin.webContents.send('admin-cost-update', {
+          success: false,
+          error: e.message,
+        });
+      }
+      resolve({ error: e.message });
+    });
+
+    req.setTimeout(10000, () => req.destroy());
+    req.end();
+  });
+}
+
+// ────────────────────────────
 //  윈도우: 로그인
 // ────────────────────────────
 function showLoginWindow() {
@@ -506,6 +616,17 @@ ipcMain.handle('logout', async () => {
   stopScrapeTimer();
 });
 ipcMain.handle('toggle-widget', () => toggleWidget());
+ipcMain.handle('obs-login', () => showObsLoginWindow());
+ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
+ipcMain.handle('save-admin-key', (_, key) => {
+  settings.adminKey = key;
+  saveSettings();
+  if (key) fetchAnthropicCost(key);
+});
+ipcMain.handle('get-admin-key', () => settings.adminKey ? '****' : '');
+ipcMain.handle('fetch-admin-cost', () => {
+  if (settings.adminKey) fetchAnthropicCost(settings.adminKey);
+});
 ipcMain.handle('quit', () => app.quit());
 
 // ────────────────────────────

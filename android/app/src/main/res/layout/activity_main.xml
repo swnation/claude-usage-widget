@@ -105,7 +105,89 @@
             android:backgroundTint="#22223a"
             android:textColor="#c084fc"
             android:textSize="13sp"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="8dp" />
+
+        <!-- 오랑붕쌤 연결 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/obsStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="오랑붕쌤: 연결 안됨"
+                android:textColor="#888899"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/obsConnectButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="오랑붕쌤 연결"
+                android:backgroundTint="#10a37f"
+                android:textColor="#ffffff"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Anthropic Admin API 키 -->
+        <LinearLayout
+            android:id="@+id/adminApiSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Anthropic Admin API 키 (선택)"
+                android:textColor="#888899"
+                android:textSize="11sp"
+                android:layout_marginBottom="4dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/adminKeyInput"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="sk-admin-..."
+                    android:inputType="textPassword"
+                    android:padding="8dp"
+                    android:textSize="12sp"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/adminKeySave"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="저장"
+                    android:backgroundTint="#2a2a4a"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/adminCostText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#888899"
+                android:textSize="11sp"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/statusText"

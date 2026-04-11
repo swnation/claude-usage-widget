@@ -194,8 +194,8 @@ class UsageMonitorService : Service() {
             }
         }
 
-        // 오랑붕쌤 스크래핑 (API_COST_ONLY 또는 BOTH)
-        if (mode != DisplayMode.CLAUDE_ONLY) {
+        // 오랑붕쌤 스크래핑 (API_COST_ONLY 또는 BOTH, 로그인된 경우만)
+        if (mode != DisplayMode.CLAUDE_ONLY && prefs.getBoolean("obs_logged_in", false)) {
             fetchObsCostInBackground()
         }
     }
