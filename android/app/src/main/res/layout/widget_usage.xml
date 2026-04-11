@@ -62,6 +62,7 @@
         android:layout_marginBottom="1dp">
 
         <TextView
+            android:id="@+id/widgetSessionLabel"
             android:layout_width="40dp"
             android:layout_height="wrap_content"
             android:text="세션"
@@ -111,6 +112,7 @@
         android:layout_marginBottom="1dp">
 
         <TextView
+            android:id="@+id/widgetWeeklyLabel"
             android:layout_width="40dp"
             android:layout_height="wrap_content"
             android:text="주간"

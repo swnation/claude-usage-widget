@@ -1,10 +1,8 @@
 package com.claudeusage.widget
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
+import android.graphics.Color
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,8 +12,6 @@ import android.webkit.*
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 
 class MainActivity : AppCompatActivity() {
@@ -37,6 +33,14 @@ class MainActivity : AppCompatActivity() {
     private lateinit var loginStatus: TextView
     private lateinit var refreshInput: EditText
     private lateinit var saveButton: Button
+    // 모드 & 비용
+    private lateinit var modeRadioGroup: RadioGroup
+    private lateinit var costSection: LinearLayout
+    private lateinit var costTodayText: TextView
+    private lateinit var costTodayKrw: TextView
+    private lateinit var costMonthText: TextView
+    private lateinit var costMonthKrw: TextView
+    private lateinit var costByAiContainer: LinearLayout
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -68,9 +72,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("logged_in", false)
-        if (loggedIn) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val loggedIn = prefs.getBoolean("logged_in", false)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        if (loggedIn || mode == DisplayMode.API_COST_ONLY) {
             fetchUsageViaScraping()
             startAutoRefresh()
         }
@@ -108,6 +113,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         stopAutoRefresh()
         scrapeWebView?.destroy()
+        obsScrapeWebView?.destroy()
         super.onDestroy()
     }
 
@@ -123,6 +129,14 @@ class MainActivity : AppCompatActivity() {
         loginStatus = findViewById(R.id.loginStatus)
         refreshInput = findViewById(R.id.refreshInput)
         saveButton = findViewById(R.id.saveButton)
+        // 모드 & 비용
+        modeRadioGroup = findViewById(R.id.modeRadioGroup)
+        costSection = findViewById(R.id.costSection)
+        costTodayText = findViewById(R.id.costTodayText)
+        costTodayKrw = findViewById(R.id.costTodayKrw)
+        costMonthText = findViewById(R.id.costMonthText)
+        costMonthKrw = findViewById(R.id.costMonthKrw)
+        costByAiContainer = findViewById(R.id.costByAiContainer)
 
         loginButton.setOnClickListener {
             loginLauncher.launch(Intent(this, LoginActivity::class.java))
@@ -143,9 +157,10 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "로그아웃됨"
         }
         toggleButton.setOnClickListener {
-            val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
-                .getBoolean("logged_in", false)
-            if (!loggedIn) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+            val loggedIn = prefs.getBoolean("logged_in", false)
+            if (!loggedIn && mode != DisplayMode.API_COST_ONLY) {
                 Toast.makeText(this, "먼저 로그인하세요", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
@@ -179,16 +194,79 @@ class MainActivity : AppCompatActivity() {
             updateOverlayButton()
         }
         saveButton.setOnClickListener {
-            PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("refresh_interval", refreshInput.text.toString().trim()).apply()
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            // 모드 저장
+            val mode = when (modeRadioGroup.checkedRadioButtonId) {
+                R.id.modeApiCostOnly -> DisplayMode.API_COST_ONLY
+                R.id.modeBoth -> DisplayMode.BOTH
+                else -> DisplayMode.CLAUDE_ONLY
+            }
+            prefs.edit()
+                .putString("refresh_interval", refreshInput.text.toString().trim())
+                .putString("display_mode", mode.name)
+                .apply()
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show()
+            updateCostSectionVisibility()
             startAutoRefresh()
+        }
+
+        // 모드 변경 시 즉시 UI 반영
+        modeRadioGroup.setOnCheckedChangeListener { _, _ ->
+            updateCostSectionVisibility()
         }
     }
 
     private fun updateOverlayButton() {
         val showing = floatingOverlay?.isShowing() == true || FloatingOverlay.wasShowing(this)
         overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
+    }
+
+    private fun updateCostSectionVisibility() {
+        val mode = when (modeRadioGroup.checkedRadioButtonId) {
+            R.id.modeApiCostOnly -> DisplayMode.API_COST_ONLY
+            R.id.modeBoth -> DisplayMode.BOTH
+            else -> DisplayMode.CLAUDE_ONLY
+        }
+        costSection.visibility = if (mode != DisplayMode.CLAUDE_ONLY) View.VISIBLE else View.GONE
+        usageContainer.visibility = if (mode != DisplayMode.API_COST_ONLY) View.VISIBLE else View.GONE
+    }
+
+    private fun displayCostData(cost: ApiCostData) {
+        costTodayText.text = cost.todayText()
+        costTodayKrw.text = cost.todayKrw()
+        costMonthText.text = cost.monthText()
+        costMonthKrw.text = cost.monthKrw()
+
+        costByAiContainer.removeAllViews()
+        cost.byAI.filter { it.monthCost > 0 }.forEach { ai ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(8, 4, 8, 4)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            // 색상 점
+            val dot = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(16, 16).apply { marginEnd = 12 }
+                try { setBackgroundColor(Color.parseColor(ai.color)) } catch (_: Exception) {}
+            }
+            // AI 이름
+            val name = TextView(this).apply {
+                text = ai.name
+                setTextColor(0xFFaaaaaa.toInt())
+                textSize = 12f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            }
+            // 이번달 비용
+            val monthCost = TextView(this).apply {
+                text = "$${String.format("%.4f", ai.monthCost)}"
+                setTextColor(0xFFe0e0e0.toInt())
+                textSize = 12f
+            }
+            row.addView(dot)
+            row.addView(name)
+            row.addView(monthCost)
+            costByAiContainer.addView(row)
+        }
     }
 
     private fun loadSettings() {
@@ -198,8 +276,27 @@ class MainActivity : AppCompatActivity() {
         updateLoginUI(loggedIn)
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
+
+        // 모드 복원
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        when (mode) {
+            DisplayMode.CLAUDE_ONLY -> modeRadioGroup.check(R.id.modeClaudeOnly)
+            DisplayMode.API_COST_ONLY -> modeRadioGroup.check(R.id.modeApiCostOnly)
+            DisplayMode.BOTH -> modeRadioGroup.check(R.id.modeBoth)
+        }
+        updateCostSectionVisibility()
+
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) displayUsageFromJson(lastUsage)
+
+        // 비용 데이터 복원
+        val costJson = prefs.getString("last_api_cost", null)
+        if (costJson != null) {
+            try {
+                val cost = com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java)
+                displayCostData(cost)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun startAutoRefresh() {
@@ -244,36 +341,47 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun fetchUsageViaScraping() {
         statusText.text = "불러오는 중..."
-        try {
-            scrapeWebView?.let {
-                (it.parent as? android.view.ViewGroup)?.removeView(it)
-                it.destroy()
-            }
-            val wv = WebView(this).apply {
-                visibility = View.GONE
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.userAgentString = LoginActivity.CHROME_UA
-                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView?, request: WebResourceRequest?
-                    ): WebResourceResponse? {
-                        request?.requestHeaders?.remove("X-Requested-With")
-                        return super.shouldInterceptRequest(view, request)
-                    }
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        super.onPageFinished(view, url)
-                        handler.postDelayed({ scrapeUsagePage(view) }, 3000)
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+
+        // Claude 스크래핑 (CLAUDE_ONLY 또는 BOTH)
+        if (mode != DisplayMode.API_COST_ONLY) {
+            try {
+                scrapeWebView?.let {
+                    (it.parent as? ViewGroup)?.removeView(it)
+                    it.destroy()
+                }
+                val wv = WebView(this).apply {
+                    visibility = View.GONE
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.userAgentString = LoginActivity.CHROME_UA
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView?, request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            request?.requestHeaders?.remove("X-Requested-With")
+                            return super.shouldInterceptRequest(view, request)
+                        }
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            handler.postDelayed({ scrapeUsagePage(view) }, 3000)
+                        }
                     }
                 }
+                scrapeWebView = wv
+                (findViewById<View>(android.R.id.content) as? ViewGroup)?.addView(
+                    wv, ViewGroup.LayoutParams(400, 800))
+                wv.loadUrl("https://claude.ai/settings/usage")
+            } catch (e: Exception) {
+                statusText.text = "스크래핑 오류: ${e.message}"
             }
-            scrapeWebView = wv
-            (findViewById<View>(android.R.id.content) as? android.view.ViewGroup)?.addView(
-                wv, ViewGroup.LayoutParams(400, 800))
-            wv.loadUrl("https://claude.ai/settings/usage")
-        } catch (e: Exception) {
-            statusText.text = "스크래핑 오류: ${e.message}"
+        }
+
+        // 오랑붕쌤 비용 스크래핑 (API_COST_ONLY 또는 BOTH)
+        if (mode != DisplayMode.CLAUDE_ONLY) {
+            fetchObsCost()
         }
     }
 
@@ -415,5 +523,138 @@ class MainActivity : AppCompatActivity() {
             val usage = com.google.gson.Gson().fromJson(json, PlanUsage::class.java)
             displayUsage(usage)
         } catch (_: Exception) {}
+    }
+
+    // ── 오랑붕쌤 비용 스크래핑 (MainActivity에서 직접) ──
+    private var obsScrapeWebView: WebView? = null
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun fetchObsCost() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        if (mode == DisplayMode.CLAUDE_ONLY) return
+
+        val obsUrl = prefs.getString("obs_url", "https://swnation.github.io/OrangBoongSSem/")
+            ?: return
+
+        try {
+            obsScrapeWebView?.let {
+                (it.parent as? ViewGroup)?.removeView(it)
+                it.destroy()
+            }
+            val wv = WebView(this).apply {
+                visibility = View.GONE
+                settings.javaScriptEnabled = true
+                settings.domStorageEnabled = true
+                settings.userAgentString = LoginActivity.CHROME_UA
+                webViewClient = object : WebViewClient() {
+                    override fun onPageFinished(view: WebView?, url: String?) {
+                        super.onPageFinished(view, url)
+                        handler.postDelayed({ scrapeObsCostPage(view) }, 3000)
+                    }
+                }
+            }
+            obsScrapeWebView = wv
+            (findViewById<View>(android.R.id.content) as? ViewGroup)?.addView(
+                wv, ViewGroup.LayoutParams(400, 800))
+            wv.loadUrl(obsUrl)
+        } catch (_: Exception) {}
+    }
+
+    private fun scrapeObsCostPage(view: WebView?) {
+        view?.evaluateJavascript("""
+            (function() {
+                var kstNow = new Date(Date.now() + 9*3600*1000);
+                var today = kstNow.toISOString().slice(0,10);
+                var month = today.slice(0,7);
+                var result = { today: 0, month: 0, byAI: {} };
+                var found = false;
+                for (var i = 0; i < localStorage.length; i++) {
+                    var key = localStorage.key(i);
+                    if (key.indexOf('om_usage_') !== 0) continue;
+                    found = true;
+                    try {
+                        var data = JSON.parse(localStorage.getItem(key));
+                        var dates = Object.keys(data);
+                        for (var d = 0; d < dates.length; d++) {
+                            var date = dates[d];
+                            var aiMap = data[date];
+                            var aiIds = Object.keys(aiMap);
+                            for (var a = 0; a < aiIds.length; a++) {
+                                var aiId = aiIds[a];
+                                var info = aiMap[aiId];
+                                var cost = info.cost || 0;
+                                if (!result.byAI[aiId]) result.byAI[aiId] = { today: 0, month: 0 };
+                                if (date === today) {
+                                    result.today += cost;
+                                    result.byAI[aiId].today += cost;
+                                }
+                                if (date.indexOf(month) === 0) {
+                                    result.month += cost;
+                                    result.byAI[aiId].month += cost;
+                                }
+                            }
+                        }
+                    } catch(e) {}
+                }
+                result.hasData = found;
+                return JSON.stringify(result);
+            })();
+        """.trimIndent()) { result -> handleObsCostResult(result) }
+    }
+
+    private fun handleObsCostResult(jsResult: String?) {
+        try {
+            val raw = jsResult?.trim()
+                ?.removeSurrounding("\"")
+                ?.replace("\\\"", "\"")
+                ?.replace("\\\\", "\\")
+                ?.replace("\\/", "/")
+                ?.replace("\\n", "\n")
+                ?: "{}"
+
+            val gson = com.google.gson.Gson()
+            val json = gson.fromJson(raw, com.google.gson.JsonObject::class.java)
+            val hasData = json?.get("hasData")?.asBoolean ?: false
+
+            if (hasData) {
+                val todayTotal = json?.get("today")?.asDouble ?: 0.0
+                val monthTotal = json?.get("month")?.asDouble ?: 0.0
+                val byAIObj = try { json?.getAsJsonObject("byAI") } catch (_: Exception) { null }
+
+                val breakdowns = mutableListOf<AiCostBreakdown>()
+                byAIObj?.entrySet()?.forEach { (aiId, value) ->
+                    val aiDef = AiDefs.find(aiId)
+                    val obj = value.asJsonObject
+                    breakdowns.add(AiCostBreakdown(
+                        aiId = aiId,
+                        name = aiDef?.name ?: aiId,
+                        color = aiDef?.color ?: "#888888",
+                        todayCost = obj.get("today")?.asDouble ?: 0.0,
+                        monthCost = obj.get("month")?.asDouble ?: 0.0,
+                    ))
+                }
+
+                val costData = ApiCostData(
+                    todayTotal = todayTotal,
+                    monthTotal = monthTotal,
+                    byAI = breakdowns.sortedByDescending { it.monthCost },
+                    lastUpdated = java.time.Instant.now().toString(),
+                )
+
+                displayCostData(costData)
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putString("last_api_cost", gson.toJson(costData)).apply()
+                UsageWidgetProvider.updateAll(this)
+            }
+        } catch (_: Exception) {}
+
+        try {
+            obsScrapeWebView?.let {
+                (it.parent as? ViewGroup)?.removeView(it)
+                it.destroy()
+            }
+        } catch (_: Exception) {}
+        obsScrapeWebView = null
     }
 }

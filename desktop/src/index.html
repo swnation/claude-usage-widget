@@ -16,11 +16,48 @@
       <button class="btn-small btn-danger" id="logoutBtn" style="display:none">로그아웃</button>
     </div>
 
-    <!-- 사용량 카드 -->
+    <!-- 사용량 카드 (Claude) -->
     <div id="usageCards"></div>
+
+    <!-- API 요금 카드 -->
+    <div id="costCards" style="display:none">
+      <div class="usage-card" style="padding:12px 16px">
+        <div class="label">💰 API 요금</div>
+        <div style="display:flex;gap:16px;margin:8px 0">
+          <div>
+            <div style="font-size:11px;color:#aaa">오늘</div>
+            <div id="costToday" style="font-size:20px;font-weight:700;color:#4caf50">--</div>
+            <div id="costTodayKrw" style="font-size:11px;color:#888"></div>
+          </div>
+          <div>
+            <div style="font-size:11px;color:#aaa">이번 달</div>
+            <div id="costMonth" style="font-size:20px;font-weight:700;color:#c084fc">--</div>
+            <div id="costMonthKrw" style="font-size:11px;color:#888"></div>
+          </div>
+        </div>
+        <div id="costByAI"></div>
+      </div>
+    </div>
 
     <!-- 설정 -->
     <div class="settings">
+      <!-- 표시 모드 -->
+      <label>표시 모드</label>
+      <div class="mode-selector" style="margin-bottom:12px">
+        <label class="mode-option">
+          <input type="radio" name="displayMode" value="CLAUDE_ONLY" checked>
+          <span>Claude 단독</span>
+        </label>
+        <label class="mode-option">
+          <input type="radio" name="displayMode" value="API_COST_ONLY">
+          <span>API 요금만</span>
+        </label>
+        <label class="mode-option">
+          <input type="radio" name="displayMode" value="BOTH">
+          <span>둘 다</span>
+        </label>
+      </div>
+
       <label>새로고침 주기 (초)</label>
       <div style="display:flex;align-items:center">
         <input type="number" id="intervalInput" min="30" value="120">

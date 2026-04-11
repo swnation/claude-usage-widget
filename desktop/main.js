@@ -6,7 +6,17 @@ const fs = require('fs');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const PRELOAD = path.join(__dirname, 'preload.js');
 const USAGE_URL = 'https://claude.ai/settings/usage';
+const OBS_URL = 'https://swnation.github.io/OrangBoongSSem/';
 const SCRAPE_TIMEOUT_MS = 30000;
+
+// ── AI 정의 (오랑붕쌤과 동일) ──
+const AI_DEFS = {
+  gpt:    { name: 'GPT',        color: '#10a37f' },
+  claude: { name: 'Claude',     color: '#c96442' },
+  gemini: { name: 'Gemini',     color: '#4285f4' },
+  grok:   { name: 'Grok',       color: '#1DA1F2' },
+  perp:   { name: 'Perplexity', color: '#20808d' },
+};
 
 // ── 상태 ──
 let tray = null;
@@ -14,9 +24,12 @@ let mainWin = null;
 let widgetWin = null;
 let loginWin = null;
 let scraperWin = null;
+let obsScraperWin = null;
 let scrapeTimer = null;
 let usageData = null;
-let settings = { refreshInterval: 120, widgetVisible: true };
+let costData = null;
+// displayMode: 'CLAUDE_ONLY' | 'API_COST_ONLY' | 'BOTH'
+let settings = { refreshInterval: 120, widgetVisible: true, displayMode: 'CLAUDE_ONLY' };
 
 // ────────────────────────────
 //  설정 저장/불러오기
@@ -74,11 +87,25 @@ function createTray() {
 
 function updateTrayMenu() {
   const pct = usageData?.session?.usedPercent;
-  const pctText = pct != null ? ` (세션 ${Math.round(pct)}%)` : '';
+  const mode = settings.displayMode || 'CLAUDE_ONLY';
+  let statusLabel;
+
+  if (mode === 'CLAUDE_ONLY') {
+    const pctText = pct != null ? ` (세션 ${Math.round(pct)}%)` : '';
+    statusLabel = `Claude 사용량${pctText}`;
+  } else if (mode === 'API_COST_ONLY') {
+    const costText = costData ? ` ($${costData.todayTotal.toFixed(4)})` : '';
+    statusLabel = `API 요금${costText}`;
+  } else {
+    const pctText = pct != null ? `세션 ${Math.round(pct)}%` : '';
+    const costText = costData ? `$${costData.todayTotal.toFixed(4)}` : '';
+    statusLabel = [pctText, costText].filter(Boolean).join(' | ') || 'Claude + API';
+  }
+
   const menu = Menu.buildFromTemplate([
-    { label: `Claude 사용량${pctText}`, enabled: false },
+    { label: statusLabel, enabled: false },
     { type: 'separator' },
-    { label: '새로고침', click: () => scrapeNow() },
+    { label: '새로고침', click: () => { scrapeNow(); scrapeObsCost(); } },
     { label: settings.widgetVisible ? '위젯 숨기기' : '위젯 표시',
       click: () => toggleWidget() },
     { label: '설정 열기', click: () => showMainWindow() },
@@ -89,10 +116,21 @@ function updateTrayMenu() {
 }
 
 function updateTrayFromUsage() {
-  if (!tray || !usageData?.session) return;
-  const pct = Math.round(usageData.session.usedPercent || 0);
-  tray.setImage(getStatusIcon(pct));
-  tray.setToolTip(`Claude 세션 ${pct}% 사용됨`);
+  if (!tray) return;
+  const mode = settings.displayMode || 'CLAUDE_ONLY';
+
+  if (mode === 'API_COST_ONLY') {
+    if (costData) {
+      tray.setImage(createTrayIcon(76, 175, 80)); // 초록
+      tray.setToolTip(`API 요금 오늘: $${costData.todayTotal.toFixed(4)}`);
+    }
+  } else if (usageData?.session) {
+    const pct = Math.round(usageData.session.usedPercent || 0);
+    tray.setImage(getStatusIcon(pct));
+    const extra = (mode === 'BOTH' && costData)
+      ? ` | 요금: $${costData.todayTotal.toFixed(4)}` : '';
+    tray.setToolTip(`Claude 세션 ${pct}% 사용됨${extra}`);
+  }
   updateTrayMenu();
 }
 
@@ -148,6 +186,11 @@ let isScraping = false;
 
 async function scrapeNow() {
   if (isScraping) return;
+  if (settings.displayMode === 'API_COST_ONLY') {
+    // API_COST_ONLY 모드에서는 Claude 스크래핑 생략
+    scrapeObsCost();
+    return;
+  }
   isScraping = true;
   broadcastStatus('새로고침 중...');
 
@@ -211,10 +254,115 @@ async function scrapeNow() {
   isScraping = false;
 }
 
+// ── 오랑붕쌤 비용 스크래핑 ──
+const OBS_SCRAPE_JS = `
+(function() {
+  var kstNow = new Date(Date.now() + 9*3600*1000);
+  var today = kstNow.toISOString().slice(0,10);
+  var month = today.slice(0,7);
+  var result = { today: 0, month: 0, byAI: {} };
+  var found = false;
+  for (var i = 0; i < localStorage.length; i++) {
+    var key = localStorage.key(i);
+    if (key.indexOf('om_usage_') !== 0) continue;
+    found = true;
+    try {
+      var data = JSON.parse(localStorage.getItem(key));
+      var dates = Object.keys(data);
+      for (var d = 0; d < dates.length; d++) {
+        var date = dates[d];
+        var aiMap = data[date];
+        var aiIds = Object.keys(aiMap);
+        for (var a = 0; a < aiIds.length; a++) {
+          var aiId = aiIds[a];
+          var info = aiMap[aiId];
+          var cost = info.cost || 0;
+          if (!result.byAI[aiId]) result.byAI[aiId] = { today: 0, month: 0 };
+          if (date === today) {
+            result.today += cost;
+            result.byAI[aiId].today += cost;
+          }
+          if (date.indexOf(month) === 0) {
+            result.month += cost;
+            result.byAI[aiId].month += cost;
+          }
+        }
+      }
+    } catch(e) {}
+  }
+  result.hasData = found;
+  return JSON.stringify(result);
+})();
+`;
+
+function getObsScraperWindow() {
+  if (obsScraperWin && !obsScraperWin.isDestroyed()) return obsScraperWin;
+  obsScraperWin = new BrowserWindow({
+    show: false,
+    width: 800,
+    height: 600,
+    webPreferences: { contextIsolation: true, nodeIntegration: false }
+  });
+  obsScraperWin.on('closed', () => { obsScraperWin = null; });
+  return obsScraperWin;
+}
+
+let isObsScraping = false;
+
+async function scrapeObsCost() {
+  if (isObsScraping) return;
+  if (settings.displayMode === 'CLAUDE_ONLY') return;
+
+  isObsScraping = true;
+  const timeout = setTimeout(() => { isObsScraping = false; }, SCRAPE_TIMEOUT_MS);
+
+  try {
+    const win = getObsScraperWindow();
+    await win.loadURL(OBS_URL);
+    await new Promise(r => setTimeout(r, 3500));
+
+    const raw = await win.webContents.executeJavaScript(OBS_SCRAPE_JS);
+    const json = JSON.parse(raw);
+
+    if (json.hasData) {
+      const byAI = [];
+      Object.entries(json.byAI || {}).forEach(([aiId, data]) => {
+        const def = AI_DEFS[aiId] || { name: aiId, color: '#888' };
+        byAI.push({
+          aiId,
+          name: def.name,
+          color: def.color,
+          todayCost: data.today || 0,
+          monthCost: data.month || 0,
+        });
+      });
+      byAI.sort((a, b) => b.monthCost - a.monthCost);
+
+      costData = {
+        todayTotal: json.today || 0,
+        monthTotal: json.month || 0,
+        byAI,
+        lastUpdated: new Date().toISOString(),
+      };
+
+      broadcastCost();
+      updateTrayFromUsage();
+    }
+  } catch (e) {
+    // 오랑붕쌤 스크래핑 실패 시 조용히 무시
+  }
+
+  clearTimeout(timeout);
+  isObsScraping = false;
+}
+
 function startScrapeTimer() {
   stopScrapeTimer();
   const ms = Math.max(30, settings.refreshInterval || 120) * 1000;
-  scrapeTimer = setInterval(() => scrapeNow(), ms);
+  scrapeTimer = setInterval(() => {
+    scrapeNow();
+    scrapeObsCost();
+  }, ms);
 }
 
 function stopScrapeTimer() {
@@ -227,6 +375,11 @@ function stopScrapeTimer() {
 function broadcastUsage() {
   const wins = [mainWin, widgetWin].filter(w => w && !w.isDestroyed());
   wins.forEach(w => w.webContents.send('usage-update', usageData));
+}
+
+function broadcastCost() {
+  const wins = [mainWin, widgetWin].filter(w => w && !w.isDestroyed());
+  wins.forEach(w => w.webContents.send('cost-update', costData));
 }
 
 function broadcastStatus(msg) {
@@ -274,6 +427,16 @@ function createWidgetWindow() {
   widgetWin.on('closed', () => { widgetWin = null; });
 }
 
+function updateWidgetSize() {
+  if (!widgetWin || widgetWin.isDestroyed()) return;
+  const mode = settings.displayMode || 'CLAUDE_ONLY';
+  if (mode === 'BOTH') {
+    widgetWin.setSize(250, 42);
+  } else {
+    widgetWin.setSize(170, 42);
+  }
+}
+
 function toggleWidget() {
   if (widgetWin && !widgetWin.isDestroyed()) {
     widgetWin.destroy();
@@ -319,13 +482,19 @@ function showLoginWindow() {
 //  IPC 핸들러
 // ────────────────────────────
 ipcMain.handle('get-usage', () => usageData);
+ipcMain.handle('get-cost', () => costData);
 ipcMain.handle('get-settings', () => settings);
 ipcMain.handle('save-settings', (_, s) => {
   Object.assign(settings, s);
   saveSettings();
-  startScrapeTimer(); // 주기 변경 반영
+  startScrapeTimer();
+  // 모드 변경 시 위젯 크기 조정
+  updateWidgetSize();
 });
-ipcMain.handle('refresh', () => scrapeNow());
+ipcMain.handle('refresh', () => {
+  scrapeNow();
+  scrapeObsCost();
+});
 ipcMain.handle('login', () => showLoginWindow());
 ipcMain.handle('logout', async () => {
   await session.defaultSession.clearStorageData();
@@ -347,8 +516,9 @@ app.whenReady().then(() => {
   createTray();
   if (settings.widgetVisible) createWidgetWindow();
 
-  // 초기 스크래핑 (로그인 상태 확인)
+  // 초기 스크래핑
   scrapeNow();
+  scrapeObsCost();
   startScrapeTimer();
 });
 
@@ -359,6 +529,7 @@ app.on('window-all-closed', (e) => {
 
 app.on('before-quit', () => {
   stopScrapeTimer();
+  if (obsScraperWin && !obsScraperWin.isDestroyed()) obsScraperWin.destroy();
 });
 
 // 단일 인스턴스 보장

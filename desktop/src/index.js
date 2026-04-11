@@ -1,24 +1,47 @@
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
 
 const loginDot = $('#loginDot');
 const loginText = $('#loginText');
 const loginBtn = $('#loginBtn');
 const logoutBtn = $('#logoutBtn');
 const usageCards = $('#usageCards');
+const costCards = $('#costCards');
 const intervalInput = $('#intervalInput');
 const statusText = $('#statusText');
+
+let currentMode = 'CLAUDE_ONLY';
+
+// ── AI 정의 ──
+const AI_DEFS = {
+  gpt:    { name: 'GPT',        color: '#10a37f' },
+  claude: { name: 'Claude',     color: '#c96442' },
+  gemini: { name: 'Gemini',     color: '#4285f4' },
+  grok:   { name: 'Grok',       color: '#1DA1F2' },
+  perp:   { name: 'Perplexity', color: '#20808d' },
+};
 
 // 초기 로딩
 (async () => {
   const settings = await window.api.getSettings();
   intervalInput.value = settings.refreshInterval || 120;
+  currentMode = settings.displayMode || 'CLAUDE_ONLY';
+
+  // 모드 라디오 복원
+  const radio = $(`input[name="displayMode"][value="${currentMode}"]`);
+  if (radio) radio.checked = true;
+  updateModeVisibility();
 
   const usage = await window.api.getUsage();
   if (usage) renderUsage(usage);
+
+  const cost = await window.api.getCost();
+  if (cost) renderCost(cost);
 })();
 
 // 실시간 업데이트 수신
 window.api.onUsageUpdate((data) => renderUsage(data));
+window.api.onCostUpdate((data) => renderCost(data));
 window.api.onStatusUpdate((msg) => { statusText.textContent = msg; });
 
 // 버튼 이벤트
@@ -32,9 +55,25 @@ $('#widgetBtn').onclick = () => window.api.toggleWidget();
 $('#saveBtn').onclick = async () => {
   const val = parseInt(intervalInput.value) || 120;
   intervalInput.value = Math.max(30, val);
-  await window.api.saveSettings({ refreshInterval: Math.max(30, val) });
+
+  const modeRadio = $('input[name="displayMode"]:checked');
+  currentMode = modeRadio ? modeRadio.value : 'CLAUDE_ONLY';
+
+  await window.api.saveSettings({
+    refreshInterval: Math.max(30, val),
+    displayMode: currentMode,
+  });
+  updateModeVisibility();
   statusText.textContent = '저장됨';
 };
+
+// 모드 변경 시 즉시 반영
+$$('input[name="displayMode"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    currentMode = radio.value;
+    updateModeVisibility();
+  });
+});
 
 loginBtn.onclick = () => window.api.login();
 logoutBtn.onclick = async () => {
@@ -43,6 +82,11 @@ logoutBtn.onclick = async () => {
   usageCards.innerHTML = '';
   statusText.textContent = '로그아웃됨';
 };
+
+function updateModeVisibility() {
+  usageCards.style.display = currentMode !== 'API_COST_ONLY' ? '' : 'none';
+  costCards.style.display = currentMode !== 'CLAUDE_ONLY' ? '' : 'none';
+}
 
 function setLoginState(loggedIn) {
   loginDot.className = 'dot ' + (loggedIn ? 'green' : 'red');
@@ -86,4 +130,28 @@ function addCard(item) {
   const c = cls === 'green' ? '#4caf50' : cls === 'yellow' ? '#ff9800' : '#f44336';
   card.style.setProperty('--c', c);
   usageCards.appendChild(card);
+}
+
+function renderCost(data) {
+  if (!data) return;
+
+  $('#costToday').textContent = `$${data.todayTotal.toFixed(4)}`;
+  $('#costTodayKrw').textContent = `≈${Math.round(data.todayTotal * 1450).toLocaleString()}원`;
+  $('#costMonth').textContent = `$${data.monthTotal.toFixed(4)}`;
+  $('#costMonthKrw').textContent = `≈${Math.round(data.monthTotal * 1450).toLocaleString()}원`;
+
+  const byAI = $('#costByAI');
+  byAI.innerHTML = '';
+
+  (data.byAI || []).filter(ai => ai.monthCost > 0).forEach(ai => {
+    const def = AI_DEFS[ai.aiId] || { name: ai.name, color: '#888' };
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:3px 0;font-size:12px';
+    row.innerHTML = `
+      <div style="width:8px;height:8px;border-radius:50%;background:${def.color}"></div>
+      <span style="flex:1;color:#aaa">${def.name}</span>
+      <span style="font-family:monospace">$${ai.monthCost.toFixed(4)}</span>
+    `;
+    byAI.appendChild(row);
+  });
 }

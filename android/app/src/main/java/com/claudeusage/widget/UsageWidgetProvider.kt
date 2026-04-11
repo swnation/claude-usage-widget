@@ -65,8 +65,9 @@ class UsageWidgetProvider : AppWidgetProvider() {
         widgetId: Int
     ) {
         val views = RemoteViews(context.packageName, R.layout.widget_usage)
-
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+
         val json = prefs.getString("last_usage", null)
         val loggedIn = prefs.getBoolean("logged_in", false)
         val usage = if (json != null) {
@@ -74,47 +75,16 @@ class UsageWidgetProvider : AppWidgetProvider() {
             catch (_: Exception) { null }
         } else null
 
-        // 상태 표시
-        val hasData = usage != null && usage.session != null
-        views.setTextViewText(R.id.widgetStatus, if (hasData) "🟢" else if (loggedIn) "🟡" else "🔴")
+        val costJson = prefs.getString("last_api_cost", null)
+        val cost = if (costJson != null) {
+            try { Gson().fromJson(costJson, ApiCostData::class.java) }
+            catch (_: Exception) { null }
+        } else null
 
-        // 플랜 이름
-        views.setTextViewText(R.id.widgetPlanName,
-            if (usage != null) "Claude ${usage.planName}"
-            else if (!loggedIn) "로그인 필요"
-            else "Claude Max"
-        )
-
-        if (usage != null) {
-            // 세션
-            val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
-            views.setTextViewText(R.id.widgetSessionPercent, "${sessionPct}%")
-            views.setTextColor(R.id.widgetSessionPercent, percentColor(sessionPct))
-            views.setProgressBar(R.id.widgetSessionBar, 100, sessionPct, false)
-            views.setTextViewText(R.id.widgetSessionReset, usage.session?.resetTimeText() ?: "")
-
-            // 주간
-            val weeklyPct = usage.weekly?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
-            views.setTextViewText(R.id.widgetWeeklyPercent, "${weeklyPct}%")
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
-            views.setProgressBar(R.id.widgetWeeklyBar, 100, weeklyPct, false)
-            views.setTextViewText(R.id.widgetWeeklyReset, usage.weekly?.resetTimeText() ?: "")
-
-            // 마지막 업데이트 시간
-            val updateTime = try {
-                val instant = java.time.Instant.parse(usage.lastUpdated)
-                val localTime = instant.atZone(java.time.ZoneId.systemDefault()).toLocalTime()
-                localTime.toString().take(5)
-            } catch (_: Exception) { "" }
-            views.setTextViewText(R.id.widgetUpdateTime, updateTime)
-        } else {
-            views.setTextViewText(R.id.widgetSessionPercent, "--%")
-            views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
-            views.setTextViewText(R.id.widgetWeeklyPercent, "--%")
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
-            views.setTextViewText(R.id.widgetSessionReset, "")
-            views.setTextViewText(R.id.widgetWeeklyReset, "")
-            views.setTextViewText(R.id.widgetUpdateTime, if (!loggedIn) "" else "새로고침")
+        when (mode) {
+            DisplayMode.CLAUDE_ONLY -> renderClaudeOnly(views, usage, loggedIn)
+            DisplayMode.API_COST_ONLY -> renderApiCostOnly(views, cost)
+            DisplayMode.BOTH -> renderBoth(views, usage, cost, loggedIn)
         }
 
         // 위젯 탭 → 앱 열기
@@ -135,5 +105,122 @@ class UsageWidgetProvider : AppWidgetProvider() {
         views.setOnClickPendingIntent(R.id.widgetRefreshBtn, refreshPI)
 
         appWidgetManager.updateAppWidget(widgetId, views)
+    }
+
+    private fun renderClaudeOnly(views: RemoteViews, usage: PlanUsage?, loggedIn: Boolean) {
+        val hasData = usage != null && usage.session != null
+        views.setTextViewText(R.id.widgetStatus, if (hasData) "🟢" else if (loggedIn) "🟡" else "🔴")
+        views.setTextViewText(R.id.widgetPlanName,
+            if (usage != null) "Claude ${usage.planName}"
+            else if (!loggedIn) "로그인 필요"
+            else "Claude Max"
+        )
+        views.setTextViewText(R.id.widgetSessionLabel, "세션")
+        views.setTextViewText(R.id.widgetWeeklyLabel, "주간")
+
+        if (usage != null) {
+            val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
+            views.setTextViewText(R.id.widgetSessionPercent, "${sessionPct}%")
+            views.setTextColor(R.id.widgetSessionPercent, percentColor(sessionPct))
+            views.setProgressBar(R.id.widgetSessionBar, 100, sessionPct, false)
+            views.setTextViewText(R.id.widgetSessionReset, usage.session?.resetTimeText() ?: "")
+
+            val weeklyPct = usage.weekly?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
+            views.setTextViewText(R.id.widgetWeeklyPercent, "${weeklyPct}%")
+            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setProgressBar(R.id.widgetWeeklyBar, 100, weeklyPct, false)
+            views.setTextViewText(R.id.widgetWeeklyReset, usage.weekly?.resetTimeText() ?: "")
+
+            views.setTextViewText(R.id.widgetUpdateTime, formatUpdateTime(usage.lastUpdated))
+        } else {
+            setDefaultValues(views, loggedIn)
+        }
+    }
+
+    private fun renderApiCostOnly(views: RemoteViews, cost: ApiCostData?) {
+        views.setTextViewText(R.id.widgetStatus, if (cost != null) "💰" else "🟡")
+        views.setTextViewText(R.id.widgetPlanName, "API 요금")
+        views.setTextViewText(R.id.widgetSessionLabel, "오늘")
+        views.setTextViewText(R.id.widgetWeeklyLabel, "이번달")
+
+        if (cost != null) {
+            views.setTextViewText(R.id.widgetSessionPercent, cost.todayText())
+            views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
+            views.setProgressBar(R.id.widgetSessionBar, 100, 0, false)
+            views.setTextViewText(R.id.widgetSessionReset, cost.todayKrw())
+
+            views.setTextViewText(R.id.widgetWeeklyPercent, cost.monthText())
+            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setProgressBar(R.id.widgetWeeklyBar, 100, 0, false)
+            views.setTextViewText(R.id.widgetWeeklyReset, cost.monthKrw())
+
+            views.setTextViewText(R.id.widgetUpdateTime, formatUpdateTime(cost.lastUpdated))
+        } else {
+            views.setTextViewText(R.id.widgetSessionPercent, "--")
+            views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
+            views.setTextViewText(R.id.widgetWeeklyPercent, "--")
+            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setTextViewText(R.id.widgetSessionReset, "")
+            views.setTextViewText(R.id.widgetWeeklyReset, "")
+            views.setTextViewText(R.id.widgetUpdateTime, "로딩 중")
+        }
+    }
+
+    private fun renderBoth(views: RemoteViews, usage: PlanUsage?, cost: ApiCostData?, loggedIn: Boolean) {
+        val hasData = usage != null && usage.session != null
+        views.setTextViewText(R.id.widgetStatus,
+            if (hasData && cost != null) "🟢" else if (hasData || cost != null) "🟡" else "🔴")
+        views.setTextViewText(R.id.widgetPlanName,
+            if (usage != null) "Claude ${usage.planName}" + (cost?.let { " + 💰" } ?: "")
+            else "Claude + API 요금"
+        )
+        views.setTextViewText(R.id.widgetSessionLabel, "세션")
+        views.setTextViewText(R.id.widgetWeeklyLabel, "요금")
+
+        if (usage != null) {
+            val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
+            views.setTextViewText(R.id.widgetSessionPercent, "${sessionPct}%")
+            views.setTextColor(R.id.widgetSessionPercent, percentColor(sessionPct))
+            views.setProgressBar(R.id.widgetSessionBar, 100, sessionPct, false)
+            views.setTextViewText(R.id.widgetSessionReset, usage.session?.resetTimeText() ?: "")
+        } else {
+            views.setTextViewText(R.id.widgetSessionPercent, "--%")
+            views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
+            views.setProgressBar(R.id.widgetSessionBar, 100, 0, false)
+            views.setTextViewText(R.id.widgetSessionReset, "")
+        }
+
+        if (cost != null) {
+            views.setTextViewText(R.id.widgetWeeklyPercent, cost.todayText())
+            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setProgressBar(R.id.widgetWeeklyBar, 100, 0, false)
+            views.setTextViewText(R.id.widgetWeeklyReset, cost.todayKrw())
+        } else {
+            views.setTextViewText(R.id.widgetWeeklyPercent, "--")
+            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setProgressBar(R.id.widgetWeeklyBar, 100, 0, false)
+            views.setTextViewText(R.id.widgetWeeklyReset, "")
+        }
+
+        val lastUpdated = usage?.lastUpdated ?: cost?.lastUpdated ?: ""
+        views.setTextViewText(R.id.widgetUpdateTime, formatUpdateTime(lastUpdated))
+    }
+
+    private fun setDefaultValues(views: RemoteViews, loggedIn: Boolean) {
+        views.setTextViewText(R.id.widgetSessionPercent, "--%")
+        views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
+        views.setTextViewText(R.id.widgetWeeklyPercent, "--%")
+        views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+        views.setTextViewText(R.id.widgetSessionReset, "")
+        views.setTextViewText(R.id.widgetWeeklyReset, "")
+        views.setTextViewText(R.id.widgetUpdateTime, if (!loggedIn) "" else "새로고침")
+    }
+
+    private fun formatUpdateTime(isoTime: String): String {
+        return try {
+            val instant = java.time.Instant.parse(isoTime)
+            val localTime = instant.atZone(java.time.ZoneId.systemDefault()).toLocalTime()
+            localTime.toString().take(5)
+        } catch (_: Exception) { "" }
     }
 }
