@@ -334,7 +334,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchAdminCosts() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
         val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
+
+        if (anthropicKey.isEmpty() && openaiKey.isEmpty()) return
 
         // 오랑붕쌤 추정치 로드
         val costJson = prefs.getString("last_api_cost", null)
@@ -343,84 +346,122 @@ class MainActivity : AppCompatActivity() {
             catch (_: Exception) { null }
         } else null
 
-        val lines = mutableListOf<String>()
-
-        // Claude: billing API 없음 → 콘솔 링크 안내
-        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
-        if (anthropicKey.isNotEmpty()) {
-            val estClaude = estimated?.byAI?.find { it.aiId == "claude" }?.monthCost ?: 0.0
-            lines.add("Claude: billing API 미지원")
-            lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
-            lines.add("  → 콘솔에서 확인 (이름 클릭)")
-        }
-
-        if (openaiKey.isEmpty()) {
-            if (lines.isNotEmpty()) adminCostText.text = lines.joinToString("\n")
-            return
-        }
-
-        adminCostText.text = "GPT Admin API 조회 중..."
+        adminCostText.text = "Admin API 조회 중..."
 
         lifecycleScope.launch(Dispatchers.IO) {
-            var gptActual: Double? = null
-            var gptError: String? = null
+            val lines = mutableListOf<String>()
+            val monthStart = java.time.LocalDate.now().withDayOfMonth(1)
+            val now = java.time.Instant.now()
 
-            try {
-                val monthStartEpoch = java.time.LocalDate.now().withDayOfMonth(1)
-                    .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
-                val nowEpoch = java.time.Instant.now().epochSecond
-                val conn = java.net.URL(
-                    "https://api.openai.com/v1/organization/costs?start_time=$monthStartEpoch&end_time=$nowEpoch&bucket_width=1d"
-                ).openConnection() as java.net.HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.setRequestProperty("Authorization", "Bearer $openaiKey")
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
+            // ── Anthropic Admin API ──
+            if (anthropicKey.isNotEmpty()) {
+                try {
+                    val startingAt = "${monthStart}T00:00:00Z"
+                    val endingAt = now.toString()
+                    val conn = java.net.URL(
+                        "https://api.anthropic.com/v1/organizations/cost_report" +
+                        "?starting_at=$startingAt&ending_at=$endingAt&bucket_width=1mo"
+                    ).openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("x-api-key", anthropicKey)
+                    conn.setRequestProperty("anthropic-version", "2023-06-01")
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
 
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val body = stream?.bufferedReader()?.readText() ?: ""
-                conn.disconnect()
+                    val code = conn.responseCode
+                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val body = stream?.bufferedReader()?.readText() ?: ""
+                    conn.disconnect()
 
-                if (code == 200) {
-                    val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                    var totalCost = 0.0
-                    json.getAsJsonArray("data")?.forEach { bucket ->
-                        bucket.asJsonObject.getAsJsonArray("results")?.forEach { r ->
-                            totalCost += r.asJsonObject.getAsJsonObject("amount")
-                                ?.get("value")?.asDouble ?: 0.0
+                    val estClaude = estimated?.byAI?.find { it.aiId == "claude" }?.monthCost ?: 0.0
+
+                    if (code == 200) {
+                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                        // cost_report 응답에서 총 비용 추출
+                        var claudeActual = 0.0
+                        val data = json.getAsJsonArray("data")
+                        data?.forEach { bucket ->
+                            claudeActual += bucket.asJsonObject.get("cost")?.asDouble ?: 0.0
                         }
+                        // data 없으면 top-level에서 시도
+                        if (claudeActual == 0.0) {
+                            claudeActual = json.get("total_cost")?.asDouble
+                                ?: json.get("cost")?.asDouble ?: 0.0
+                        }
+
+                        lines.add("Claude 이번달 비교:")
+                        lines.add("  실제 청구: $${String.format("%.4f", claudeActual)}")
+                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
+                        val diff = claudeActual - estClaude
+                        val sign = if (diff >= 0) "+" else ""
+                        lines.add("  차이: $sign$${String.format("%.4f", diff)}")
+                    } else {
+                        val errMsg = try {
+                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(150)
+                        } catch (_: Exception) { body.take(150) }
+                        lines.add("Claude: $code - $errMsg")
+                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
                     }
-                    gptActual = totalCost
-                } else {
-                    val errMsg = try {
-                        val j = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(100)
-                    } catch (_: Exception) { body.take(100) }
-                    gptError = "$code - $errMsg"
+                } catch (e: Exception) {
+                    lines.add("Claude: ${e.message ?: "연결 실패"}")
                 }
-            } catch (e: Exception) {
-                gptError = e.message ?: "연결 실패"
+            }
+
+            // ── OpenAI Admin API ──
+            if (openaiKey.isNotEmpty()) {
+                try {
+                    val monthStartEpoch = monthStart
+                        .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
+                    val nowEpoch = now.epochSecond
+                    val conn = java.net.URL(
+                        "https://api.openai.com/v1/organization/costs?start_time=$monthStartEpoch&end_time=$nowEpoch&bucket_width=1d"
+                    ).openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("Authorization", "Bearer $openaiKey")
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+
+                    val code = conn.responseCode
+                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val body = stream?.bufferedReader()?.readText() ?: ""
+                    conn.disconnect()
+
+                    val estGpt = estimated?.byAI?.find { it.aiId == "gpt" }?.monthCost ?: 0.0
+
+                    if (code == 200) {
+                        var gptActual = 0.0
+                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                        json.getAsJsonArray("data")?.forEach { bucket ->
+                            bucket.asJsonObject.getAsJsonArray("results")?.forEach { r ->
+                                gptActual += r.asJsonObject.getAsJsonObject("amount")
+                                    ?.get("value")?.asDouble ?: 0.0
+                            }
+                        }
+
+                        if (lines.isNotEmpty()) lines.add("")
+                        lines.add("GPT 이번달 비교:")
+                        lines.add("  실제 청구: $${String.format("%.4f", gptActual)}")
+                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estGpt)}")
+                        val diff = gptActual - estGpt
+                        val sign = if (diff >= 0) "+" else ""
+                        lines.add("  차이: $sign$${String.format("%.4f", diff)}")
+                    } else {
+                        val errMsg = try {
+                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(150)
+                        } catch (_: Exception) { body.take(150) }
+                        if (lines.isNotEmpty()) lines.add("")
+                        lines.add("GPT: $code - $errMsg")
+                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estGpt)}")
+                    }
+                } catch (e: Exception) {
+                    if (lines.isNotEmpty()) lines.add("")
+                    lines.add("GPT: ${e.message ?: "연결 실패"}")
+                }
             }
 
             withContext(Dispatchers.Main) {
-                val estGpt = estimated?.byAI?.find { it.aiId == "gpt" }?.monthCost ?: 0.0
-
-                if (gptActual != null) {
-                    lines.add("")
-                    lines.add("GPT 이번달 비교:")
-                    lines.add("  실제 청구: $${String.format("%.4f", gptActual)}")
-                    lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estGpt)}")
-                    val diff = gptActual!! - estGpt
-                    val sign = if (diff >= 0) "+" else ""
-                    lines.add("  차이: $sign$${String.format("%.4f", diff)}")
-
-                    prefs.edit().putFloat("actual_gpt_month", gptActual!!.toFloat()).apply()
-                } else {
-                    lines.add("")
-                    lines.add("GPT: $gptError")
-                }
-
                 adminCostText.text = lines.joinToString("\n")
             }
         }

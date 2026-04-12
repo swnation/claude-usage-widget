@@ -628,16 +628,18 @@ async function fetchAllAdminCosts() {
   // Anthropic
   if (settings.adminKey) {
     const now = new Date();
-    const cMonthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-    const cTomorrow = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
+    const startingAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00Z`;
+    const endingAt = now.toISOString();
     const res = await adminApiRequest('api.anthropic.com',
-      `/v1/usage?start_date=${cMonthStart}&end_date=${cTomorrow}`, {
+      `/v1/organizations/cost_report?starting_at=${startingAt}&ending_at=${endingAt}&bucket_width=1mo`, {
       'x-api-key': settings.adminKey,
       'anthropic-version': '2023-06-01',
     });
     if (res.ok) {
-      const cost = res.data?.total_cost ?? res.data?.total_usage ?? null;
-      results.claude = cost != null ? { actual: cost } : { error: '데이터 파싱 확인 필요' };
+      let claudeTotal = 0;
+      (res.data?.data || []).forEach(b => { claudeTotal += b.cost || 0; });
+      if (claudeTotal === 0) claudeTotal = res.data?.total_cost ?? res.data?.cost ?? 0;
+      results.claude = { actual: claudeTotal };
     } else {
       results.claude = { error: res.error || `HTTP ${res.status}` };
     }
