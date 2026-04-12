@@ -291,7 +291,11 @@ class MainActivity : AppCompatActivity() {
             // Anthropic Admin API
             if (anthropicKey.isNotEmpty()) {
                 try {
-                    val url = java.net.URL("https://api.anthropic.com/v1/organizations/cost_report")
+                    val monthStart = java.time.LocalDate.now().withDayOfMonth(1).toString()
+                    val tomorrow = java.time.LocalDate.now().plusDays(1).toString()
+                    val url = java.net.URL(
+                        "https://api.anthropic.com/v1/usage?start_date=$monthStart&end_date=$tomorrow"
+                    )
                     val conn = url.openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.setRequestProperty("x-api-key", anthropicKey)
@@ -299,19 +303,26 @@ class MainActivity : AppCompatActivity() {
                     conn.connectTimeout = 10000
                     conn.readTimeout = 10000
 
-                    if (conn.responseCode == 200) {
-                        val body = conn.inputStream.bufferedReader().readText()
+                    val code = conn.responseCode
+                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val body = stream?.bufferedReader()?.readText() ?: ""
+                    conn.disconnect()
+
+                    if (code == 200) {
                         val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                        // 응답 구조에 따라 총 비용 추출
                         claudeActual = json.get("total_cost")?.asDouble
+                            ?: json.get("total_usage")?.asDouble
                         if (claudeActual != null) {
                             results.add("Claude 실제: $${String.format("%.4f", claudeActual)}")
+                        } else {
+                            results.add("Claude: 데이터 파싱 확인 필요")
                         }
                     } else {
-                        results.add("Claude: 오류 ${conn.responseCode}")
+                        results.add("Claude: 오류 $code")
                     }
-                    conn.disconnect()
                 } catch (e: Exception) {
-                    results.add("Claude: 연결 실패")
+                    results.add("Claude: ${e.message ?: "연결 실패"}")
                 }
             }
 
@@ -706,14 +717,10 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 오랑붕쌤 비용 스크래핑 (API_COST_ONLY 또는 BOTH, 로그인된 경우만)
-        if (mode != DisplayMode.CLAUDE_ONLY) {
-            val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
-            if (obsLoggedIn) {
-                fetchObsCost()
-            } else {
-                statusText.text = "오랑붕쌤 연결이 필요합니다"
-            }
+        // 오랑붕쌤 비용 데이터는 연결되어 있으면 항상 가져오기 (모드 무관)
+        val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
+        if (obsLoggedIn) {
+            fetchObsCost()
         }
     }
 
@@ -860,12 +867,9 @@ class MainActivity : AppCompatActivity() {
     // ── 오랑붕쌤 Drive API 직접 호출 ──
     private fun fetchObsCost() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
-        if (mode == DisplayMode.CLAUDE_ONLY) return
 
         val token = prefs.getString("google_oauth_token", null)
         if (token.isNullOrEmpty()) {
-            statusText.text = "오랑붕쌤 연결이 필요합니다"
             return
         }
 

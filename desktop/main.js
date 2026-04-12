@@ -283,7 +283,6 @@ let isObsFetching = false;
 
 async function scrapeObsCost() {
   if (isObsFetching) return;
-  if (settings.displayMode === 'CLAUDE_ONLY') return;
   if (!settings.googleToken) return;
 
   isObsFetching = true;
@@ -631,12 +630,17 @@ async function fetchAllAdminCosts() {
 
   // Anthropic
   if (settings.adminKey) {
-    const res = await adminApiRequest('api.anthropic.com', '/v1/organizations/cost_report', {
+    const now = new Date();
+    const cMonthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const cTomorrow = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
+    const res = await adminApiRequest('api.anthropic.com',
+      `/v1/usage?start_date=${cMonthStart}&end_date=${cTomorrow}`, {
       'x-api-key': settings.adminKey,
       'anthropic-version': '2023-06-01',
     });
-    if (res.ok && res.data?.total_cost != null) {
-      results.claude = { actual: res.data.total_cost };
+    if (res.ok) {
+      const cost = res.data?.total_cost ?? res.data?.total_usage ?? null;
+      results.claude = cost != null ? { actual: cost } : { error: '데이터 파싱 확인 필요' };
     } else {
       results.claude = { error: res.error || `HTTP ${res.status}` };
     }
