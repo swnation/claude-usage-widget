@@ -376,25 +376,29 @@ class MainActivity : AppCompatActivity() {
                     val estClaude = estimated?.byAI?.find { it.aiId == "claude" }?.monthCost ?: 0.0
 
                     if (code == 200) {
-                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        // cost_report 응답에서 총 비용 추출
-                        var claudeActual = 0.0
-                        val data = json.getAsJsonArray("data")
-                        data?.forEach { bucket ->
-                            claudeActual += bucket.asJsonObject.get("cost")?.asDouble ?: 0.0
-                        }
-                        // data 없으면 top-level에서 시도
-                        if (claudeActual == 0.0) {
-                            claudeActual = json.get("total_cost")?.asDouble
-                                ?: json.get("cost")?.asDouble ?: 0.0
-                        }
+                        // 디버그: 응답 일부 표시
+                        lines.add("Claude ($code): ${body.take(200)}")
+                        try {
+                            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            var claudeActual = 0.0
+                            val data = json.getAsJsonArray("data")
+                            data?.forEach { bucket ->
+                                claudeActual += bucket.asJsonObject.get("cost")?.asDouble ?: 0.0
+                            }
+                            if (claudeActual == 0.0) {
+                                claudeActual = json.get("total_cost")?.asDouble
+                                    ?: json.get("cost")?.asDouble ?: 0.0
+                            }
 
-                        lines.add("Claude 이번달 비교:")
-                        lines.add("  실제 청구: $${String.format("%.4f", claudeActual)}")
-                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
-                        val diff = claudeActual - estClaude
-                        val sign = if (diff >= 0) "+" else ""
-                        lines.add("  차이: $sign$${String.format("%.4f", diff)}")
+                            lines.add("Claude 이번달 비교:")
+                            lines.add("  실제 청구: $${String.format("%.4f", claudeActual)}")
+                            lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
+                            val diff = claudeActual - estClaude
+                            val sign = if (diff >= 0) "+" else ""
+                            lines.add("  차이: $sign$${String.format("%.4f", diff)}")
+                        } catch (pe: Exception) {
+                            lines.add("Claude 파싱 오류: ${pe.message}")
+                        }
                     } else {
                         val errMsg = try {
                             val j = com.google.gson.JsonParser.parseString(body).asJsonObject
