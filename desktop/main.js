@@ -30,7 +30,7 @@ let scrapeTimer = null;
 let usageData = null;
 let costData = null;
 // displayMode: 'CLAUDE_ONLY' | 'API_COST_ONLY' | 'BOTH'
-let settings = { refreshInterval: 120, widgetVisible: true, displayMode: 'CLAUDE_ONLY' };
+let settings = { refreshInterval: 120, widgetVisible: true, displayMode: 'CLAUDE_ONLY', overlayMode: 'MINIMAL' };
 
 // ────────────────────────────
 //  설정 저장/불러오기
@@ -423,12 +423,9 @@ function createWidgetWindow() {
 
 function updateWidgetSize() {
   if (!widgetWin || widgetWin.isDestroyed()) return;
-  const mode = settings.displayMode || 'CLAUDE_ONLY';
-  if (mode === 'BOTH') {
-    widgetWin.setSize(250, 42);
-  } else {
-    widgetWin.setSize(170, 42);
-  }
+  const om = settings.overlayMode || 'MINIMAL';
+  const w = om === 'FULL' ? 320 : (om === 'BASIC' || om === 'COST') ? 250 : 170;
+  widgetWin.setSize(w, 42);
 }
 
 function toggleWidget() {
@@ -734,6 +731,7 @@ ipcMain.handle('logout', async () => {
   stopScrapeTimer();
 });
 ipcMain.handle('toggle-widget', () => toggleWidget());
+ipcMain.handle('show-main', () => showMainWindow());
 ipcMain.handle('obs-login', () => showObsLoginWindow());
 ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
 ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {

@@ -4,7 +4,6 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.net.Uri
-import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
@@ -17,10 +16,26 @@ import androidx.preference.PreferenceManager
 import com.google.gson.Gson
 
 /**
- * 다른 앱 위에 떠 있는 작은 오버레이 — 5시간 세션 사용량 실시간 표시.
- * 싱글톤 — 앱 재시작 시 중복 생성 방지.
+ * 다른 앱 위에 떠 있는 작은 오버레이.
+ * 4가지 정보량 모드 + 탭하면 앱 열기 + 드래그 이동.
  */
 class FloatingOverlay private constructor(private val context: Context) {
+
+    // 플로팅 오버레이 정보량 모드
+    enum class OverlayMode {
+        MINIMAL,  // 🟢 42%
+        BASIC,    // 🟢 42% │ 주간 35%
+        COST,     // 🟢 42% │ 💰$0.12
+        FULL;     // 🟢 42% │ 주간 35% │ 💰$0.12
+
+        fun next(): OverlayMode = entries[(ordinal + 1) % entries.size]
+
+        companion object {
+            fun fromString(s: String?): OverlayMode = try {
+                valueOf(s ?: "MINIMAL")
+            } catch (_: Exception) { MINIMAL }
+        }
+    }
 
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
@@ -53,25 +68,39 @@ class FloatingOverlay private constructor(private val context: Context) {
             y = 100
         }
 
-        // 드래그 이동
+        // 드래그 + 탭 구분
         var initialX = 0
         var initialY = 0
         var initialTouchX = 0f
         var initialTouchY = 0f
+        var isDragging = false
 
-        textView.setOnTouchListener { v, event ->
+        textView.setOnTouchListener { _, event ->
             when (event.action) {
                 MotionEvent.ACTION_DOWN -> {
                     initialX = params.x
                     initialY = params.y
                     initialTouchX = event.rawX
                     initialTouchY = event.rawY
+                    isDragging = false
                     true
                 }
                 MotionEvent.ACTION_MOVE -> {
-                    params.x = initialX - (event.rawX - initialTouchX).toInt()
-                    params.y = initialY + (event.rawY - initialTouchY).toInt()
-                    windowManager?.updateViewLayout(overlayView, params)
+                    val dx = (event.rawX - initialTouchX).toInt()
+                    val dy = (event.rawY - initialTouchY).toInt()
+                    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isDragging = true
+                    if (isDragging) {
+                        params.x = initialX - dx
+                        params.y = initialY + dy
+                        windowManager?.updateViewLayout(overlayView, params)
+                    }
+                    true
+                }
+                MotionEvent.ACTION_UP -> {
+                    if (!isDragging) {
+                        // 탭 → 앱 열기
+                        openApp()
+                    }
                     true
                 }
                 else -> false
@@ -82,6 +111,14 @@ class FloatingOverlay private constructor(private val context: Context) {
         windowManager?.addView(textView, params)
         startUpdating(textView)
         saveState(true)
+    }
+
+    private fun openApp() {
+        val intent = Intent(context, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            putExtra("auto_refresh", true)
+        }
+        context.startActivity(intent)
     }
 
     fun hide() {
@@ -105,69 +142,66 @@ class FloatingOverlay private constructor(private val context: Context) {
         updateRunnable = object : Runnable {
             override fun run() {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-                val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
-
-                when (mode) {
-                    DisplayMode.CLAUDE_ONLY -> updateClaudeOnly(prefs, textView)
-                    DisplayMode.API_COST_ONLY -> updateApiCostOnly(prefs, textView)
-                    DisplayMode.BOTH -> updateBoth(prefs, textView)
-                }
-
+                val mode = OverlayMode.fromString(prefs.getString("overlay_mode", null))
+                updateText(prefs, textView, mode)
                 handler.postDelayed(this, 10000)
             }
         }
         handler.post(updateRunnable!!)
     }
 
-    private fun updateClaudeOnly(prefs: android.content.SharedPreferences, textView: TextView) {
-        val json = prefs.getString("last_usage", null) ?: return
-        try {
-            val usage = Gson().fromJson(json, PlanUsage::class.java)
-            val pct = usage.session?.usedPercent?.toInt() ?: 0
-            val emoji = when {
-                pct >= 90 -> "🔴"
-                pct >= 70 -> "🟡"
-                else -> "🟢"
-            }
-            textView.text = "$emoji 세션 ${pct}%"
-        } catch (_: Exception) {}
-    }
-
-    private fun updateApiCostOnly(prefs: android.content.SharedPreferences, textView: TextView) {
-        val json = prefs.getString("last_api_cost", null) ?: return
-        try {
-            val cost = Gson().fromJson(json, ApiCostData::class.java)
-            textView.text = "💰 ${cost.todayText()}"
-        } catch (_: Exception) {}
-    }
-
-    private fun updateBoth(prefs: android.content.SharedPreferences, textView: TextView) {
+    private fun updateText(prefs: android.content.SharedPreferences, textView: TextView, mode: OverlayMode) {
         val usageJson = prefs.getString("last_usage", null)
         val costJson = prefs.getString("last_api_cost", null)
 
-        val parts = mutableListOf<String>()
+        var sessionPct: Int? = null
+        var weeklyPct: Int? = null
+        var emoji = "⚪"
+
         if (usageJson != null) {
             try {
                 val usage = Gson().fromJson(usageJson, PlanUsage::class.java)
-                val pct = usage.session?.usedPercent?.toInt() ?: 0
-                val emoji = when {
-                    pct >= 90 -> "🔴"
-                    pct >= 70 -> "🟡"
+                sessionPct = usage.session?.usedPercent?.toInt()
+                weeklyPct = usage.weekly?.usedPercent?.toInt()
+                emoji = when {
+                    (sessionPct ?: 0) >= 90 -> "🔴"
+                    (sessionPct ?: 0) >= 70 -> "🟡"
                     else -> "🟢"
                 }
-                parts.add("$emoji${pct}%")
-            } catch (_: Exception) {}
-        }
-        if (costJson != null) {
-            try {
-                val cost = Gson().fromJson(costJson, ApiCostData::class.java)
-                parts.add("💰${cost.todayText()}")
             } catch (_: Exception) {}
         }
 
-        if (parts.isNotEmpty()) {
-            textView.text = parts.joinToString(" ")
+        var todayCost: String? = null
+        if (costJson != null) {
+            try {
+                val cost = Gson().fromJson(costJson, ApiCostData::class.java)
+                todayCost = cost.todayText()
+            } catch (_: Exception) {}
         }
+
+        val parts = mutableListOf<String>()
+        val pctStr = sessionPct?.let { "${it}%" } ?: "--%"
+
+        when (mode) {
+            OverlayMode.MINIMAL -> {
+                parts.add("$emoji $pctStr")
+            }
+            OverlayMode.BASIC -> {
+                parts.add("$emoji $pctStr")
+                weeklyPct?.let { parts.add("주간 ${it}%") }
+            }
+            OverlayMode.COST -> {
+                parts.add("$emoji $pctStr")
+                todayCost?.let { parts.add("💰$it") }
+            }
+            OverlayMode.FULL -> {
+                parts.add("$emoji $pctStr")
+                weeklyPct?.let { parts.add("주간 ${it}%") }
+                todayCost?.let { parts.add("💰$it") }
+            }
+        }
+
+        textView.text = parts.joinToString(" │ ")
     }
 
     companion object {

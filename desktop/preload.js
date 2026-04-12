@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('api', {
   login: () => ipcRenderer.invoke('login'),
   logout: () => ipcRenderer.invoke('logout'),
   toggleWidget: () => ipcRenderer.invoke('toggle-widget'),
+  showMain: () => ipcRenderer.invoke('show-main'),
   obsLogin: () => ipcRenderer.invoke('obs-login'),
   getObsStatus: () => ipcRenderer.invoke('get-obs-status'),
   saveAdminKeyEncrypted: (type, key, pin) => ipcRenderer.invoke('save-admin-key-encrypted', type, key, pin),

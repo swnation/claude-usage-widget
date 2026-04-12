@@ -224,6 +224,33 @@ class MainActivity : AppCompatActivity() {
             }
             updateOverlayButton()
         }
+
+        // 플로팅 정보량 모드 스피너
+        val overlayModeSpinner = findViewById<android.widget.Spinner>(R.id.overlayModeSpinner)
+        val overlayModes = arrayOf(
+            "최소 (세션 %)",
+            "기본 (세션 + 주간)",
+            "비용 (세션 + 요금)",
+            "전체 (세션 + 주간 + 요금)"
+        )
+        overlayModeSpinner.adapter = android.widget.ArrayAdapter(
+            this, android.R.layout.simple_spinner_dropdown_item, overlayModes
+        )
+        // 저장된 모드 복원
+        val savedOverlayMode = PreferenceManager.getDefaultSharedPreferences(this)
+            .getString("overlay_mode", "MINIMAL")
+        overlayModeSpinner.setSelection(
+            FloatingOverlay.OverlayMode.fromString(savedOverlayMode).ordinal
+        )
+        overlayModeSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, pos: Int, id: Long) {
+                val selected = FloatingOverlay.OverlayMode.entries[pos]
+                PreferenceManager.getDefaultSharedPreferences(this@MainActivity).edit()
+                    .putString("overlay_mode", selected.name).apply()
+            }
+            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        }
+
         saveButton.setOnClickListener {
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
             // 모드 저장

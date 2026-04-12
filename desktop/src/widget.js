@@ -1,9 +1,18 @@
 const emoji = document.getElementById('emoji');
 const text = document.getElementById('text');
+const widget = document.getElementById('widget');
 
 let lastUsage = null;
 let lastCost = null;
-let currentMode = 'CLAUDE_ONLY';
+let overlayMode = 'MINIMAL'; // MINIMAL, BASIC, COST, FULL
+
+// 클릭 → 메인 윈도우 열기 (드래그와 구분)
+let isDragging = false;
+widget.addEventListener('mousedown', () => { isDragging = false; });
+widget.addEventListener('mousemove', () => { isDragging = true; });
+widget.addEventListener('mouseup', () => {
+  if (!isDragging) window.api.showMain();
+});
 
 window.api.onUsageUpdate((data) => {
   lastUsage = data;
@@ -16,34 +25,41 @@ window.api.onCostUpdate((data) => {
 });
 
 function updateWidget() {
-  if (currentMode === 'CLAUDE_ONLY') {
-    if (!lastUsage || !lastUsage.session) return;
-    const pct = Math.round(lastUsage.session.usedPercent || 0);
-    emoji.textContent = pct >= 90 ? '🔴' : pct >= 70 ? '🟡' : '🟢';
-    text.textContent = `세션 ${pct}%`;
-  } else if (currentMode === 'API_COST_ONLY') {
-    if (!lastCost) return;
-    emoji.textContent = '💰';
-    text.textContent = `$${lastCost.todayTotal.toFixed(4)}`;
-  } else {
-    // BOTH
-    const parts = [];
-    if (lastUsage && lastUsage.session) {
-      const pct = Math.round(lastUsage.session.usedPercent || 0);
-      emoji.textContent = pct >= 90 ? '🔴' : pct >= 70 ? '🟡' : '🟢';
-      parts.push(`${pct}%`);
-    }
-    if (lastCost) {
-      parts.push(`💰$${lastCost.todayTotal.toFixed(4)}`);
-    }
-    text.textContent = parts.join(' ') || '로딩...';
+  let sessionPct = null;
+  let weeklyPct = null;
+  let emojiStr = '⚪';
+
+  if (lastUsage && lastUsage.session) {
+    sessionPct = Math.round(lastUsage.session.usedPercent || 0);
+    emojiStr = sessionPct >= 90 ? '🔴' : sessionPct >= 70 ? '🟡' : '🟢';
   }
+  if (lastUsage && lastUsage.weekly) {
+    weeklyPct = Math.round(lastUsage.weekly.usedPercent || 0);
+  }
+
+  let todayCost = null;
+  if (lastCost) {
+    todayCost = `$${lastCost.todayTotal.toFixed(4)}`;
+  }
+
+  emoji.textContent = emojiStr;
+  const pctStr = sessionPct != null ? `${sessionPct}%` : '--%';
+  const parts = [pctStr];
+
+  if (overlayMode === 'BASIC' || overlayMode === 'FULL') {
+    if (weeklyPct != null) parts.push(`주간 ${weeklyPct}%`);
+  }
+  if (overlayMode === 'COST' || overlayMode === 'FULL') {
+    if (todayCost) parts.push(`💰${todayCost}`);
+  }
+
+  text.textContent = parts.join(' │ ');
 }
 
 // 초기 데이터 로딩
 (async () => {
   const settings = await window.api.getSettings();
-  currentMode = settings.displayMode || 'CLAUDE_ONLY';
+  overlayMode = settings.overlayMode || 'MINIMAL';
 
   lastUsage = await window.api.getUsage();
   lastCost = await window.api.getCost();

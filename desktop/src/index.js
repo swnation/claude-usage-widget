@@ -32,6 +32,9 @@ const AI_DEFS = {
   if (radio) radio.checked = true;
   updateModeVisibility();
 
+  // 플로팅 모드 복원
+  if (settings.overlayMode) $('#overlayModeSelect').value = settings.overlayMode;
+
   const usage = await window.api.getUsage();
   if (usage) renderUsage(usage);
 
@@ -61,6 +64,12 @@ $('#refreshBtn').onclick = async () => {
 };
 
 $('#widgetBtn').onclick = () => window.api.toggleWidget();
+
+// 플로팅 정보량 모드
+$('#overlayModeSelect').onchange = async () => {
+  const mode = $('#overlayModeSelect').value;
+  await window.api.saveSettings({ overlayMode: mode });
+};
 
 $('#saveBtn').onclick = async () => {
   const val = parseInt(intervalInput.value) || 120;

@@ -105,6 +105,14 @@
             android:backgroundTint="#22223a"
             android:textColor="#c084fc"
             android:textSize="13sp"
+            android:layout_marginBottom="4dp" />
+
+        <!-- 플로팅 정보량 모드 -->
+        <Spinner
+            android:id="@+id/overlayModeSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="36dp"
+            android:background="#22223a"
             android:layout_marginBottom="8dp" />
 
         <!-- 오랑붕쌤 연결 -->
