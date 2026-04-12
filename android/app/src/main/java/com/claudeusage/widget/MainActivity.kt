@@ -282,6 +282,37 @@ class MainActivity : AppCompatActivity() {
         adminKeySave.setOnClickListener { promptPinAndSaveKeys("anthropic") }
         openaiKeySave.setOnClickListener { promptPinAndSaveKeys("openai") }
         findViewById<Button>(R.id.adminKeyRestore).setOnClickListener { restoreKeysFromDrive() }
+        findViewById<Button>(R.id.adminKeyBackup).setOnClickListener { backupKeysToDrive() }
+    }
+
+    private fun backupKeysToDrive() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) {
+            Toast.makeText(this, "오랑붕쌤 연결이 필요합니다", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val encrypted = prefs.getString("admin_keys_encrypted", null)
+        if (encrypted.isNullOrEmpty()) {
+            Toast.makeText(this, "먼저 키를 저장하세요 (PIN 설정 필요)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val statusView = findViewById<TextView>(R.id.adminKeyStatus)
+        statusView.text = "☁️ Drive 백업 중..."
+        statusView.setTextColor(0xFF888899.toInt())
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val ok = DriveApiClient.saveKeysToDrive(token, encrypted)
+            withContext(Dispatchers.Main) {
+                if (ok) {
+                    statusView.text = "✅ Drive 백업 완료!"
+                    statusView.setTextColor(0xFF10a37f.toInt())
+                } else {
+                    statusView.text = "❌ Drive 백업 실패"
+                    statusView.setTextColor(0xFFf87171.toInt())
+                }
+            }
+        }
     }
 
     private fun updateOverlayButton() {
@@ -320,10 +351,9 @@ class MainActivity : AppCompatActivity() {
                 try {
                     val monthStart = java.time.LocalDate.now().withDayOfMonth(1).toString()
                     val tomorrow = java.time.LocalDate.now().plusDays(1).toString()
-                    val url = java.net.URL(
+                    val conn = java.net.URL(
                         "https://api.anthropic.com/v1/usage?start_date=$monthStart&end_date=$tomorrow"
-                    )
-                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    ).openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.setRequestProperty("x-api-key", anthropicKey)
                     conn.setRequestProperty("anthropic-version", "2023-06-01")
@@ -337,16 +367,20 @@ class MainActivity : AppCompatActivity() {
 
                     if (code == 200) {
                         val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        // 응답 구조에 따라 총 비용 추출
                         claudeActual = json.get("total_cost")?.asDouble
                             ?: json.get("total_usage")?.asDouble
                         if (claudeActual != null) {
                             results.add("Claude 실제: $${String.format("%.4f", claudeActual)}")
                         } else {
-                            results.add("Claude: 데이터 파싱 확인 필요")
+                            results.add("Claude: 응답 수신 (파싱 확인 필요)")
                         }
                     } else {
-                        results.add("Claude: 오류 $code")
+                        // 에러 body 표시 (디버깅용)
+                        val errMsg = try {
+                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(100)
+                        } catch (_: Exception) { body.take(100) }
+                        results.add("Claude: $code - $errMsg")
                     }
                 } catch (e: Exception) {
                     results.add("Claude: ${e.message ?: "연결 실패"}")
@@ -356,22 +390,23 @@ class MainActivity : AppCompatActivity() {
             // OpenAI Admin API
             if (openaiKey.isNotEmpty()) {
                 try {
-                    // 이번 달 시작일
                     val monthStart = java.time.LocalDate.now().withDayOfMonth(1).toString()
                     val tomorrow = java.time.LocalDate.now().plusDays(1).toString()
-                    val url = java.net.URL(
+                    val conn = java.net.URL(
                         "https://api.openai.com/v1/organization/costs?start_date=$monthStart&end_date=$tomorrow"
-                    )
-                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    ).openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.setRequestProperty("Authorization", "Bearer $openaiKey")
                     conn.connectTimeout = 10000
                     conn.readTimeout = 10000
 
-                    if (conn.responseCode == 200) {
-                        val body = conn.inputStream.bufferedReader().readText()
+                    val code = conn.responseCode
+                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                    val body = stream?.bufferedReader()?.readText() ?: ""
+                    conn.disconnect()
+
+                    if (code == 200) {
                         val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        // OpenAI cost API returns { data: [{ results: [{ amount: { value: X }}] }] }
                         val dataArr = json.getAsJsonArray("data")
                         var totalCost = 0.0
                         dataArr?.forEach { bucket ->
@@ -384,11 +419,14 @@ class MainActivity : AppCompatActivity() {
                         gptActual = totalCost
                         results.add("GPT 실제: $${String.format("%.4f", gptActual)}")
                     } else {
-                        results.add("GPT: 오류 ${conn.responseCode}")
+                        val errMsg = try {
+                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
+                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(100)
+                        } catch (_: Exception) { body.take(100) }
+                        results.add("GPT: $code - $errMsg")
                     }
-                    conn.disconnect()
                 } catch (e: Exception) {
-                    results.add("GPT: 연결 실패")
+                    results.add("GPT: ${e.message ?: "연결 실패"}")
                 }
             }
 
