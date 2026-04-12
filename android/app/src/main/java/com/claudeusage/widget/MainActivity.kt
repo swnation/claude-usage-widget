@@ -334,143 +334,94 @@ class MainActivity : AppCompatActivity() {
 
     private fun fetchAdminCosts() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
         val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
 
-        if (anthropicKey.isEmpty() && openaiKey.isEmpty()) return
+        // 오랑붕쌤 추정치 로드
+        val costJson = prefs.getString("last_api_cost", null)
+        val estimated = if (costJson != null) {
+            try { com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java) }
+            catch (_: Exception) { null }
+        } else null
 
-        adminCostText.text = "Admin API 조회 중..."
+        val lines = mutableListOf<String>()
+
+        // Claude: billing API 없음 → 콘솔 링크 안내
+        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
+        if (anthropicKey.isNotEmpty()) {
+            val estClaude = estimated?.byAI?.find { it.aiId == "claude" }?.monthCost ?: 0.0
+            lines.add("Claude: billing API 미지원")
+            lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
+            lines.add("  → 콘솔에서 확인 (이름 클릭)")
+        }
+
+        if (openaiKey.isEmpty()) {
+            if (lines.isNotEmpty()) adminCostText.text = lines.joinToString("\n")
+            return
+        }
+
+        adminCostText.text = "GPT Admin API 조회 중..."
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val results = mutableListOf<String>()
-            var claudeActual: Double? = null
             var gptActual: Double? = null
+            var gptError: String? = null
 
-            // Anthropic Admin API
-            if (anthropicKey.isNotEmpty()) {
-                try {
-                    val monthStart = java.time.LocalDate.now().withDayOfMonth(1).toString()
-                    val tomorrow = java.time.LocalDate.now().plusDays(1).toString()
-                    val conn = java.net.URL(
-                        "https://api.anthropic.com/v1/usage?start_date=$monthStart&end_date=$tomorrow"
-                    ).openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.setRequestProperty("x-api-key", anthropicKey)
-                    conn.setRequestProperty("anthropic-version", "2023-06-01")
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
+            try {
+                val monthStartEpoch = java.time.LocalDate.now().withDayOfMonth(1)
+                    .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
+                val nowEpoch = java.time.Instant.now().epochSecond
+                val conn = java.net.URL(
+                    "https://api.openai.com/v1/organization/costs?start_time=$monthStartEpoch&end_time=$nowEpoch&bucket_width=1d"
+                ).openConnection() as java.net.HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "Bearer $openaiKey")
+                conn.connectTimeout = 10000
+                conn.readTimeout = 10000
 
-                    val code = conn.responseCode
-                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                    val body = stream?.bufferedReader()?.readText() ?: ""
-                    conn.disconnect()
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val body = stream?.bufferedReader()?.readText() ?: ""
+                conn.disconnect()
 
-                    if (code == 200) {
-                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        claudeActual = json.get("total_cost")?.asDouble
-                            ?: json.get("total_usage")?.asDouble
-                        if (claudeActual != null) {
-                            results.add("Claude 실제: $${String.format("%.4f", claudeActual)}")
-                        } else {
-                            results.add("Claude: 응답 수신 (파싱 확인 필요)")
+                if (code == 200) {
+                    val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                    var totalCost = 0.0
+                    json.getAsJsonArray("data")?.forEach { bucket ->
+                        bucket.asJsonObject.getAsJsonArray("results")?.forEach { r ->
+                            totalCost += r.asJsonObject.getAsJsonObject("amount")
+                                ?.get("value")?.asDouble ?: 0.0
                         }
-                    } else {
-                        // 에러 body 표시 (디버깅용)
-                        val errMsg = try {
-                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(100)
-                        } catch (_: Exception) { body.take(100) }
-                        results.add("Claude: $code - $errMsg")
                     }
-                } catch (e: Exception) {
-                    results.add("Claude: ${e.message ?: "연결 실패"}")
+                    gptActual = totalCost
+                } else {
+                    val errMsg = try {
+                        val j = com.google.gson.JsonParser.parseString(body).asJsonObject
+                        j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(100)
+                    } catch (_: Exception) { body.take(100) }
+                    gptError = "$code - $errMsg"
                 }
+            } catch (e: Exception) {
+                gptError = e.message ?: "연결 실패"
             }
 
-            // OpenAI Admin API
-            if (openaiKey.isNotEmpty()) {
-                try {
-                    val monthStartEpoch = java.time.LocalDate.now().withDayOfMonth(1)
-                        .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
-                    val nowEpoch = java.time.Instant.now().epochSecond
-                    val conn = java.net.URL(
-                        "https://api.openai.com/v1/organization/costs?start_time=$monthStartEpoch&end_time=$nowEpoch&bucket_width=1d"
-                    ).openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.setRequestProperty("Authorization", "Bearer $openaiKey")
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-
-                    val code = conn.responseCode
-                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                    val body = stream?.bufferedReader()?.readText() ?: ""
-                    conn.disconnect()
-
-                    if (code == 200) {
-                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        val dataArr = json.getAsJsonArray("data")
-                        var totalCost = 0.0
-                        dataArr?.forEach { bucket ->
-                            val results2 = bucket.asJsonObject.getAsJsonArray("results")
-                            results2?.forEach { r ->
-                                val amount = r.asJsonObject.getAsJsonObject("amount")
-                                totalCost += amount?.get("value")?.asDouble ?: 0.0
-                            }
-                        }
-                        gptActual = totalCost
-                        results.add("GPT 실제: $${String.format("%.4f", gptActual)}")
-                    } else {
-                        val errMsg = try {
-                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(100)
-                        } catch (_: Exception) { body.take(100) }
-                        results.add("GPT: $code - $errMsg")
-                    }
-                } catch (e: Exception) {
-                    results.add("GPT: ${e.message ?: "연결 실패"}")
-                }
-            }
-
-            // 추정치와 비교
             withContext(Dispatchers.Main) {
-                val costJson = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
-                    .getString("last_api_cost", null)
-                val estimatedClaude = if (costJson != null) {
-                    try {
-                        val cost = com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java)
-                        cost.byAI.find { it.aiId == "claude" }?.monthCost ?: 0.0
-                    } catch (_: Exception) { 0.0 }
-                } else 0.0
-                val estimatedGpt = if (costJson != null) {
-                    try {
-                        val cost = com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java)
-                        cost.byAI.find { it.aiId == "gpt" }?.monthCost ?: 0.0
-                    } catch (_: Exception) { 0.0 }
-                } else 0.0
+                val estGpt = estimated?.byAI?.find { it.aiId == "gpt" }?.monthCost ?: 0.0
 
-                val lines = mutableListOf<String>()
-                lines.addAll(results)
+                if (gptActual != null) {
+                    lines.add("")
+                    lines.add("GPT 이번달 비교:")
+                    lines.add("  실제 청구: $${String.format("%.4f", gptActual)}")
+                    lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estGpt)}")
+                    val diff = gptActual!! - estGpt
+                    val sign = if (diff >= 0) "+" else ""
+                    lines.add("  차이: $sign$${String.format("%.4f", diff)}")
 
-                if (claudeActual != null && estimatedClaude > 0) {
-                    val diff = claudeActual - estimatedClaude
-                    val sign = if (diff >= 0) "+" else ""
-                    lines.add("  Claude 차이: $sign$${String.format("%.4f", diff)} (추정 $${String.format("%.4f", estimatedClaude)})")
-                }
-                if (gptActual != null && estimatedGpt > 0) {
-                    val diff = gptActual - estimatedGpt
-                    val sign = if (diff >= 0) "+" else ""
-                    lines.add("  GPT 차이: $sign$${String.format("%.4f", diff)} (추정 $${String.format("%.4f", estimatedGpt)})")
+                    prefs.edit().putFloat("actual_gpt_month", gptActual!!.toFloat()).apply()
+                } else {
+                    lines.add("")
+                    lines.add("GPT: $gptError")
                 }
 
                 adminCostText.text = lines.joinToString("\n")
-
-                // 실제 비용 저장 (위젯/알림에서 사용)
-                prefs.edit()
-                    .apply {
-                        if (claudeActual != null) putFloat("actual_claude_month", claudeActual.toFloat())
-                        if (gptActual != null) putFloat("actual_gpt_month", gptActual.toFloat())
-                    }
-                    .apply()
             }
         }
     }
