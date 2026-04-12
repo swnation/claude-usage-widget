@@ -22,20 +22,22 @@
     <!-- API 요금 카드 -->
     <div id="costCards" style="display:none">
       <div class="usage-card" style="padding:12px 16px">
-        <div class="label">💰 API 요금</div>
+        <div class="label">💰 API 요금 <span class="source-badge" id="costSourceBadge"></span></div>
         <div style="display:flex;gap:16px;margin:8px 0">
           <div>
-            <div style="font-size:11px;color:#aaa">오늘</div>
-            <div id="costToday" style="font-size:20px;font-weight:700;color:#4caf50">--</div>
-            <div id="costTodayKrw" style="font-size:11px;color:#888"></div>
+            <div style="font-size:11px;color:var(--text-sub)">오늘</div>
+            <div id="costToday" style="font-size:20px;font-weight:700;color:var(--accent)">--</div>
+            <div id="costTodayKrw" style="font-size:11px;color:var(--text-dim)"></div>
           </div>
           <div>
-            <div style="font-size:11px;color:#aaa">이번 달</div>
-            <div id="costMonth" style="font-size:20px;font-weight:700;color:#c084fc">--</div>
-            <div id="costMonthKrw" style="font-size:11px;color:#888"></div>
+            <div style="font-size:11px;color:var(--text-sub)">이번 달</div>
+            <div id="costMonth" style="font-size:20px;font-weight:700;color:var(--accent2)">--</div>
+            <div id="costMonthKrw" style="font-size:11px;color:var(--text-dim)"></div>
           </div>
         </div>
         <div id="costByAI"></div>
+        <!-- 구독 표시 -->
+        <div id="costSubs" style="display:none"></div>
       </div>
     </div>
 
@@ -45,21 +47,21 @@
       <button class="btn-small btn-secondary" id="obsBtn" style="background:#10a37f;color:#fff">연결</button>
     </div>
 
-    <!-- Admin API 키 -->
+    <!-- Admin API 키 (Billing) -->
     <div style="margin-bottom:12px">
-      <label style="font-size:11px;color:#aaa;display:block;margin-bottom:4px">Admin API 키 (실제 청구 비교용)</label>
+      <label style="font-size:11px;color:var(--text-sub);display:block;margin-bottom:4px">Billing API 키 (실제 청구 비용)</label>
       <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px">
         <span style="font-size:11px;color:#c96442;min-width:50px">Claude</span>
-        <input type="password" id="anthropicKeyInput" placeholder="sk-ant-admin-..." style="flex:1;background:#0f3460;border:1px solid #2a2a4a;color:#fff;padding:5px 8px;border-radius:4px;font-size:11px">
+        <input type="password" id="anthropicKeyInput" placeholder="sk-ant-admin-..." style="flex:1;background:var(--input-bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-size:11px">
         <button class="btn-small btn-secondary" id="anthropicKeySave">저장</button>
       </div>
       <div style="display:flex;align-items:center;gap:4px">
         <span style="font-size:11px;color:#10a37f;min-width:50px">GPT</span>
-        <input type="password" id="openaiKeyInput" placeholder="sk-admin-..." style="flex:1;background:#0f3460;border:1px solid #2a2a4a;color:#fff;padding:5px 8px;border-radius:4px;font-size:11px">
+        <input type="password" id="openaiKeyInput" placeholder="sk-admin-..." style="flex:1;background:var(--input-bg);border:1px solid var(--border);color:var(--text);padding:5px 8px;border-radius:4px;font-size:11px">
         <button class="btn-small btn-secondary" id="openaiKeySave">저장</button>
       </div>
       <button class="btn-small btn-secondary" id="adminKeyRestore" style="margin-top:6px;width:100%">☁️ Drive에서 키 불러오기</button>
-      <div id="adminCostText" style="font-size:11px;color:#888;margin-top:6px;white-space:pre-line"></div>
+      <div id="adminCostText" style="font-size:11px;color:var(--text-dim);margin-top:6px;white-space:pre-line"></div>
     </div>
 
     <!-- 설정 -->
@@ -86,13 +88,19 @@
         <input type="number" id="intervalInput" min="30" value="120">
         <button class="btn-small btn-secondary" id="saveBtn">저장</button>
       </div>
+
+      <!-- 스킨 선택 -->
+      <div class="skin-section">
+        <label>스킨</label>
+        <div class="skin-grid" id="skinGrid"></div>
+      </div>
     </div>
 
     <!-- 버튼 -->
     <div class="btn-row">
       <button class="btn-primary" id="refreshBtn">새로고침</button>
       <button class="btn-secondary" id="widgetBtn">위젯 표시</button>
-      <select id="overlayModeSelect" style="padding:8px;background:#0f3460;border:1px solid #2a2a4a;color:#fff;border-radius:6px;font-size:12px">
+      <select id="overlayModeSelect" style="padding:8px;background:var(--input-bg);border:1px solid var(--border);color:var(--text);border-radius:6px;font-size:12px">
         <option value="MINIMAL">최소 (세션 %)</option>
         <option value="BASIC">기본 (세션 + 주간)</option>
         <option value="COST">비용 (세션 + 요금)</option>
@@ -102,6 +110,9 @@
 
     <div class="status-text" id="statusText">시작 중...</div>
   </div>
+
+  <!-- 숨겨진 파일 인풋 (커스텀 스킨 사진 업로드) -->
+  <input type="file" id="skinFileInput" accept="image/*" style="display:none">
 
   <script src="index.js"></script>
 </body>

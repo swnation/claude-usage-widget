@@ -346,127 +346,57 @@ class MainActivity : AppCompatActivity() {
             catch (_: Exception) { null }
         } else null
 
-        adminCostText.text = "Admin API 조회 중..."
+        // 구독 정보 로드
+        val subsJson = prefs.getString("subscriptions", null)
+        val subscriptions = if (subsJson != null) {
+            try { com.google.gson.Gson().fromJson(subsJson, Array<Subscription>::class.java).toList() }
+            catch (_: Exception) { emptyList() }
+        } else emptyList<Subscription>()
+
+        adminCostText.text = "Billing API 조회 중..."
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val lines = mutableListOf<String>()
-            val monthStart = java.time.LocalDate.now().withDayOfMonth(1)
-            val now = java.time.Instant.now()
-
-            // ── Anthropic Admin API ──
-            if (anthropicKey.isNotEmpty()) {
-                try {
-                    val startingAt = "${monthStart}T00:00:00Z"
-                    val endingAt = now.toString()
-                    val conn = java.net.URL(
-                        "https://api.anthropic.com/v1/organizations/cost_report" +
-                        "?starting_at=$startingAt&ending_at=$endingAt&bucket_width=1d"
-                    ).openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.setRequestProperty("x-api-key", anthropicKey)
-                    conn.setRequestProperty("anthropic-version", "2023-06-01")
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-
-                    val code = conn.responseCode
-                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                    val body = stream?.bufferedReader()?.readText() ?: ""
-                    conn.disconnect()
-
-                    val estClaude = estimated?.byAI?.find { it.aiId == "claude" }?.monthCost ?: 0.0
-
-                    if (code == 200) {
-                        try {
-                            val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            var claudeActualCents = 0.0
-
-                            // data[].results[].amount (센트 단위 문자열)
-                            json.getAsJsonArray("data")?.forEach { bucket ->
-                                bucket.asJsonObject.getAsJsonArray("results")?.forEach { r ->
-                                    val amountStr = r.asJsonObject.get("amount")?.asString ?: "0"
-                                    claudeActualCents += amountStr.toDoubleOrNull() ?: 0.0
-                                }
-                            }
-
-                            val claudeActual = claudeActualCents / 100.0 // 센트 → 달러
-
-                            lines.add("Claude 이번달 비교:")
-                            lines.add("  실제 청구: $${String.format("%.4f", claudeActual)}")
-                            lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
-                            val diff = claudeActual - estClaude
-                            val sign = if (diff >= 0) "+" else ""
-                            lines.add("  차이: $sign$${String.format("%.4f", diff)}")
-                        } catch (pe: Exception) {
-                            lines.add("Claude 파싱 오류: ${pe.message}")
-                        }
-                    } else {
-                        val errMsg = try {
-                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(150)
-                        } catch (_: Exception) { body.take(150) }
-                        lines.add("Claude: $code - $errMsg")
-                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estClaude)}")
-                    }
-                } catch (e: Exception) {
-                    lines.add("Claude: ${e.message ?: "연결 실패"}")
-                }
-            }
-
-            // ── OpenAI Admin API ──
-            if (openaiKey.isNotEmpty()) {
-                try {
-                    val monthStartEpoch = monthStart
-                        .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
-                    val nowEpoch = now.epochSecond
-                    val conn = java.net.URL(
-                        "https://api.openai.com/v1/organization/costs?start_time=$monthStartEpoch&end_time=$nowEpoch&bucket_width=1d"
-                    ).openConnection() as java.net.HttpURLConnection
-                    conn.requestMethod = "GET"
-                    conn.setRequestProperty("Authorization", "Bearer $openaiKey")
-                    conn.connectTimeout = 10000
-                    conn.readTimeout = 10000
-
-                    val code = conn.responseCode
-                    val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                    val body = stream?.bufferedReader()?.readText() ?: ""
-                    conn.disconnect()
-
-                    val estGpt = estimated?.byAI?.find { it.aiId == "gpt" }?.monthCost ?: 0.0
-
-                    if (code == 200) {
-                        var gptActual = 0.0
-                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                        json.getAsJsonArray("data")?.forEach { bucket ->
-                            bucket.asJsonObject.getAsJsonArray("results")?.forEach { r ->
-                                gptActual += r.asJsonObject.getAsJsonObject("amount")
-                                    ?.get("value")?.asDouble ?: 0.0
-                            }
-                        }
-
-                        if (lines.isNotEmpty()) lines.add("")
-                        lines.add("GPT 이번달 비교:")
-                        lines.add("  실제 청구: $${String.format("%.4f", gptActual)}")
-                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estGpt)}")
-                        val diff = gptActual - estGpt
-                        val sign = if (diff >= 0) "+" else ""
-                        lines.add("  차이: $sign$${String.format("%.4f", diff)}")
-                    } else {
-                        val errMsg = try {
-                            val j = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            j.get("error")?.asJsonObject?.get("message")?.asString ?: body.take(150)
-                        } catch (_: Exception) { body.take(150) }
-                        if (lines.isNotEmpty()) lines.add("")
-                        lines.add("GPT: $code - $errMsg")
-                        lines.add("  오랑붕쌤 추정: $${String.format("%.4f", estGpt)}")
-                    }
-                } catch (e: Exception) {
-                    if (lines.isNotEmpty()) lines.add("")
-                    lines.add("GPT: ${e.message ?: "연결 실패"}")
-                }
-            }
+            val result = BillingApiClient.fetchAndMerge(
+                anthropicKey = anthropicKey.ifEmpty { null },
+                openaiKey = openaiKey.ifEmpty { null },
+                estimatedData = estimated,
+                subscriptions = subscriptions,
+            )
 
             withContext(Dispatchers.Main) {
-                adminCostText.text = lines.joinToString("\n")
+                val costData = result.costData
+                if (costData != null) {
+                    // 병합된 데이터로 UI 업데이트
+                    displayCostData(costData)
+                    prefs.edit().putString("last_api_cost",
+                        com.google.gson.Gson().toJson(costData)).apply()
+
+                    // Admin 비교 텍스트 생성
+                    val lines = mutableListOf<String>()
+                    lines.add("소스: ${costData.sourceLabel()}")
+                    costData.byAI.filter { it.monthCost > 0 }.forEach { ai ->
+                        val costStr = "$${String.format("%.4f", ai.monthCost)}"
+                        when (ai.source) {
+                            CostSource.BILLING -> lines.add("${ai.name}: $costStr ✓실제")
+                            CostSource.HYBRID -> {
+                                lines.add("${ai.name}: $costStr ✓실제")
+                                val diff = ai.monthDiff
+                                if (diff != null) {
+                                    val sign = if (diff >= 0) "+" else ""
+                                    lines.add("  추정대비 $sign$${String.format("%.4f", diff)}")
+                                }
+                            }
+                            CostSource.ESTIMATED -> lines.add("${ai.name}: $costStr ~추정")
+                        }
+                    }
+                    if (costData.error != null) {
+                        lines.add("")
+                        lines.add("⚠ ${costData.error}")
+                    }
+                    adminCostText.text = lines.joinToString("\n")
+                } else {
+                    adminCostText.text = result.error ?: "비용 데이터 없음"
+                }
             }
         }
     }
@@ -620,6 +550,16 @@ class MainActivity : AppCompatActivity() {
         costMonthKrw.text = cost.monthKrw()
 
         costByAiContainer.removeAllViews()
+
+        // 소스 라벨 표시
+        val sourceRow = TextView(this).apply {
+            text = "소스: ${cost.sourceLabel()}"
+            setTextColor(0xFF888899.toInt())
+            textSize = 10f
+            setPadding(8, 0, 8, 4)
+        }
+        costByAiContainer.addView(sourceRow)
+
         cost.byAI.filter { it.monthCost > 0 }.forEach { ai ->
             val aiDef = AiDefs.find(ai.aiId)
             val row = LinearLayout(this).apply {
@@ -632,9 +572,14 @@ class MainActivity : AppCompatActivity() {
                 layoutParams = LinearLayout.LayoutParams(16, 16).apply { marginEnd = 12 }
                 try { setBackgroundColor(Color.parseColor(ai.color)) } catch (_: Exception) {}
             }
-            // AI 이름 (클릭 → 비용 확인 사이트)
+            // AI 이름 + 소스 표시
+            val sourceTag = when (ai.source) {
+                CostSource.BILLING -> " ✓"
+                CostSource.HYBRID -> " ✓"
+                CostSource.ESTIMATED -> " ~"
+            }
             val name = TextView(this).apply {
-                text = ai.name
+                text = "${ai.name}$sourceTag"
                 setTextColor(try { Color.parseColor(ai.color) } catch (_: Exception) { 0xFFaaaaaa.toInt() })
                 textSize = 12f
                 layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
@@ -656,6 +601,49 @@ class MainActivity : AppCompatActivity() {
             row.addView(name)
             row.addView(monthCost)
             costByAiContainer.addView(row)
+        }
+
+        // 구독 정보 표시
+        if (cost.subscriptions.isNotEmpty()) {
+            val subHeader = TextView(this).apply {
+                text = "구독"
+                setTextColor(0xFF888899.toInt())
+                textSize = 10f
+                setPadding(8, 12, 8, 4)
+            }
+            costByAiContainer.addView(subHeader)
+
+            cost.subscriptions.filter { it.isActive }.forEach { sub ->
+                val aiDef = AiDefs.find(sub.aiId)
+                val row = LinearLayout(this).apply {
+                    orientation = LinearLayout.HORIZONTAL
+                    setPadding(8, 4, 8, 4)
+                    gravity = android.view.Gravity.CENTER_VERTICAL
+                }
+                val subName = TextView(this).apply {
+                    text = "${aiDef?.name ?: sub.aiId} ${sub.planName}"
+                    setTextColor(try { Color.parseColor(aiDef?.color ?: "#888") } catch (_: Exception) { 0xFFaaaaaa.toInt() })
+                    textSize = 11f
+                    layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                }
+                val subCost = TextView(this).apply {
+                    text = "$${String.format("%.0f", sub.monthlyFee)}/mo"
+                    setTextColor(0xFFe0e0e0.toInt())
+                    textSize = 11f
+                }
+                row.addView(subName)
+                row.addView(subCost)
+                costByAiContainer.addView(row)
+            }
+
+            // 총합 (API + 구독)
+            val totalRow = TextView(this).apply {
+                text = "총 (API+구독): ${cost.monthWithSubsText()} (${cost.monthWithSubsKrw()})"
+                setTextColor(0xFFc084fc.toInt())
+                textSize = 11f
+                setPadding(8, 8, 8, 0)
+            }
+            costByAiContainer.addView(totalRow)
         }
     }
 
@@ -927,40 +915,87 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    // ── 오랑붕쌤 Drive API 직접 호출 ──
+    // ── 비용 데이터 통합 fetch (Billing 우선, Drive 보조) ──
     private fun fetchObsCost() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
         val token = prefs.getString("google_oauth_token", null)
-        if (token.isNullOrEmpty()) {
-            return
-        }
+        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
+        val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
+        val hasBillingKeys = anthropicKey.isNotEmpty() || openaiKey.isNotEmpty()
+        val hasToken = !token.isNullOrEmpty()
 
-        statusText.text = "Drive에서 비용 데이터 조회 중..."
+        if (!hasBillingKeys && !hasToken) return
+
+        statusText.text = if (hasBillingKeys) "Billing API 조회 중..." else "Drive에서 비용 데이터 조회 중..."
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val result = DriveApiClient.fetchCostFromDrive(token)
+            // 1) 오랑붕쌤 추정 데이터 (Drive)
+            var estimatedData: ApiCostData? = null
+            if (hasToken) {
+                val driveResult = DriveApiClient.fetchCostFromDrive(token!!)
+                if (driveResult.tokenExpired) {
+                    withContext(Dispatchers.Main) {
+                        prefs.edit().putBoolean("obs_logged_in", false)
+                            .remove("google_oauth_token").apply()
+                        updateObsUI(false)
+                    }
+                } else {
+                    estimatedData = driveResult.costData
+                }
+            }
+
+            // 2) 구독 정보
+            val subsJson = prefs.getString("subscriptions", null)
+            val subscriptions = if (subsJson != null) {
+                try { com.google.gson.Gson().fromJson(subsJson, Array<Subscription>::class.java).toList() }
+                catch (_: Exception) { emptyList() }
+            } else emptyList<Subscription>()
+
+            // 3) Billing 있으면 병합, 없으면 추정만
+            val costData = if (hasBillingKeys) {
+                val merged = BillingApiClient.fetchAndMerge(
+                    anthropicKey = anthropicKey.ifEmpty { null },
+                    openaiKey = openaiKey.ifEmpty { null },
+                    estimatedData = estimatedData,
+                    subscriptions = subscriptions,
+                )
+                merged.costData
+            } else {
+                estimatedData?.copy(subscriptions = subscriptions)
+            }
 
             withContext(Dispatchers.Main) {
-                if (result.tokenExpired) {
-                    prefs.edit().putBoolean("obs_logged_in", false)
-                        .remove("google_oauth_token").apply()
-                    updateObsUI(false)
-                    statusText.text = "토큰 만료 — 오랑붕쌤 재연결 필요"
-                    return@withContext
-                }
+                if (costData != null) {
+                    displayCostData(costData)
+                    prefs.edit().putString("last_api_cost",
+                        com.google.gson.Gson().toJson(costData)).apply()
+                    UsageWidgetProvider.updateAll(this@MainActivity)
 
-                if (result.error != null) {
-                    statusText.text = "Drive 오류: ${result.error}"
-                    return@withContext
-                }
+                    // Admin 비교 텍스트도 업데이트
+                    if (hasBillingKeys) {
+                        val lines = mutableListOf<String>()
+                        lines.add("소스: ${costData.sourceLabel()}")
+                        costData.byAI.filter { it.monthCost > 0 }.forEach { ai ->
+                            val tag = when (ai.source) {
+                                CostSource.BILLING -> "✓실제"
+                                CostSource.HYBRID -> "✓실제"
+                                CostSource.ESTIMATED -> "~추정"
+                            }
+                            lines.add("${ai.name}: $${String.format("%.4f", ai.monthCost)} $tag")
+                            ai.monthDiff?.let { diff ->
+                                val sign = if (diff >= 0) "+" else ""
+                                lines.add("  추정대비 $sign$${String.format("%.4f", diff)}")
+                            }
+                        }
+                        if (costData.error != null) lines.add("⚠ ${costData.error}")
+                        adminCostText.text = lines.joinToString("\n")
+                    }
 
-                val costData = result.costData ?: return@withContext
-                displayCostData(costData)
-                prefs.edit().putString("last_api_cost",
-                    com.google.gson.Gson().toJson(costData)).apply()
-                UsageWidgetProvider.updateAll(this@MainActivity)
-                statusText.text = "마지막 업데이트: ${java.time.LocalTime.now().toString().take(5)}"
+                    statusText.text = "마지막 업데이트: ${java.time.LocalTime.now().toString().take(5)}"
+                } else if (estimatedData == null && !hasBillingKeys) {
+                    statusText.text = "비용 데이터 없음"
+                }
             }
         }
     }

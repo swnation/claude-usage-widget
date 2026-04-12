@@ -100,14 +100,17 @@ object DriveApiClient {
                 aiId = aiId,
                 name = aiDef?.name ?: aiId,
                 color = aiDef?.color ?: "#888888",
-                todayCost = costs[0],
-                monthCost = costs[1],
+                estimatedToday = costs[0],
+                estimatedMonth = costs[1],
             )
         }.sortedByDescending { it.monthCost }
 
         val costData = ApiCostData(
             todayTotal = todayTotal,
             monthTotal = monthTotal,
+            source = CostSource.ESTIMATED,
+            estimatedToday = todayTotal,
+            estimatedMonth = monthTotal,
             byAI = breakdowns,
             bySys = listOf(SystemCost("오랑붕쌤", todayTotal, monthTotal)),
             lastUpdated = java.time.Instant.now().toString(),
