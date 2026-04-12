@@ -286,8 +286,7 @@ async function fetchDriveEstimated() {
   if (!settings.googleToken) return null;
   const token = settings.googleToken;
 
-  const now = new Date(Date.now() + 9*3600*1000);
-  const today = now.toISOString().slice(0,10);
+  const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD (로컬 시간대)
   const month = today.slice(0,7);
   let todayTotal = 0, monthTotal = 0;
   const byAIMap = {};
@@ -334,8 +333,7 @@ async function fetchDriveEstimated() {
 
 // ── Billing API 호출 ──
 async function fetchBillingApi(aiId, key) {
-  const kstNow = new Date(Date.now() + 9*3600*1000);
-  const today = kstNow.toISOString().slice(0,10);
+  const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD (로컬 시간대)
 
   if (aiId === 'claude') {
     const now = new Date();
@@ -371,7 +369,7 @@ async function fetchBillingApi(aiId, key) {
       (bucket.results || []).forEach(r => { bucketTotal += r.amount?.value || 0; });
       monthTotal += bucketTotal;
       if (bucket.start_time) {
-        const bucketDate = new Date(bucket.start_time * 1000 + 9*3600*1000).toISOString().slice(0,10);
+        const bucketDate = new Date(bucket.start_time * 1000).toLocaleDateString('sv');
         if (bucketDate === today) todayTotal += bucketTotal;
       }
     });

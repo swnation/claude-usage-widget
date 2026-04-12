@@ -34,7 +34,7 @@ object DriveApiClient {
      * 네트워크 호출이므로 반드시 백그라운드 스레드에서 실행할 것.
      */
     fun fetchCostFromDrive(token: String): DriveCostResult {
-        val kstNow = java.time.ZonedDateTime.now(java.time.ZoneId.of("Asia/Seoul"))
+        val kstNow = java.time.ZonedDateTime.now(java.time.ZoneId.systemDefault())
         val today = kstNow.toLocalDate().toString()
         val month = today.substring(0, 7)
 

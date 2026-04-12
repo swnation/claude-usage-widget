@@ -33,8 +33,8 @@ object BillingApiClient {
     fun fetchAnthropicBilling(adminKey: String): BillingResult {
         try {
             val now = Instant.now()
-            val kstNow = LocalDate.now(ZoneId.of("Asia/Seoul"))
-            val monthStart = kstNow.withDayOfMonth(1)
+            val localNow = LocalDate.now(ZoneId.systemDefault())
+            val monthStart = localNow.withDayOfMonth(1)
             val startingAt = "${monthStart}T00:00:00Z"
             val endingAt = now.toString()
 
@@ -64,7 +64,7 @@ object BillingApiClient {
             val json = JsonParser.parseString(body).asJsonObject
             var monthCents = 0.0
             var todayCents = 0.0
-            val today = kstNow.toString()
+            val today = localNow.toString()
 
             json.getAsJsonArray("data")?.forEach { bucket ->
                 val bucketObj = bucket.asJsonObject
@@ -94,11 +94,11 @@ object BillingApiClient {
     fun fetchOpenAiBilling(apiKey: String): BillingResult {
         try {
             val now = Instant.now()
-            val kstNow = LocalDate.now(ZoneId.of("Asia/Seoul"))
-            val monthStart = kstNow.withDayOfMonth(1)
+            val localNow = LocalDate.now(ZoneId.systemDefault())
+            val monthStart = localNow.withDayOfMonth(1)
             val monthStartEpoch = monthStart.atStartOfDay(ZoneOffset.UTC).toEpochSecond()
             val nowEpoch = now.epochSecond
-            val today = kstNow.toString()
+            val today = localNow.toString()
 
             val conn = URL(
                 "https://api.openai.com/v1/organization/costs" +
@@ -139,7 +139,7 @@ object BillingApiClient {
                 val startTime = bucketObj.get("start_time")?.asLong
                 if (startTime != null) {
                     val bucketDate = Instant.ofEpochSecond(startTime)
-                        .atZone(ZoneId.of("Asia/Seoul")).toLocalDate().toString()
+                        .atZone(ZoneId.systemDefault()).toLocalDate().toString()
                     if (bucketDate == today) {
                         todayTotal += bucketTotal
                     }
