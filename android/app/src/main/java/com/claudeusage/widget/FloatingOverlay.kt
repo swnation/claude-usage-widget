@@ -105,23 +105,69 @@ class FloatingOverlay private constructor(private val context: Context) {
         updateRunnable = object : Runnable {
             override fun run() {
                 val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-                val json = prefs.getString("last_usage", null)
-                if (json != null) {
-                    try {
-                        val usage = Gson().fromJson(json, PlanUsage::class.java)
-                        val pct = usage.session?.usedPercent?.toInt() ?: 0
-                        val emoji = when {
-                            pct >= 90 -> "🔴"
-                            pct >= 70 -> "🟡"
-                            else -> "🟢"
-                        }
-                        textView.text = "$emoji 세션 ${pct}%"
-                    } catch (_: Exception) {}
+                val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+
+                when (mode) {
+                    DisplayMode.CLAUDE_ONLY -> updateClaudeOnly(prefs, textView)
+                    DisplayMode.API_COST_ONLY -> updateApiCostOnly(prefs, textView)
+                    DisplayMode.BOTH -> updateBoth(prefs, textView)
                 }
-                handler.postDelayed(this, 10000) // 10초마다 갱신
+
+                handler.postDelayed(this, 10000)
             }
         }
         handler.post(updateRunnable!!)
+    }
+
+    private fun updateClaudeOnly(prefs: android.content.SharedPreferences, textView: TextView) {
+        val json = prefs.getString("last_usage", null) ?: return
+        try {
+            val usage = Gson().fromJson(json, PlanUsage::class.java)
+            val pct = usage.session?.usedPercent?.toInt() ?: 0
+            val emoji = when {
+                pct >= 90 -> "🔴"
+                pct >= 70 -> "🟡"
+                else -> "🟢"
+            }
+            textView.text = "$emoji 세션 ${pct}%"
+        } catch (_: Exception) {}
+    }
+
+    private fun updateApiCostOnly(prefs: android.content.SharedPreferences, textView: TextView) {
+        val json = prefs.getString("last_api_cost", null) ?: return
+        try {
+            val cost = Gson().fromJson(json, ApiCostData::class.java)
+            textView.text = "💰 ${cost.todayText()}"
+        } catch (_: Exception) {}
+    }
+
+    private fun updateBoth(prefs: android.content.SharedPreferences, textView: TextView) {
+        val usageJson = prefs.getString("last_usage", null)
+        val costJson = prefs.getString("last_api_cost", null)
+
+        val parts = mutableListOf<String>()
+        if (usageJson != null) {
+            try {
+                val usage = Gson().fromJson(usageJson, PlanUsage::class.java)
+                val pct = usage.session?.usedPercent?.toInt() ?: 0
+                val emoji = when {
+                    pct >= 90 -> "🔴"
+                    pct >= 70 -> "🟡"
+                    else -> "🟢"
+                }
+                parts.add("$emoji${pct}%")
+            } catch (_: Exception) {}
+        }
+        if (costJson != null) {
+            try {
+                val cost = Gson().fromJson(costJson, ApiCostData::class.java)
+                parts.add("💰${cost.todayText()}")
+            } catch (_: Exception) {}
+        }
+
+        if (parts.isNotEmpty()) {
+            textView.text = parts.joinToString(" ")
+        }
     }
 
     companion object {

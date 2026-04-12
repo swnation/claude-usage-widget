@@ -1,10 +1,12 @@
 package com.claudeusage.widget
 
-import android.Manifest
 import android.annotation.SuppressLint
 import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
+import android.graphics.Color
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -13,9 +15,8 @@ import android.view.ViewGroup
 import android.webkit.*
 import android.widget.*
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.preference.PreferenceManager
 
 class MainActivity : AppCompatActivity() {
@@ -37,6 +38,23 @@ class MainActivity : AppCompatActivity() {
     private lateinit var loginStatus: TextView
     private lateinit var refreshInput: EditText
     private lateinit var saveButton: Button
+    // 모드 & 비용
+    private lateinit var modeRadioGroup: RadioGroup
+    private lateinit var costSection: LinearLayout
+    private lateinit var costTodayText: TextView
+    private lateinit var costTodayKrw: TextView
+    private lateinit var costMonthText: TextView
+    private lateinit var costMonthKrw: TextView
+    private lateinit var costByAiContainer: LinearLayout
+    // 오랑붕쌤 연결
+    private lateinit var obsStatus: TextView
+    private lateinit var obsConnectButton: Button
+    // Admin API
+    private lateinit var adminKeyInput: EditText
+    private lateinit var adminKeySave: Button
+    private lateinit var openaiKeyInput: EditText
+    private lateinit var openaiKeySave: Button
+    private lateinit var adminCostText: TextView
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -44,6 +62,15 @@ class MainActivity : AppCompatActivity() {
         if (result.resultCode == LoginActivity.RESULT_LOGGED_IN) {
             updateLoginUI(true)
             fetchUsageViaScraping()
+        }
+    }
+
+    private val obsLoginLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == ObsLoginActivity.RESULT_LOGGED_IN) {
+            updateObsUI(true)
+            fetchObsCost()
         }
     }
 
@@ -68,9 +95,10 @@ class MainActivity : AppCompatActivity() {
 
     override fun onResume() {
         super.onResume()
-        val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("logged_in", false)
-        if (loggedIn) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val loggedIn = prefs.getBoolean("logged_in", false)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        if (loggedIn || mode == DisplayMode.API_COST_ONLY) {
             fetchUsageViaScraping()
             startAutoRefresh()
         }
@@ -123,6 +151,23 @@ class MainActivity : AppCompatActivity() {
         loginStatus = findViewById(R.id.loginStatus)
         refreshInput = findViewById(R.id.refreshInput)
         saveButton = findViewById(R.id.saveButton)
+        // 모드 & 비용
+        modeRadioGroup = findViewById(R.id.modeRadioGroup)
+        costSection = findViewById(R.id.costSection)
+        costTodayText = findViewById(R.id.costTodayText)
+        costTodayKrw = findViewById(R.id.costTodayKrw)
+        costMonthText = findViewById(R.id.costMonthText)
+        costMonthKrw = findViewById(R.id.costMonthKrw)
+        costByAiContainer = findViewById(R.id.costByAiContainer)
+        // 오랑붕쌤 연결
+        obsStatus = findViewById(R.id.obsStatus)
+        obsConnectButton = findViewById(R.id.obsConnectButton)
+        // Admin API
+        adminKeyInput = findViewById(R.id.adminKeyInput)
+        adminKeySave = findViewById(R.id.adminKeySave)
+        openaiKeyInput = findViewById(R.id.openaiKeyInput)
+        openaiKeySave = findViewById(R.id.openaiKeySave)
+        adminCostText = findViewById(R.id.adminCostText)
 
         loginButton.setOnClickListener {
             loginLauncher.launch(Intent(this, LoginActivity::class.java))
@@ -143,9 +188,10 @@ class MainActivity : AppCompatActivity() {
             statusText.text = "로그아웃됨"
         }
         toggleButton.setOnClickListener {
-            val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
-                .getBoolean("logged_in", false)
-            if (!loggedIn) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+            val loggedIn = prefs.getBoolean("logged_in", false)
+            if (!loggedIn && mode != DisplayMode.API_COST_ONLY) {
                 Toast.makeText(this, "먼저 로그인하세요", Toast.LENGTH_SHORT).show()
                 return@setOnClickListener
             }
@@ -179,16 +225,364 @@ class MainActivity : AppCompatActivity() {
             updateOverlayButton()
         }
         saveButton.setOnClickListener {
-            PreferenceManager.getDefaultSharedPreferences(this).edit()
-                .putString("refresh_interval", refreshInput.text.toString().trim()).apply()
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            // 모드 저장
+            val mode = when (modeRadioGroup.checkedRadioButtonId) {
+                R.id.modeApiCostOnly -> DisplayMode.API_COST_ONLY
+                R.id.modeBoth -> DisplayMode.BOTH
+                else -> DisplayMode.CLAUDE_ONLY
+            }
+            prefs.edit()
+                .putString("refresh_interval", refreshInput.text.toString().trim())
+                .putString("display_mode", mode.name)
+                .apply()
             Toast.makeText(this, "저장됨", Toast.LENGTH_SHORT).show()
+            updateCostSectionVisibility()
             startAutoRefresh()
         }
+
+        // 모드 변경 시 즉시 UI 반영
+        modeRadioGroup.setOnCheckedChangeListener { _, _ ->
+            updateCostSectionVisibility()
+        }
+
+        // 오랑붕쌤 연결
+        obsConnectButton.setOnClickListener {
+            obsLoginLauncher.launch(Intent(this, ObsLoginActivity::class.java))
+        }
+
+        // Admin API 키 저장 (암호화)
+        adminKeySave.setOnClickListener { promptPinAndSaveKeys("anthropic") }
+        openaiKeySave.setOnClickListener { promptPinAndSaveKeys("openai") }
+        findViewById<Button>(R.id.adminKeyRestore).setOnClickListener { restoreKeysFromDrive() }
     }
 
     private fun updateOverlayButton() {
         val showing = floatingOverlay?.isShowing() == true || FloatingOverlay.wasShowing(this)
         overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
+    }
+
+    private fun updateObsUI(connected: Boolean) {
+        if (connected) {
+            obsStatus.text = "오랑붕쌤: ✓ 연결됨"
+            obsStatus.setTextColor(getColor(android.R.color.holo_green_light))
+            obsConnectButton.text = "재연결"
+        } else {
+            obsStatus.text = "오랑붕쌤: 연결 안됨"
+            obsStatus.setTextColor(0xFF888899.toInt())
+            obsConnectButton.text = "오랑붕쌤 연결"
+        }
+    }
+
+    private fun fetchAdminCosts() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
+        val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
+
+        if (anthropicKey.isEmpty() && openaiKey.isEmpty()) return
+
+        adminCostText.text = "Admin API 조회 중..."
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val results = mutableListOf<String>()
+            var claudeActual: Double? = null
+            var gptActual: Double? = null
+
+            // Anthropic Admin API
+            if (anthropicKey.isNotEmpty()) {
+                try {
+                    val url = java.net.URL("https://api.anthropic.com/v1/organizations/cost_report")
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("x-api-key", anthropicKey)
+                    conn.setRequestProperty("anthropic-version", "2023-06-01")
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+
+                    if (conn.responseCode == 200) {
+                        val body = conn.inputStream.bufferedReader().readText()
+                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                        claudeActual = json.get("total_cost")?.asDouble
+                        if (claudeActual != null) {
+                            results.add("Claude 실제: $${String.format("%.4f", claudeActual)}")
+                        }
+                    } else {
+                        results.add("Claude: 오류 ${conn.responseCode}")
+                    }
+                    conn.disconnect()
+                } catch (e: Exception) {
+                    results.add("Claude: 연결 실패")
+                }
+            }
+
+            // OpenAI Admin API
+            if (openaiKey.isNotEmpty()) {
+                try {
+                    // 이번 달 시작일
+                    val monthStart = java.time.LocalDate.now().withDayOfMonth(1).toString()
+                    val tomorrow = java.time.LocalDate.now().plusDays(1).toString()
+                    val url = java.net.URL(
+                        "https://api.openai.com/v1/organization/costs?start_date=$monthStart&end_date=$tomorrow"
+                    )
+                    val conn = url.openConnection() as java.net.HttpURLConnection
+                    conn.requestMethod = "GET"
+                    conn.setRequestProperty("Authorization", "Bearer $openaiKey")
+                    conn.connectTimeout = 10000
+                    conn.readTimeout = 10000
+
+                    if (conn.responseCode == 200) {
+                        val body = conn.inputStream.bufferedReader().readText()
+                        val json = com.google.gson.JsonParser.parseString(body).asJsonObject
+                        // OpenAI cost API returns { data: [{ results: [{ amount: { value: X }}] }] }
+                        val dataArr = json.getAsJsonArray("data")
+                        var totalCost = 0.0
+                        dataArr?.forEach { bucket ->
+                            val results2 = bucket.asJsonObject.getAsJsonArray("results")
+                            results2?.forEach { r ->
+                                val amount = r.asJsonObject.getAsJsonObject("amount")
+                                totalCost += amount?.get("value")?.asDouble ?: 0.0
+                            }
+                        }
+                        gptActual = totalCost
+                        results.add("GPT 실제: $${String.format("%.4f", gptActual)}")
+                    } else {
+                        results.add("GPT: 오류 ${conn.responseCode}")
+                    }
+                    conn.disconnect()
+                } catch (e: Exception) {
+                    results.add("GPT: 연결 실패")
+                }
+            }
+
+            // 추정치와 비교
+            withContext(Dispatchers.Main) {
+                val costJson = PreferenceManager.getDefaultSharedPreferences(this@MainActivity)
+                    .getString("last_api_cost", null)
+                val estimatedClaude = if (costJson != null) {
+                    try {
+                        val cost = com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java)
+                        cost.byAI.find { it.aiId == "claude" }?.monthCost ?: 0.0
+                    } catch (_: Exception) { 0.0 }
+                } else 0.0
+                val estimatedGpt = if (costJson != null) {
+                    try {
+                        val cost = com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java)
+                        cost.byAI.find { it.aiId == "gpt" }?.monthCost ?: 0.0
+                    } catch (_: Exception) { 0.0 }
+                } else 0.0
+
+                val lines = mutableListOf<String>()
+                lines.addAll(results)
+
+                if (claudeActual != null && estimatedClaude > 0) {
+                    val diff = claudeActual - estimatedClaude
+                    val sign = if (diff >= 0) "+" else ""
+                    lines.add("  Claude 차이: $sign$${String.format("%.4f", diff)} (추정 $${String.format("%.4f", estimatedClaude)})")
+                }
+                if (gptActual != null && estimatedGpt > 0) {
+                    val diff = gptActual - estimatedGpt
+                    val sign = if (diff >= 0) "+" else ""
+                    lines.add("  GPT 차이: $sign$${String.format("%.4f", diff)} (추정 $${String.format("%.4f", estimatedGpt)})")
+                }
+
+                adminCostText.text = lines.joinToString("\n")
+
+                // 실제 비용 저장 (위젯/알림에서 사용)
+                prefs.edit()
+                    .apply {
+                        if (claudeActual != null) putFloat("actual_claude_month", claudeActual.toFloat())
+                        if (gptActual != null) putFloat("actual_gpt_month", gptActual.toFloat())
+                    }
+                    .apply()
+            }
+        }
+    }
+
+    // ── Admin 키 암호화 저장/복원 ──
+    private fun promptPinAndSaveKeys(type: String) {
+        val keyInput = if (type == "anthropic") adminKeyInput else openaiKeyInput
+        val key = keyInput.text.toString().trim()
+        if (key == "****" || key.isEmpty()) return
+
+        val pinInput = EditText(this).apply {
+            hint = "PIN (4자리 이상)"
+            inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+            setPadding(48, 24, 48, 24)
+        }
+
+        AlertDialog.Builder(this)
+            .setTitle("🔐 Admin 키 암호화")
+            .setMessage("키를 암호화할 PIN을 입력하세요")
+            .setView(pinInput)
+            .setPositiveButton("저장") { _, _ ->
+                val pin = pinInput.text.toString()
+                if (pin.length < 4) {
+                    Toast.makeText(this, "PIN은 4자리 이상이어야 합니다", Toast.LENGTH_SHORT).show()
+                    return@setPositiveButton
+                }
+                saveAdminKeyEncrypted(type, key, pin)
+            }
+            .setNegativeButton("취소", null)
+            .show()
+    }
+
+    private fun saveAdminKeyEncrypted(type: String, key: String, pin: String) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        // 기존 키 데이터 로드
+        val keysJson = prefs.getString("admin_keys_plain", "{}") ?: "{}"
+        val keys = try {
+            com.google.gson.Gson().fromJson(keysJson, com.google.gson.JsonObject::class.java)
+        } catch (_: Exception) { com.google.gson.JsonObject() }
+
+        // 키 추가/업데이트
+        keys.addProperty(type, key)
+        val keysStr = keys.toString()
+
+        // 암호화
+        val encrypted = KeyEncryption.encrypt(keysStr, pin)
+
+        // 로컬 저장 (암호화된 상태)
+        prefs.edit()
+            .putString("admin_keys_encrypted", encrypted)
+            .remove("admin_keys_plain") // 평문 제거
+            .putString("anthropic_admin_key", if (keys.has("anthropic")) keys.get("anthropic").asString else "")
+            .putString("openai_admin_key", if (keys.has("openai")) keys.get("openai").asString else "")
+            .apply()
+
+        Toast.makeText(this, "🔐 Admin 키 암호화 저장됨", Toast.LENGTH_SHORT).show()
+
+        // Drive 백업 (Google 토큰 있으면)
+        val token = prefs.getString("google_oauth_token", null)
+        if (!token.isNullOrEmpty()) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                val ok = DriveApiClient.saveKeysToDrive(token, encrypted)
+                withContext(Dispatchers.Main) {
+                    if (ok) Toast.makeText(this@MainActivity, "☁️ Drive 백업 완료", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        if (keys.has("anthropic") || keys.has("openai")) fetchAdminCosts()
+    }
+
+    private fun restoreKeysFromDrive() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) {
+            Toast.makeText(this, "오랑붕쌤 연결이 필요합니다", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        Toast.makeText(this, "Drive에서 키 불러오는 중...", Toast.LENGTH_SHORT).show()
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val encrypted = DriveApiClient.loadKeysFromDrive(token)
+            withContext(Dispatchers.Main) {
+                if (encrypted == null) {
+                    Toast.makeText(this@MainActivity, "Drive에 백업된 키가 없습니다", Toast.LENGTH_SHORT).show()
+                    return@withContext
+                }
+
+                // PIN 입력 받기
+                val pinInput = EditText(this).apply {
+                    hint = "백업 시 설정한 PIN"
+                    inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                        android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    setPadding(48, 24, 48, 24)
+                }
+
+                AlertDialog.Builder(this)
+                    .setTitle("🔓 키 복원")
+                    .setMessage("암호화 해제 PIN을 입력하세요")
+                    .setView(pinInput)
+                    .setPositiveButton("복원") { _, _ ->
+                        val pin = pinInput.text.toString()
+                        val decrypted = KeyEncryption.decrypt(encrypted, pin)
+                        if (decrypted == null) {
+                            Toast.makeText(this, "❌ PIN이 틀립니다", Toast.LENGTH_SHORT).show()
+                            return@setPositiveButton
+                        }
+                        try {
+                            val keys = com.google.gson.JsonParser.parseString(decrypted).asJsonObject
+                            val anthropic = if (keys.has("anthropic")) keys.get("anthropic").asString else ""
+                            val openai = if (keys.has("openai")) keys.get("openai").asString else ""
+
+                            prefs.edit()
+                                .putString("admin_keys_encrypted", encrypted)
+                                .putString("anthropic_admin_key", anthropic)
+                                .putString("openai_admin_key", openai)
+                                .apply()
+
+                            if (anthropic.isNotEmpty()) adminKeyInput.setText("****")
+                            if (openai.isNotEmpty()) openaiKeyInput.setText("****")
+                            Toast.makeText(this, "🔓 키 복원 완료", Toast.LENGTH_SHORT).show()
+                            if (anthropic.isNotEmpty() || openai.isNotEmpty()) fetchAdminCosts()
+                        } catch (_: Exception) {
+                            Toast.makeText(this, "키 데이터 파싱 실패", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
+            }
+        }
+    }
+
+    private fun updateCostSectionVisibility() {
+        val mode = when (modeRadioGroup.checkedRadioButtonId) {
+            R.id.modeApiCostOnly -> DisplayMode.API_COST_ONLY
+            R.id.modeBoth -> DisplayMode.BOTH
+            else -> DisplayMode.CLAUDE_ONLY
+        }
+        costSection.visibility = if (mode != DisplayMode.CLAUDE_ONLY) View.VISIBLE else View.GONE
+        usageContainer.visibility = if (mode != DisplayMode.API_COST_ONLY) View.VISIBLE else View.GONE
+    }
+
+    private fun displayCostData(cost: ApiCostData) {
+        costTodayText.text = cost.todayText()
+        costTodayKrw.text = cost.todayKrw()
+        costMonthText.text = cost.monthText()
+        costMonthKrw.text = cost.monthKrw()
+
+        costByAiContainer.removeAllViews()
+        cost.byAI.filter { it.monthCost > 0 }.forEach { ai ->
+            val aiDef = AiDefs.find(ai.aiId)
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                setPadding(8, 6, 8, 6)
+                gravity = android.view.Gravity.CENTER_VERTICAL
+            }
+            // 색상 점
+            val dot = View(this).apply {
+                layoutParams = LinearLayout.LayoutParams(16, 16).apply { marginEnd = 12 }
+                try { setBackgroundColor(Color.parseColor(ai.color)) } catch (_: Exception) {}
+            }
+            // AI 이름 (클릭 → 비용 확인 사이트)
+            val name = TextView(this).apply {
+                text = ai.name
+                setTextColor(try { Color.parseColor(ai.color) } catch (_: Exception) { 0xFFaaaaaa.toInt() })
+                textSize = 12f
+                layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+                if (aiDef?.usageUrl != null) {
+                    paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+                    setOnClickListener {
+                        startActivity(Intent(Intent.ACTION_VIEW,
+                            android.net.Uri.parse(aiDef.usageUrl)))
+                    }
+                }
+            }
+            // 이번달 비용
+            val monthCost = TextView(this).apply {
+                text = "$${String.format("%.4f", ai.monthCost)}"
+                setTextColor(0xFFe0e0e0.toInt())
+                textSize = 12f
+            }
+            row.addView(dot)
+            row.addView(name)
+            row.addView(monthCost)
+            costByAiContainer.addView(row)
+        }
     }
 
     private fun loadSettings() {
@@ -198,8 +592,38 @@ class MainActivity : AppCompatActivity() {
         updateLoginUI(loggedIn)
         isServiceRunning = prefs.getBoolean("service_running", false)
         toggleButton.text = if (isServiceRunning) "모니터링 중지" else "모니터링 시작"
+
+        // 모드 복원
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        when (mode) {
+            DisplayMode.CLAUDE_ONLY -> modeRadioGroup.check(R.id.modeClaudeOnly)
+            DisplayMode.API_COST_ONLY -> modeRadioGroup.check(R.id.modeApiCostOnly)
+            DisplayMode.BOTH -> modeRadioGroup.check(R.id.modeBoth)
+        }
+        updateCostSectionVisibility()
+
+        // 오랑붕쌤 상태
+        val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
+        updateObsUI(obsLoggedIn)
+
+        // Admin API 키
+        val anthropicKey = prefs.getString("anthropic_admin_key", "")
+        if (!anthropicKey.isNullOrEmpty()) adminKeyInput.setText("****")
+        val openaiKey = prefs.getString("openai_admin_key", "")
+        if (!openaiKey.isNullOrEmpty()) openaiKeyInput.setText("****")
+        if (!anthropicKey.isNullOrEmpty() || !openaiKey.isNullOrEmpty()) fetchAdminCosts()
+
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) displayUsageFromJson(lastUsage)
+
+        // 비용 데이터 복원
+        val costJson = prefs.getString("last_api_cost", null)
+        if (costJson != null) {
+            try {
+                val cost = com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java)
+                displayCostData(cost)
+            } catch (_: Exception) {}
+        }
     }
 
     private fun startAutoRefresh() {
@@ -244,36 +668,52 @@ class MainActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     private fun fetchUsageViaScraping() {
         statusText.text = "불러오는 중..."
-        try {
-            scrapeWebView?.let {
-                (it.parent as? android.view.ViewGroup)?.removeView(it)
-                it.destroy()
-            }
-            val wv = WebView(this).apply {
-                visibility = View.GONE
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.userAgentString = LoginActivity.CHROME_UA
-                CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
-                webViewClient = object : WebViewClient() {
-                    override fun shouldInterceptRequest(
-                        view: WebView?, request: WebResourceRequest?
-                    ): WebResourceResponse? {
-                        request?.requestHeaders?.remove("X-Requested-With")
-                        return super.shouldInterceptRequest(view, request)
-                    }
-                    override fun onPageFinished(view: WebView?, url: String?) {
-                        super.onPageFinished(view, url)
-                        handler.postDelayed({ scrapeUsagePage(view) }, 3000)
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+
+        // Claude 스크래핑 (CLAUDE_ONLY 또는 BOTH)
+        if (mode != DisplayMode.API_COST_ONLY) {
+            try {
+                scrapeWebView?.let {
+                    (it.parent as? ViewGroup)?.removeView(it)
+                    it.destroy()
+                }
+                val wv = WebView(this).apply {
+                    visibility = View.GONE
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    settings.userAgentString = LoginActivity.CHROME_UA
+                    CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                    webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView?, request: WebResourceRequest?
+                        ): WebResourceResponse? {
+                            request?.requestHeaders?.remove("X-Requested-With")
+                            return super.shouldInterceptRequest(view, request)
+                        }
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            super.onPageFinished(view, url)
+                            handler.postDelayed({ scrapeUsagePage(view) }, 3000)
+                        }
                     }
                 }
+                scrapeWebView = wv
+                (findViewById<View>(android.R.id.content) as? ViewGroup)?.addView(
+                    wv, ViewGroup.LayoutParams(400, 800))
+                wv.loadUrl("https://claude.ai/settings/usage")
+            } catch (e: Exception) {
+                statusText.text = "스크래핑 오류: ${e.message}"
             }
-            scrapeWebView = wv
-            (findViewById<View>(android.R.id.content) as? android.view.ViewGroup)?.addView(
-                wv, ViewGroup.LayoutParams(400, 800))
-            wv.loadUrl("https://claude.ai/settings/usage")
-        } catch (e: Exception) {
-            statusText.text = "스크래핑 오류: ${e.message}"
+        }
+
+        // 오랑붕쌤 비용 스크래핑 (API_COST_ONLY 또는 BOTH, 로그인된 경우만)
+        if (mode != DisplayMode.CLAUDE_ONLY) {
+            val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
+            if (obsLoggedIn) {
+                fetchObsCost()
+            } else {
+                statusText.text = "오랑붕쌤 연결이 필요합니다"
+            }
         }
     }
 
@@ -415,5 +855,46 @@ class MainActivity : AppCompatActivity() {
             val usage = com.google.gson.Gson().fromJson(json, PlanUsage::class.java)
             displayUsage(usage)
         } catch (_: Exception) {}
+    }
+
+    // ── 오랑붕쌤 Drive API 직접 호출 ──
+    private fun fetchObsCost() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        if (mode == DisplayMode.CLAUDE_ONLY) return
+
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) {
+            statusText.text = "오랑붕쌤 연결이 필요합니다"
+            return
+        }
+
+        statusText.text = "Drive에서 비용 데이터 조회 중..."
+
+        lifecycleScope.launch(Dispatchers.IO) {
+            val result = DriveApiClient.fetchCostFromDrive(token)
+
+            withContext(Dispatchers.Main) {
+                if (result.tokenExpired) {
+                    prefs.edit().putBoolean("obs_logged_in", false)
+                        .remove("google_oauth_token").apply()
+                    updateObsUI(false)
+                    statusText.text = "토큰 만료 — 오랑붕쌤 재연결 필요"
+                    return@withContext
+                }
+
+                if (result.error != null) {
+                    statusText.text = "Drive 오류: ${result.error}"
+                    return@withContext
+                }
+
+                val costData = result.costData ?: return@withContext
+                displayCostData(costData)
+                prefs.edit().putString("last_api_cost",
+                    com.google.gson.Gson().toJson(costData)).apply()
+                UsageWidgetProvider.updateAll(this@MainActivity)
+                statusText.text = "마지막 업데이트: ${java.time.LocalTime.now().toString().take(5)}"
+            }
+        }
     }
 }

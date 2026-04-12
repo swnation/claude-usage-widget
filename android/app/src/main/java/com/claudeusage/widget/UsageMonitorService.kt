@@ -60,6 +60,8 @@ class UsageMonitorService : Service() {
     private var scrapeDelayedRunnable: Runnable? = null
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
+    // 오랑붕쌤 Drive API
+    private var isObsFetching = false
 
     override fun onCreate() {
         super.onCreate()
@@ -101,6 +103,7 @@ class UsageMonitorService : Service() {
         scrapeDelayedRunnable = null
         try { scrapeWebView?.destroy() } catch (_: Exception) {}
         scrapeWebView = null
+        isObsFetching = false
         super.onDestroy()
     }
 
@@ -167,17 +170,26 @@ class UsageMonitorService : Service() {
     }
 
     private fun fetchUsageInBackground() {
-        if (isScraping) return
-        val loggedIn = PreferenceManager.getDefaultSharedPreferences(this)
-            .getBoolean("logged_in", false)
-        if (!loggedIn) return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
 
-        isScraping = true
-        startScrapeTimeout()
-        try {
-            getOrCreateWebView().loadUrl("https://claude.ai/settings/usage")
-        } catch (_: Exception) {
-            finishScraping()
+        // Claude 스크래핑 (CLAUDE_ONLY 또는 BOTH)
+        if (mode != DisplayMode.API_COST_ONLY && !isScraping) {
+            val loggedIn = prefs.getBoolean("logged_in", false)
+            if (loggedIn) {
+                isScraping = true
+                startScrapeTimeout()
+                try {
+                    getOrCreateWebView().loadUrl("https://claude.ai/settings/usage")
+                } catch (_: Exception) {
+                    finishScraping()
+                }
+            }
+        }
+
+        // 오랑붕쌤 스크래핑 (API_COST_ONLY 또는 BOTH, 로그인된 경우만)
+        if (mode != DisplayMode.CLAUDE_ONLY && prefs.getBoolean("obs_logged_in", false)) {
+            fetchObsCostInBackground()
         }
     }
 
@@ -287,6 +299,45 @@ class UsageMonitorService : Service() {
         finishScraping()
     }
 
+    // ── 오랑붕쌤 Drive API 직접 호출 ──
+    private fun fetchObsCostInBackground() {
+        if (isObsFetching) return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        if (mode == DisplayMode.CLAUDE_ONLY) return
+
+        val token = prefs.getString("google_oauth_token", null)
+        if (token.isNullOrEmpty()) return
+
+        isObsFetching = true
+        Thread {
+            try {
+                val result = DriveApiClient.fetchCostFromDrive(token)
+
+                if (result.tokenExpired) {
+                    // 토큰 만료 → obs_logged_in 해제
+                    prefs.edit().putBoolean("obs_logged_in", false)
+                        .remove("google_oauth_token").apply()
+                    isObsFetching = false
+                    return@Thread
+                }
+
+                val costData = result.costData
+                if (costData != null) {
+                    val costJson = Gson().toJson(costData)
+                    prefs.edit().putString("last_api_cost", costJson).apply()
+
+                    mainHandler.post {
+                        val usage = loadSavedUsage()
+                        notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
+                        UsageWidgetProvider.updateAll(this)
+                    }
+                }
+            } catch (_: Exception) {}
+            isObsFetching = false
+        }.start()
+    }
+
     private fun checkAlerts(usage: PlanUsage?) {
         if (usage == null) return
         usage.session?.let {
@@ -327,7 +378,18 @@ class UsageMonitorService : Service() {
         catch (_: Exception) { null }
     }
 
+    private fun loadSavedCost(): ApiCostData? {
+        val json = PreferenceManager.getDefaultSharedPreferences(this)
+            .getString("last_api_cost", null) ?: return null
+        return try { Gson().fromJson(json, ApiCostData::class.java) }
+        catch (_: Exception) { null }
+    }
+
     private fun buildNotification(usage: PlanUsage?): Notification {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
+        val cost = loadSavedCost()
+
         val openPI = PendingIntent.getActivity(this, 0,
             Intent(this, MainActivity::class.java).apply {
                 flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -346,21 +408,49 @@ class UsageMonitorService : Service() {
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
 
-        when {
-            usage == null -> {
-                builder.setContentTitle("Claude 사용량")
-                    .setContentText("앱에서 새로고침하세요")
+        when (mode) {
+            DisplayMode.CLAUDE_ONLY -> {
+                when {
+                    usage == null -> {
+                        builder.setContentTitle("Claude 사용량")
+                            .setContentText("앱에서 새로고침하세요")
+                    }
+                    usage.error != null -> {
+                        builder.setContentTitle("⚠️ Claude 사용량")
+                            .setContentText(usage.error)
+                    }
+                    else -> {
+                        val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
+                        builder.setContentTitle(usage.notificationTitle())
+                            .setContentText(usage.notificationShort())
+                            .setStyle(NotificationCompat.BigTextStyle().bigText(usage.notificationExpanded()))
+                            .setProgress(100, sessionPct, false)
+                    }
+                }
             }
-            usage.error != null -> {
-                builder.setContentTitle("⚠️ Claude 사용량")
-                    .setContentText(usage.error)
+            DisplayMode.API_COST_ONLY -> {
+                if (cost != null) {
+                    builder.setContentTitle(cost.notificationTitle())
+                        .setContentText(cost.shortText())
+                        .setStyle(NotificationCompat.BigTextStyle().bigText(cost.notificationExpanded()))
+                } else {
+                    builder.setContentTitle("💰 API 요금")
+                        .setContentText("오랑붕쌤 데이터 로딩 중...")
+                }
             }
-            else -> {
-                val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
-                builder.setContentTitle(usage.notificationTitle())
-                    .setContentText(usage.notificationShort())
-                    .setStyle(NotificationCompat.BigTextStyle().bigText(usage.notificationExpanded()))
-                    .setProgress(100, sessionPct, false)
+            DisplayMode.BOTH -> {
+                if (usage != null && usage.error == null) {
+                    val sessionPct = usage.session?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
+                    builder.setContentTitle(usage.combinedNotificationTitle(cost))
+                        .setContentText(usage.notificationShort() +
+                            (cost?.let { " │ 💰${it.todayText()}" } ?: ""))
+                        .setStyle(NotificationCompat.BigTextStyle()
+                            .bigText(usage.combinedNotificationExpanded(cost)))
+                        .setProgress(100, sessionPct, false)
+                } else {
+                    builder.setContentTitle("Claude 사용량 + API 요금")
+                        .setContentText("데이터 로딩 중...")
+                }
             }
         }
         return builder.build()

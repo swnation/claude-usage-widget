@@ -1,12 +1,24 @@
 const { app, BrowserWindow, Tray, Menu, ipcMain, nativeImage, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
+const crypto = require('crypto');
 
 // ── 상수 ──
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const PRELOAD = path.join(__dirname, 'preload.js');
 const USAGE_URL = 'https://claude.ai/settings/usage';
+const OBS_URL = 'https://swnation.github.io/OrangBoongSSem/';
 const SCRAPE_TIMEOUT_MS = 30000;
+
+// ── AI 정의 (오랑붕쌤과 동일) ──
+const AI_DEFS = {
+  gpt:    { name: 'GPT',        color: '#10a37f', usageUrl: 'https://platform.openai.com/usage' },
+  claude: { name: 'Claude',     color: '#c96442', usageUrl: 'https://console.anthropic.com/settings/billing' },
+  gemini: { name: 'Gemini',     color: '#4285f4', usageUrl: 'https://aistudio.google.com/apikey' },
+  grok:   { name: 'Grok',       color: '#1DA1F2', usageUrl: 'https://console.x.ai/' },
+  perp:   { name: 'Perplexity', color: '#20808d', usageUrl: 'https://www.perplexity.ai/settings/api' },
+};
 
 // ── 상태 ──
 let tray = null;
@@ -16,7 +28,9 @@ let loginWin = null;
 let scraperWin = null;
 let scrapeTimer = null;
 let usageData = null;
-let settings = { refreshInterval: 120, widgetVisible: true };
+let costData = null;
+// displayMode: 'CLAUDE_ONLY' | 'API_COST_ONLY' | 'BOTH'
+let settings = { refreshInterval: 120, widgetVisible: true, displayMode: 'CLAUDE_ONLY' };
 
 // ────────────────────────────
 //  설정 저장/불러오기
@@ -74,11 +88,25 @@ function createTray() {
 
 function updateTrayMenu() {
   const pct = usageData?.session?.usedPercent;
-  const pctText = pct != null ? ` (세션 ${Math.round(pct)}%)` : '';
+  const mode = settings.displayMode || 'CLAUDE_ONLY';
+  let statusLabel;
+
+  if (mode === 'CLAUDE_ONLY') {
+    const pctText = pct != null ? ` (세션 ${Math.round(pct)}%)` : '';
+    statusLabel = `Claude 사용량${pctText}`;
+  } else if (mode === 'API_COST_ONLY') {
+    const costText = costData ? ` ($${costData.todayTotal.toFixed(4)})` : '';
+    statusLabel = `API 요금${costText}`;
+  } else {
+    const pctText = pct != null ? `세션 ${Math.round(pct)}%` : '';
+    const costText = costData ? `$${costData.todayTotal.toFixed(4)}` : '';
+    statusLabel = [pctText, costText].filter(Boolean).join(' | ') || 'Claude + API';
+  }
+
   const menu = Menu.buildFromTemplate([
-    { label: `Claude 사용량${pctText}`, enabled: false },
+    { label: statusLabel, enabled: false },
     { type: 'separator' },
-    { label: '새로고침', click: () => scrapeNow() },
+    { label: '새로고침', click: () => { scrapeNow(); scrapeObsCost(); } },
     { label: settings.widgetVisible ? '위젯 숨기기' : '위젯 표시',
       click: () => toggleWidget() },
     { label: '설정 열기', click: () => showMainWindow() },
@@ -89,10 +117,21 @@ function updateTrayMenu() {
 }
 
 function updateTrayFromUsage() {
-  if (!tray || !usageData?.session) return;
-  const pct = Math.round(usageData.session.usedPercent || 0);
-  tray.setImage(getStatusIcon(pct));
-  tray.setToolTip(`Claude 세션 ${pct}% 사용됨`);
+  if (!tray) return;
+  const mode = settings.displayMode || 'CLAUDE_ONLY';
+
+  if (mode === 'API_COST_ONLY') {
+    if (costData) {
+      tray.setImage(createTrayIcon(76, 175, 80)); // 초록
+      tray.setToolTip(`API 요금 오늘: $${costData.todayTotal.toFixed(4)}`);
+    }
+  } else if (usageData?.session) {
+    const pct = Math.round(usageData.session.usedPercent || 0);
+    tray.setImage(getStatusIcon(pct));
+    const extra = (mode === 'BOTH' && costData)
+      ? ` | 요금: $${costData.todayTotal.toFixed(4)}` : '';
+    tray.setToolTip(`Claude 세션 ${pct}% 사용됨${extra}`);
+  }
   updateTrayMenu();
 }
 
@@ -148,6 +187,11 @@ let isScraping = false;
 
 async function scrapeNow() {
   if (isScraping) return;
+  if (settings.displayMode === 'API_COST_ONLY') {
+    // API_COST_ONLY 모드에서는 Claude 스크래핑 생략
+    scrapeObsCost();
+    return;
+  }
   isScraping = true;
   broadcastStatus('새로고침 중...');
 
@@ -211,10 +255,109 @@ async function scrapeNow() {
   isScraping = false;
 }
 
+// ── 오랑붕쌤 Drive API 직접 호출 ──
+const OBS_DOMAINS = [
+  ['Orangi Migraine', 'orangi_master.json'],
+  ['Orangi Mental', 'orangi_mental_master.json'],
+  ['Orangi Health', 'orangi_health_master.json'],
+  ['Bung Mental', 'bung_mental_master.json'],
+  ['Bung Health', 'bung_health_master.json'],
+  ['Bungruki Pregnancy', 'bungruki_master.json'],
+];
+
+async function driveGet(urlPath, token) {
+  return new Promise((resolve, reject) => {
+    https.get(urlPath, { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        if (res.statusCode === 401) return reject(new Error('TOKEN_EXPIRED'));
+        if (res.statusCode !== 200) return resolve(null);
+        try { resolve(JSON.parse(data)); } catch(e) { resolve(null); }
+      });
+    }).on('error', reject);
+  });
+}
+
+let isObsFetching = false;
+
+async function scrapeObsCost() {
+  if (isObsFetching) return;
+  if (settings.displayMode === 'CLAUDE_ONLY') return;
+  if (!settings.googleToken) return;
+
+  isObsFetching = true;
+  const token = settings.googleToken;
+
+  try {
+    const now = new Date(Date.now() + 9*3600*1000);
+    const today = now.toISOString().slice(0,10);
+    const month = today.slice(0,7);
+    let todayTotal = 0, monthTotal = 0;
+    const byAIMap = {};
+    let anySuccess = false;
+
+    for (const [folderName, masterFile] of OBS_DOMAINS) {
+      try {
+        // 폴더 찾기
+        const q1 = encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+        const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q1}&fields=files(id)`, token);
+        if (!folders?.files?.length) continue;
+        const folderId = folders.files[0].id;
+
+        // 마스터 파일 찾기
+        const q2 = encodeURIComponent(`name='${masterFile}' and '${folderId}' in parents and trashed=false`);
+        const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q2}&fields=files(id)`, token);
+        if (!files?.files?.length) continue;
+        const fileId = files.files[0].id;
+
+        // 파일 읽기
+        const master = await driveGet(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, token);
+        if (!master?.usage_data) continue;
+
+        anySuccess = true;
+        for (const [date, aiMap] of Object.entries(master.usage_data)) {
+          for (const [aiId, info] of Object.entries(aiMap)) {
+            const cost = info.cost || 0;
+            if (!byAIMap[aiId]) byAIMap[aiId] = { today: 0, month: 0 };
+            if (date === today) { todayTotal += cost; byAIMap[aiId].today += cost; }
+            if (date.startsWith(month)) { monthTotal += cost; byAIMap[aiId].month += cost; }
+          }
+        }
+      } catch (e) {
+        if (e.message === 'TOKEN_EXPIRED') {
+          settings.googleToken = null;
+          settings.obsLoggedIn = false;
+          saveSettings();
+          broadcastStatus('토큰 만료 — 오랑붕쌤 재연결 필요');
+          isObsFetching = false;
+          return;
+        }
+      }
+    }
+
+    if (anySuccess) {
+      const byAI = Object.entries(byAIMap).map(([aiId, data]) => {
+        const def = AI_DEFS[aiId] || { name: aiId, color: '#888' };
+        return { aiId, name: def.name, color: def.color, todayCost: data.today, monthCost: data.month };
+      }).sort((a, b) => b.monthCost - a.monthCost);
+
+      costData = { todayTotal, monthTotal, byAI, bySys: [{ systemName: '오랑붕쌤', todayCost: todayTotal, monthCost: monthTotal }], lastUpdated: new Date().toISOString() };
+      broadcastCost();
+      updateTrayFromUsage();
+    }
+  } catch (_) {}
+
+  isObsFetching = false;
+}
+
 function startScrapeTimer() {
   stopScrapeTimer();
   const ms = Math.max(30, settings.refreshInterval || 120) * 1000;
-  scrapeTimer = setInterval(() => scrapeNow(), ms);
+  scrapeTimer = setInterval(() => {
+    scrapeNow();
+    scrapeObsCost();
+  }, ms);
 }
 
 function stopScrapeTimer() {
@@ -227,6 +370,11 @@ function stopScrapeTimer() {
 function broadcastUsage() {
   const wins = [mainWin, widgetWin].filter(w => w && !w.isDestroyed());
   wins.forEach(w => w.webContents.send('usage-update', usageData));
+}
+
+function broadcastCost() {
+  const wins = [mainWin, widgetWin].filter(w => w && !w.isDestroyed());
+  wins.forEach(w => w.webContents.send('cost-update', costData));
 }
 
 function broadcastStatus(msg) {
@@ -274,6 +422,16 @@ function createWidgetWindow() {
   widgetWin.on('closed', () => { widgetWin = null; });
 }
 
+function updateWidgetSize() {
+  if (!widgetWin || widgetWin.isDestroyed()) return;
+  const mode = settings.displayMode || 'CLAUDE_ONLY';
+  if (mode === 'BOTH') {
+    widgetWin.setSize(250, 42);
+  } else {
+    widgetWin.setSize(170, 42);
+  }
+}
+
 function toggleWidget() {
   if (widgetWin && !widgetWin.isDestroyed()) {
     widgetWin.destroy();
@@ -285,6 +443,235 @@ function toggleWidget() {
   }
   saveSettings();
   updateTrayMenu();
+}
+
+// ────────────────────────────
+//  윈도우: 오랑붕쌤 로그인
+// ────────────────────────────
+let obsLoginWin = null;
+
+function showObsLoginWindow() {
+  if (obsLoginWin && !obsLoginWin.isDestroyed()) {
+    obsLoginWin.show();
+    obsLoginWin.focus();
+    return;
+  }
+  obsLoginWin = new BrowserWindow({
+    width: 900, height: 700,
+    webPreferences: { contextIsolation: true, nodeIntegration: false }
+  });
+  obsLoginWin.setMenuBarVisibility(false);
+  obsLoginWin.loadURL(OBS_URL);
+
+  // 토큰 감지: 주기적으로 S.token 체크
+  let checkCount = 0;
+  const checkInterval = setInterval(async () => {
+    if (!obsLoginWin || obsLoginWin.isDestroyed()) {
+      clearInterval(checkInterval);
+      return;
+    }
+    checkCount++;
+    if (checkCount > 60) { clearInterval(checkInterval); return; }
+
+    try {
+      const result = await obsLoginWin.webContents.executeJavaScript(`
+        (function() {
+          var token = (typeof S !== 'undefined' && S && S.token) ? S.token : null;
+          return JSON.stringify({ token: token });
+        })();
+      `);
+      const { token } = JSON.parse(result);
+      if (token) {
+        clearInterval(checkInterval);
+        settings.obsLoggedIn = true;
+        settings.googleToken = token;
+        saveSettings();
+        broadcastStatus('오랑붕쌤 연결 완료 (Drive API)');
+        if (mainWin && !mainWin.isDestroyed()) {
+          mainWin.webContents.send('obs-status', true);
+        }
+        obsLoginWin.close();
+        scrapeObsCost();
+      }
+    } catch (_) {}
+  }, 2000);
+
+  obsLoginWin.on('closed', () => {
+    clearInterval(checkInterval);
+    obsLoginWin = null;
+  });
+}
+
+// ────────────────────────────
+//  Anthropic Admin API
+// ────────────────────────────
+
+// ── Admin 키 암호화 (AES-256-GCM, PBKDF2) ──
+const KEY_SALT = 'claude-widget-keys-v1';
+const KEY_ITERATIONS = 100000;
+
+function deriveKeyFromPin(pin) {
+  return new Promise((resolve, reject) => {
+    crypto.pbkdf2(pin, KEY_SALT, KEY_ITERATIONS, 32, 'sha256', (err, key) => {
+      if (err) reject(err); else resolve(key);
+    });
+  });
+}
+
+async function encryptKeys(data, pin) {
+  const key = await deriveKeyFromPin(pin);
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(data, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return Buffer.concat([iv, encrypted, tag]).toString('base64');
+}
+
+async function decryptKeys(encrypted, pin) {
+  try {
+    const buf = Buffer.from(encrypted, 'base64');
+    if (buf.length < 12 + 16) return null; // IV + 최소 GCM 태그
+    const key = await deriveKeyFromPin(pin);
+    const iv = buf.subarray(0, 12);
+    const tag = buf.subarray(buf.length - 16);
+    const cipherText = buf.subarray(12, buf.length - 16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(cipherText), decipher.final()]).toString('utf8');
+  } catch (_) { return null; }
+}
+
+async function saveKeysToDriveDesktop(token, encrypted) {
+  try {
+    // 폴더 찾기/생성
+    const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='Claude Usage Widget' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`, token);
+    let folderId;
+    if (folders?.files?.length) {
+      folderId = folders.files[0].id;
+    } else {
+      const createRes = await drivePost(token, '/drive/v3/files?fields=id',
+        JSON.stringify({ name: 'Claude Usage Widget', mimeType: 'application/vnd.google-apps.folder' }));
+      folderId = createRes.id;
+    }
+
+    const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='admin_keys_backup.json' and '${folderId}' in parents and trashed=false`)}&fields=files(id)`, token);
+    const content = JSON.stringify({ encrypted, updatedAt: new Date().toISOString() });
+
+    if (files?.files?.length) {
+      await driveWrite(token, 'PATCH', `/upload/drive/v3/files/${files.files[0].id}?uploadType=media`, content);
+    } else {
+      const boundary = 'widget_bound_x7';
+      const meta = JSON.stringify({ name: 'admin_keys_backup.json', parents: [folderId], mimeType: 'application/json' });
+      const body = `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${meta}\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n${content}\r\n--${boundary}--`;
+      await driveWrite(token, 'POST', '/upload/drive/v3/files?uploadType=multipart&fields=id', body, `multipart/related; boundary=${boundary}`);
+    }
+    return true;
+  } catch (_) { return false; }
+}
+
+// Drive 쓰기 유틸리티
+function drivePost(token, apiPath, body) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: 'www.googleapis.com', path: apiPath, method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
+    }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => { try { resolve(JSON.parse(d)); } catch(e) { reject(e); } });
+    });
+    req.on('error', reject);
+    req.write(body); req.end();
+  });
+}
+
+function driveWrite(token, method, apiPath, body, contentType) {
+  return new Promise((resolve, reject) => {
+    const req = https.request({ hostname: 'www.googleapis.com', path: apiPath, method,
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': contentType || 'application/json' }
+    }, (res) => {
+      let d = ''; res.on('data', c => d += c);
+      res.on('end', () => {
+        if (res.statusCode >= 400) return reject(new Error(`HTTP ${res.statusCode}: ${d}`));
+        resolve(d);
+      });
+    });
+    req.on('error', reject);
+    req.write(body); req.end();
+  });
+}
+
+async function loadKeysFromDriveDesktop(token) {
+  try {
+    const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent("name='Claude Usage Widget' and mimeType='application/vnd.google-apps.folder' and trashed=false")}&fields=files(id)`, token);
+    if (!folders?.files?.length) return null;
+    const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(`name='admin_keys_backup.json' and '${folders.files[0].id}' in parents and trashed=false`)}&fields=files(id)`, token);
+    if (!files?.files?.length) return null;
+    const data = await driveGet(`https://www.googleapis.com/drive/v3/files/${files.files[0].id}?alt=media`, token);
+    return data?.encrypted || null;
+  } catch (_) { return null; }
+}
+
+function adminApiRequest(hostname, path, headers) {
+  return new Promise((resolve) => {
+    const req = https.request({ hostname, path, method: 'GET', headers }, (res) => {
+      let data = '';
+      res.on('data', (chunk) => data += chunk);
+      res.on('end', () => {
+        try { resolve({ ok: res.statusCode === 200, status: res.statusCode, data: JSON.parse(data) }); }
+        catch (e) { resolve({ ok: false, error: e.message }); }
+      });
+    });
+    req.on('error', (e) => resolve({ ok: false, error: e.message }));
+    req.setTimeout(10000, () => req.destroy());
+    req.end();
+  });
+}
+
+async function fetchAllAdminCosts() {
+  const results = { claude: null, gpt: null };
+
+  // Anthropic
+  if (settings.adminKey) {
+    const res = await adminApiRequest('api.anthropic.com', '/v1/organizations/cost_report', {
+      'x-api-key': settings.adminKey,
+      'anthropic-version': '2023-06-01',
+    });
+    if (res.ok && res.data?.total_cost != null) {
+      results.claude = { actual: res.data.total_cost };
+    } else {
+      results.claude = { error: res.error || `HTTP ${res.status}` };
+    }
+  }
+
+  // OpenAI
+  if (settings.openaiKey) {
+    const now = new Date();
+    const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
+    const tomorrow = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
+    const res = await adminApiRequest('api.openai.com',
+      `/v1/organization/costs?start_date=${monthStart}&end_date=${tomorrow}`, {
+      'Authorization': `Bearer ${settings.openaiKey}`,
+    });
+    if (res.ok) {
+      let total = 0;
+      (res.data?.data || []).forEach(bucket => {
+        (bucket.results || []).forEach(r => { total += r.amount?.value || 0; });
+      });
+      results.gpt = { actual: total };
+    } else {
+      results.gpt = { error: res.error || `HTTP ${res.status}` };
+    }
+  }
+
+  // 추정치와 비교하여 전송
+  const estimated = {};
+  if (costData?.byAI) {
+    costData.byAI.forEach(ai => { estimated[ai.aiId] = ai.monthCost; });
+  }
+
+  if (mainWin && !mainWin.isDestroyed()) {
+    mainWin.webContents.send('admin-cost-update', { results, estimated });
+  }
+  return results;
 }
 
 // ────────────────────────────
@@ -319,13 +706,19 @@ function showLoginWindow() {
 //  IPC 핸들러
 // ────────────────────────────
 ipcMain.handle('get-usage', () => usageData);
+ipcMain.handle('get-cost', () => costData);
 ipcMain.handle('get-settings', () => settings);
 ipcMain.handle('save-settings', (_, s) => {
   Object.assign(settings, s);
   saveSettings();
-  startScrapeTimer(); // 주기 변경 반영
+  startScrapeTimer();
+  // 모드 변경 시 위젯 크기 조정
+  updateWidgetSize();
 });
-ipcMain.handle('refresh', () => scrapeNow());
+ipcMain.handle('refresh', () => {
+  scrapeNow();
+  scrapeObsCost();
+});
 ipcMain.handle('login', () => showLoginWindow());
 ipcMain.handle('logout', async () => {
   await session.defaultSession.clearStorageData();
@@ -337,6 +730,56 @@ ipcMain.handle('logout', async () => {
   stopScrapeTimer();
 });
 ipcMain.handle('toggle-widget', () => toggleWidget());
+ipcMain.handle('obs-login', () => showObsLoginWindow());
+ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
+ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
+  if (!['anthropic', 'openai'].includes(type)) return { error: 'Invalid type' };
+  if (!pin || pin.length < 4) return { error: 'PIN은 4자리 이상' };
+  const keys = {};
+  if (settings.adminKey) keys.anthropic = settings.adminKey;
+  if (settings.openaiKey) keys.openai = settings.openaiKey;
+  keys[type] = key;
+
+  // 암호화
+  const encrypted = await encryptKeys(JSON.stringify(keys), pin);
+  settings.adminKeysEncrypted = encrypted;
+  if (type === 'anthropic') settings.adminKey = key;
+  else settings.openaiKey = key;
+  saveSettings();
+
+  // Drive 백업
+  if (settings.googleToken) {
+    await saveKeysToDriveDesktop(settings.googleToken, encrypted);
+    return { saved: true, driveBackup: true };
+  }
+  return { saved: true, driveBackup: false };
+});
+ipcMain.handle('restore-admin-keys', async (_, pin) => {
+  if (!pin || typeof pin !== 'string') return { error: 'PIN 필요' };
+  if (!settings.googleToken) return { error: '오랑붕쌤 연결 필요' };
+  const encrypted = await loadKeysFromDriveDesktop(settings.googleToken);
+  if (!encrypted) return { error: 'Drive에 백업 없음' };
+  const decrypted = await decryptKeys(encrypted, pin);
+  if (!decrypted) return { error: 'PIN 틀림' };
+  try {
+    const keys = JSON.parse(decrypted);
+    settings.adminKey = keys.anthropic || '';
+    settings.openaiKey = keys.openai || '';
+    settings.adminKeysEncrypted = encrypted;
+    saveSettings();
+    if (settings.adminKey || settings.openaiKey) fetchAllAdminCosts();
+    return { success: true, anthropic: !!settings.adminKey, openai: !!settings.openaiKey };
+  } catch (_) { return { error: '데이터 파싱 실패' }; }
+});
+ipcMain.handle('get-admin-keys', () => ({
+  anthropic: settings.adminKey ? '****' : '',
+  openai: settings.openaiKey ? '****' : '',
+}));
+ipcMain.handle('fetch-admin-cost', () => fetchAllAdminCosts());
+ipcMain.handle('open-external', (_, url) => {
+  const { shell } = require('electron');
+  shell.openExternal(url);
+});
 ipcMain.handle('quit', () => app.quit());
 
 // ────────────────────────────
@@ -347,8 +790,9 @@ app.whenReady().then(() => {
   createTray();
   if (settings.widgetVisible) createWidgetWindow();
 
-  // 초기 스크래핑 (로그인 상태 확인)
+  // 초기 스크래핑
   scrapeNow();
+  scrapeObsCost();
   startScrapeTimer();
 });
 
@@ -359,6 +803,7 @@ app.on('window-all-closed', (e) => {
 
 app.on('before-quit', () => {
   stopScrapeTimer();
+  // Drive API 방식이라 별도 정리 불필요
 });
 
 // 단일 인스턴스 보장

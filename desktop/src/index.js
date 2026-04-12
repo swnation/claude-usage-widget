@@ -1,24 +1,57 @@
 const $ = (sel) => document.querySelector(sel);
+const $$ = (sel) => document.querySelectorAll(sel);
 
 const loginDot = $('#loginDot');
 const loginText = $('#loginText');
 const loginBtn = $('#loginBtn');
 const logoutBtn = $('#logoutBtn');
 const usageCards = $('#usageCards');
+const costCards = $('#costCards');
 const intervalInput = $('#intervalInput');
 const statusText = $('#statusText');
+
+let currentMode = 'CLAUDE_ONLY';
+
+// ── AI 정의 ──
+const AI_DEFS = {
+  gpt:    { name: 'GPT',        color: '#10a37f', url: 'https://platform.openai.com/usage' },
+  claude: { name: 'Claude',     color: '#c96442', url: 'https://console.anthropic.com/settings/billing' },
+  gemini: { name: 'Gemini',     color: '#4285f4', url: 'https://aistudio.google.com/apikey' },
+  grok:   { name: 'Grok',       color: '#1DA1F2', url: 'https://console.x.ai/' },
+  perp:   { name: 'Perplexity', color: '#20808d', url: 'https://www.perplexity.ai/settings/api' },
+};
 
 // 초기 로딩
 (async () => {
   const settings = await window.api.getSettings();
   intervalInput.value = settings.refreshInterval || 120;
+  currentMode = settings.displayMode || 'CLAUDE_ONLY';
+
+  // 모드 라디오 복원
+  const radio = $(`input[name="displayMode"][value="${currentMode}"]`);
+  if (radio) radio.checked = true;
+  updateModeVisibility();
 
   const usage = await window.api.getUsage();
   if (usage) renderUsage(usage);
+
+  const cost = await window.api.getCost();
+  if (cost) renderCost(cost);
+
+  // 오랑붕쌤 상태
+  const obsStatus = await window.api.getObsStatus();
+  setObsState(obsStatus);
+
+  // Admin 키
+  const adminKeys = await window.api.getAdminKeys();
+  if (adminKeys.anthropic) $('#anthropicKeyInput').value = adminKeys.anthropic;
+  if (adminKeys.openai) $('#openaiKeyInput').value = adminKeys.openai;
+  if (adminKeys.anthropic || adminKeys.openai) window.api.fetchAdminCost();
 })();
 
 // 실시간 업데이트 수신
 window.api.onUsageUpdate((data) => renderUsage(data));
+window.api.onCostUpdate((data) => renderCost(data));
 window.api.onStatusUpdate((msg) => { statusText.textContent = msg; });
 
 // 버튼 이벤트
@@ -32,17 +65,107 @@ $('#widgetBtn').onclick = () => window.api.toggleWidget();
 $('#saveBtn').onclick = async () => {
   const val = parseInt(intervalInput.value) || 120;
   intervalInput.value = Math.max(30, val);
-  await window.api.saveSettings({ refreshInterval: Math.max(30, val) });
+
+  const modeRadio = $('input[name="displayMode"]:checked');
+  currentMode = modeRadio ? modeRadio.value : 'CLAUDE_ONLY';
+
+  await window.api.saveSettings({
+    refreshInterval: Math.max(30, val),
+    displayMode: currentMode,
+  });
+  updateModeVisibility();
   statusText.textContent = '저장됨';
 };
 
+// 모드 변경 시 즉시 반영
+$$('input[name="displayMode"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    currentMode = radio.value;
+    updateModeVisibility();
+  });
+});
+
 loginBtn.onclick = () => window.api.login();
+
+// 오랑붕쌤 연결
+$('#obsBtn').onclick = () => window.api.obsLogin();
+window.api.onObsStatus((status) => setObsState(status));
+
+function setObsState(connected) {
+  const dot = $('#obsDot');
+  const text = $('#obsText');
+  dot.className = 'dot ' + (connected ? 'green' : 'gray');
+  text.textContent = connected ? '오랑붕쌤: 연결됨' : '오랑붕쌤: 연결 안됨';
+  $('#obsBtn').textContent = connected ? '재연결' : '연결';
+}
+
+// Admin API 키 (암호화 저장)
+$('#anthropicKeySave').onclick = () => promptPinAndSave('anthropic');
+$('#openaiKeySave').onclick = () => promptPinAndSave('openai');
+$('#adminKeyRestore').onclick = () => promptPinAndRestore();
+
+function promptPinAndSave(type) {
+  const input = type === 'anthropic' ? '#anthropicKeyInput' : '#openaiKeyInput';
+  const key = $(input).value.trim();
+  if (key === '****' || !key) return;
+  const pin = prompt('🔐 키 암호화 PIN (4자리 이상):');
+  if (!pin || pin.length < 4) { alert('PIN은 4자리 이상이어야 합니다'); return; }
+  window.api.saveAdminKeyEncrypted(type, key, pin).then(r => {
+    $('#adminCostText').textContent = r.driveBackup
+      ? '🔐 암호화 저장 + ☁️ Drive 백업 완료' : '🔐 암호화 저장됨 (Drive 미연결)';
+  });
+}
+
+function promptPinAndRestore() {
+  const pin = prompt('🔓 백업 복원 PIN:');
+  if (!pin) return;
+  window.api.restoreAdminKeys(pin).then(r => {
+    if (r.error) { $('#adminCostText').textContent = `❌ ${r.error}`; return; }
+    if (r.anthropic) $('#anthropicKeyInput').value = '****';
+    if (r.openai) $('#openaiKeyInput').value = '****';
+    $('#adminCostText').textContent = '🔓 키 복원 완료';
+  });
+}
+
+window.api.onAdminCostUpdate(({ results, estimated }) => {
+  const lines = [];
+  if (results.claude) {
+    if (results.claude.actual != null) {
+      lines.push(`Claude 실제: $${results.claude.actual.toFixed(4)}`);
+      const est = estimated?.claude || 0;
+      if (est > 0) {
+        const diff = results.claude.actual - est;
+        lines.push(`  차이: ${diff >= 0 ? '+' : ''}$${diff.toFixed(4)} (추정 $${est.toFixed(4)})`);
+      }
+    } else {
+      lines.push(`Claude: ${results.claude.error || '오류'}`);
+    }
+  }
+  if (results.gpt) {
+    if (results.gpt.actual != null) {
+      lines.push(`GPT 실제: $${results.gpt.actual.toFixed(4)}`);
+      const est = estimated?.gpt || 0;
+      if (est > 0) {
+        const diff = results.gpt.actual - est;
+        lines.push(`  차이: ${diff >= 0 ? '+' : ''}$${diff.toFixed(4)} (추정 $${est.toFixed(4)})`);
+      }
+    } else {
+      lines.push(`GPT: ${results.gpt.error || '오류'}`);
+    }
+  }
+  $('#adminCostText').textContent = lines.join('\n') || 'Admin API 키를 저장하세요';
+});
 logoutBtn.onclick = async () => {
   await window.api.logout();
   setLoginState(false);
   usageCards.innerHTML = '';
   statusText.textContent = '로그아웃됨';
 };
+
+function updateModeVisibility() {
+  usageCards.style.display = currentMode !== 'API_COST_ONLY' ? '' : 'none';
+  costCards.style.display = currentMode !== 'CLAUDE_ONLY' ? '' : 'none';
+}
 
 function setLoginState(loggedIn) {
   loginDot.className = 'dot ' + (loggedIn ? 'green' : 'red');
@@ -86,4 +209,39 @@ function addCard(item) {
   const c = cls === 'green' ? '#4caf50' : cls === 'yellow' ? '#ff9800' : '#f44336';
   card.style.setProperty('--c', c);
   usageCards.appendChild(card);
+}
+
+function renderCost(data) {
+  if (!data) return;
+
+  $('#costToday').textContent = `$${data.todayTotal.toFixed(4)}`;
+  $('#costTodayKrw').textContent = `≈${Math.round(data.todayTotal * 1450).toLocaleString()}원`;
+  $('#costMonth').textContent = `$${data.monthTotal.toFixed(4)}`;
+  $('#costMonthKrw').textContent = `≈${Math.round(data.monthTotal * 1450).toLocaleString()}원`;
+
+  const byAI = $('#costByAI');
+  byAI.innerHTML = '';
+
+  (data.byAI || []).filter(ai => ai.monthCost > 0).forEach(ai => {
+    const def = AI_DEFS[ai.aiId] || { name: ai.name, color: '#888', url: null };
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px';
+    const nameEl = def.url
+      ? `<a href="#" class="ai-link" data-url="${def.url}" style="flex:1;color:${def.color};text-decoration:underline;cursor:pointer">${def.name}</a>`
+      : `<span style="flex:1;color:#aaa">${def.name}</span>`;
+    row.innerHTML = `
+      <div style="width:8px;height:8px;border-radius:50%;background:${def.color}"></div>
+      ${nameEl}
+      <span style="font-family:monospace">$${ai.monthCost.toFixed(4)}</span>
+    `;
+    byAI.appendChild(row);
+  });
+
+  // AI 링크 클릭 핸들러
+  byAI.querySelectorAll('.ai-link').forEach(el => {
+    el.onclick = (e) => {
+      e.preventDefault();
+      window.api.openExternal(el.dataset.url);
+    };
+  });
 }

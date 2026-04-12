@@ -105,7 +105,148 @@
             android:backgroundTint="#22223a"
             android:textColor="#c084fc"
             android:textSize="13sp"
-            android:layout_marginBottom="12dp" />
+            android:layout_marginBottom="8dp" />
+
+        <!-- 오랑붕쌤 연결 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:id="@+id/obsStatus"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="오랑붕쌤: 연결 안됨"
+                android:textColor="#888899"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/obsConnectButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:text="오랑붕쌤 연결"
+                android:backgroundTint="#10a37f"
+                android:textColor="#ffffff"
+                android:textSize="12sp" />
+        </LinearLayout>
+
+        <!-- Admin API 키 -->
+        <LinearLayout
+            android:id="@+id/adminApiSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Admin API 키 (실제 청구 비교용)"
+                android:textColor="#888899"
+                android:textSize="11sp"
+                android:layout_marginBottom="4dp" />
+
+            <!-- Anthropic -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="60dp"
+                    android:layout_height="40dp"
+                    android:text="Claude"
+                    android:textColor="#c96442"
+                    android:textSize="11sp"
+                    android:gravity="center_vertical" />
+
+                <EditText
+                    android:id="@+id/adminKeyInput"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="sk-ant-admin-..."
+                    android:inputType="textPassword"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/adminKeySave"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="저장"
+                    android:backgroundTint="#2a2a4a"
+                    android:textColor="#c084fc"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <!-- OpenAI -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <TextView
+                    android:layout_width="60dp"
+                    android:layout_height="40dp"
+                    android:text="GPT"
+                    android:textColor="#10a37f"
+                    android:textSize="11sp"
+                    android:gravity="center_vertical" />
+
+                <EditText
+                    android:id="@+id/openaiKeyInput"
+                    android:layout_width="0dp"
+                    android:layout_height="40dp"
+                    android:layout_weight="1"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="sk-admin-..."
+                    android:inputType="textPassword"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginEnd="4dp" />
+
+                <Button
+                    android:id="@+id/openaiKeySave"
+                    android:layout_width="wrap_content"
+                    android:layout_height="40dp"
+                    android:text="저장"
+                    android:backgroundTint="#2a2a4a"
+                    android:textColor="#c084fc"
+                    android:textSize="11sp" />
+            </LinearLayout>
+
+            <Button
+                android:id="@+id/adminKeyRestore"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:text="☁️ Drive에서 키 불러오기"
+                android:backgroundTint="#22223a"
+                android:textColor="#888899"
+                android:textSize="11sp"
+                android:layout_marginTop="4dp" />
+
+            <TextView
+                android:id="@+id/adminCostText"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text=""
+                android:textColor="#888899"
+                android:textSize="11sp"
+                android:layout_marginTop="4dp" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/statusText"
@@ -114,8 +255,111 @@
             android:text="연결 안 됨"
             android:textColor="#888899"
             android:textSize="12sp"
-            android:layout_marginBottom="24dp" />
+            android:layout_marginBottom="16dp" />
 
+        <!-- API 요금 섹션 -->
+        <LinearLayout
+            android:id="@+id/costSection"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone"
+            android:layout_marginBottom="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="💰 API 요금"
+                android:textColor="#c084fc"
+                android:textSize="16sp"
+                android:textStyle="bold"
+                android:layout_marginBottom="8dp" />
+
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:layout_marginBottom="4dp">
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="#22223a"
+                    android:padding="12dp"
+                    android:layout_marginEnd="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="오늘"
+                        android:textColor="#888899"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/costTodayText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="--"
+                        android:textColor="#4ade80"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/costTodayKrw"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#666677"
+                        android:textSize="10sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:orientation="vertical"
+                    android:background="#22223a"
+                    android:padding="12dp"
+                    android:layout_marginStart="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="이번 달"
+                        android:textColor="#888899"
+                        android:textSize="11sp" />
+
+                    <TextView
+                        android:id="@+id/costMonthText"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="--"
+                        android:textColor="#c084fc"
+                        android:textSize="16sp"
+                        android:textStyle="bold" />
+
+                    <TextView
+                        android:id="@+id/costMonthKrw"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text=""
+                        android:textColor="#666677"
+                        android:textSize="10sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/costByAiContainer"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:background="#22223a"
+                android:padding="8dp" />
+        </LinearLayout>
+
+        <!-- 설정 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -125,6 +369,52 @@
             android:textStyle="bold"
             android:layout_marginBottom="12dp" />
 
+        <!-- 표시 모드 -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="표시 모드"
+            android:textColor="#888899"
+            android:textSize="12sp"
+            android:layout_marginBottom="4dp" />
+
+        <RadioGroup
+            android:id="@+id/modeRadioGroup"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="16dp">
+
+            <RadioButton
+                android:id="@+id/modeClaudeOnly"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:text="Claude 단독 (세션 %, 주간 %)"
+                android:textColor="#e0e0e0"
+                android:textSize="13sp"
+                android:buttonTint="#c084fc"
+                android:checked="true" />
+
+            <RadioButton
+                android:id="@+id/modeApiCostOnly"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:text="API 요금만 (오늘 + 이번 달)"
+                android:textColor="#e0e0e0"
+                android:textSize="13sp"
+                android:buttonTint="#c084fc" />
+
+            <RadioButton
+                android:id="@+id/modeBoth"
+                android:layout_width="match_parent"
+                android:layout_height="36dp"
+                android:text="둘 다 (세션 % + 요금)"
+                android:textColor="#e0e0e0"
+                android:textSize="13sp"
+                android:buttonTint="#c084fc" />
+        </RadioGroup>
+
+        <!-- 갱신 주기 -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"

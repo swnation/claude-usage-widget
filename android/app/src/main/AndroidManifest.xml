@@ -32,6 +32,11 @@
             android:exported="false"
             android:theme="@style/Theme.ClaudeUsage" />
 
+        <activity
+            android:name=".ObsLoginActivity"
+            android:exported="false"
+            android:theme="@style/Theme.ClaudeUsage" />
+
         <service
             android:name=".UsageMonitorService"
             android:foregroundServiceType="dataSync"
