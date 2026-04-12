@@ -378,10 +378,17 @@ class MainActivity : AppCompatActivity() {
                     if (code == 200) {
                         try {
                             val json = com.google.gson.JsonParser.parseString(body).asJsonObject
-                            var claudeActual = 0.0
+                            var claudeActualCents = 0.0
 
-                            // 디버그: 응답 raw 표시 (첫 500자)
-                            lines.add("Claude raw: ${body.take(500)}")
+                            // data[].results[].amount (센트 단위 문자열)
+                            json.getAsJsonArray("data")?.forEach { bucket ->
+                                bucket.asJsonObject.getAsJsonArray("results")?.forEach { r ->
+                                    val amountStr = r.asJsonObject.get("amount")?.asString ?: "0"
+                                    claudeActualCents += amountStr.toDoubleOrNull() ?: 0.0
+                                }
+                            }
+
+                            val claudeActual = claudeActualCents / 100.0 // 센트 → 달러
 
                             lines.add("Claude 이번달 비교:")
                             lines.add("  실제 청구: $${String.format("%.4f", claudeActual)}")

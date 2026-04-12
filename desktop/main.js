@@ -636,10 +636,14 @@ async function fetchAllAdminCosts() {
       'anthropic-version': '2023-06-01',
     });
     if (res.ok) {
-      let claudeTotal = 0;
-      (res.data?.data || []).forEach(b => { claudeTotal += b.cost || 0; });
-      if (claudeTotal === 0) claudeTotal = res.data?.total_cost ?? res.data?.cost ?? 0;
-      results.claude = { actual: claudeTotal };
+      let claudeCents = 0;
+      // data[].results[].amount (센트 단위 문자열)
+      (res.data?.data || []).forEach(bucket => {
+        (bucket.results || []).forEach(r => {
+          claudeCents += parseFloat(r.amount || '0');
+        });
+      });
+      results.claude = { actual: claudeCents / 100 }; // 센트 → 달러
     } else {
       results.claude = { error: res.error || `HTTP ${res.status}` };
     }
