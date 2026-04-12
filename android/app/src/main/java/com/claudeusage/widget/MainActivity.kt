@@ -3,6 +3,7 @@ package com.claudeusage.widget
 import android.annotation.SuppressLint
 import android.content.Intent
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import androidx.lifecycle.lifecycleScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -49,12 +50,24 @@ class MainActivity : AppCompatActivity() {
     // 오랑붕쌤 연결
     private lateinit var obsStatus: TextView
     private lateinit var obsConnectButton: Button
-    // Admin API
-    private lateinit var adminKeyInput: EditText
-    private lateinit var adminKeySave: Button
-    private lateinit var openaiKeyInput: EditText
-    private lateinit var openaiKeySave: Button
+    // Admin API (동적)
+    private lateinit var billingKeysContainer: LinearLayout
     private lateinit var adminCostText: TextView
+
+    // 스킨 데이터
+    private data class SkinInfo(val id: String, val label: String, val emoji: String, val startColor: Int, val endColor: Int)
+    private val SKINS = listOf(
+        SkinInfo("default", "기본", "🌙", 0xFF1a1a2e.toInt(), 0xFF16213e.toInt()),
+        SkinInfo("spring", "봄", "🌸", 0xFFffe4eb.toInt(), 0xFFfff5f5.toInt()),
+        SkinInfo("summer", "여름", "🌊", 0xFFc8ebff.toInt(), 0xFFe8f4f8.toInt()),
+        SkinInfo("autumn", "가을", "🍂", 0xFFfae6c8.toInt(), 0xFFfaf5ef.toInt()),
+        SkinInfo("winter", "겨울", "❄️", 0xFFdcebff.toInt(), 0xFFeef2f7.toInt()),
+        SkinInfo("fluffy-pink", "몽글핑크", "🩷", 0xFFffdcf0.toInt(), 0xFFfff0f6.toInt()),
+        SkinInfo("fluffy-purple", "몽글퍼플", "💜", 0xFFe6d7ff.toInt(), 0xFFf5f0ff.toInt()),
+        SkinInfo("fluffy-mint", "몽글민트", "💚", 0xFFc8f5e6.toInt(), 0xFFf0faf7.toInt()),
+        SkinInfo("fluffy-yellow", "몽글옐로", "💛", 0xFFfff5b4.toInt(), 0xFFfffde8.toInt()),
+        SkinInfo("fluffy-sky", "몽글스카이", "🩵", 0xFFd2e6ff.toInt(), 0xFFf0f6ff.toInt()),
+    )
 
     private val loginLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -162,12 +175,22 @@ class MainActivity : AppCompatActivity() {
         // 오랑붕쌤 연결
         obsStatus = findViewById(R.id.obsStatus)
         obsConnectButton = findViewById(R.id.obsConnectButton)
-        // Admin API
-        adminKeyInput = findViewById(R.id.adminKeyInput)
-        adminKeySave = findViewById(R.id.adminKeySave)
-        openaiKeyInput = findViewById(R.id.openaiKeyInput)
-        openaiKeySave = findViewById(R.id.openaiKeySave)
+        // Billing API (동적)
+        billingKeysContainer = findViewById(R.id.billingKeysContainer)
         adminCostText = findViewById(R.id.adminCostText)
+
+        // ── 접이식 섹션 ──
+        setupAccordion(R.id.sectionOverlayHeader, R.id.sectionOverlayBody)
+        setupAccordion(R.id.sectionBillingHeader, R.id.sectionBillingBody)
+        setupAccordion(R.id.sectionSkinHeader, R.id.sectionSkinBody)
+        setupAccordion(R.id.sectionSettingsHeader, R.id.sectionSettingsBody)
+
+        // ── 스킨 그리드 ──
+        setupSkinSelector()
+
+        // ── 동적 Billing 키 ──
+        setupBillingKeys()
+        findViewById<Button>(R.id.addBillingKeyButton).setOnClickListener { showAddBillingKeyDialog() }
 
         loginButton.setOnClickListener {
             loginLauncher.launch(Intent(this, LoginActivity::class.java))
@@ -278,11 +301,167 @@ class MainActivity : AppCompatActivity() {
             obsLoginLauncher.launch(Intent(this, ObsLoginActivity::class.java))
         }
 
-        // Admin API 키 저장 (암호화)
-        adminKeySave.setOnClickListener { promptPinAndSaveKeys("anthropic") }
-        openaiKeySave.setOnClickListener { promptPinAndSaveKeys("openai") }
+        // Admin API 키 복원/백업
         findViewById<Button>(R.id.adminKeyRestore).setOnClickListener { restoreKeysFromDrive() }
         findViewById<Button>(R.id.adminKeyBackup).setOnClickListener { backupKeysToDrive() }
+    }
+
+    // ── 접이식 섹션 토글 ──
+    private fun setupAccordion(headerId: Int, bodyId: Int) {
+        val header = findViewById<TextView>(headerId)
+        val body = findViewById<LinearLayout>(bodyId)
+        header.setOnClickListener {
+            val visible = body.visibility == View.VISIBLE
+            body.visibility = if (visible) View.GONE else View.VISIBLE
+            header.text = (if (visible) "▸ " else "▾ ") + header.text.toString().removePrefix("▸ ").removePrefix("▾ ")
+        }
+    }
+
+    // ── 스킨 선택 ──
+    private fun setupSkinSelector() {
+        val container = findViewById<LinearLayout>(R.id.skinContainer)
+        container.removeAllViews()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val currentSkin = prefs.getString("skin", "default") ?: "default"
+
+        SKINS.forEach { skin ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(8, 8, 8, 8)
+                val size = (64 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = (8 * resources.displayMetrics.density).toInt()
+                }
+            }
+            val preview = View(this).apply {
+                val s = (48 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(skin.startColor, skin.endColor)
+                ).apply {
+                    cornerRadius = if (skin.id.startsWith("fluffy")) 24f * resources.displayMetrics.density
+                        else 12f * resources.displayMetrics.density
+                }
+                if (currentSkin == skin.id) {
+                    foreground = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 12f * resources.displayMetrics.density
+                        setStroke((2 * resources.displayMetrics.density).toInt(), 0xFFc084fc.toInt())
+                    }
+                }
+            }
+            val label = TextView(this).apply {
+                text = "${skin.emoji}\n${skin.label}"
+                textSize = 9f
+                setTextColor(0xFFe0e0e0.toInt())
+                gravity = android.view.Gravity.CENTER
+            }
+            item.addView(preview)
+            item.addView(label)
+            item.setOnClickListener {
+                prefs.edit().putString("skin", skin.id).apply()
+                setupSkinSelector() // refresh
+                Toast.makeText(this, "${skin.label} 스킨 적용!", Toast.LENGTH_SHORT).show()
+            }
+            container.addView(item)
+        }
+    }
+
+    // ── 동적 Billing 키 ──
+    private val BILLING_AI_OPTIONS = listOf(
+        Triple("anthropic", "Claude", "#c96442"),
+        Triple("openai", "GPT", "#10a37f"),
+        Triple("gemini", "Gemini", "#4285f4"),
+        Triple("grok", "Grok", "#1DA1F2"),
+        Triple("perplexity", "Perplexity", "#20808d"),
+    )
+
+    private fun setupBillingKeys() {
+        billingKeysContainer.removeAllViews()
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        // 기존 저장된 키들 표시
+        for ((keyId, label, color) in BILLING_AI_OPTIONS) {
+            val prefKey = "${keyId}_admin_key"
+            val savedKey = prefs.getString(prefKey, "") ?: ""
+            if (savedKey.isEmpty()) continue
+
+            addBillingKeyRow(keyId, label, color, "****")
+        }
+    }
+
+    private fun addBillingKeyRow(keyId: String, label: String, colorHex: String, value: String) {
+        val row = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { bottomMargin = (4 * resources.displayMetrics.density).toInt() }
+        }
+        val nameView = TextView(this).apply {
+            text = label
+            setTextColor(try { Color.parseColor(colorHex) } catch (_: Exception) { 0xFFaaaaaa.toInt() })
+            textSize = 11f
+            layoutParams = LinearLayout.LayoutParams(
+                (60 * resources.displayMetrics.density).toInt(), (40 * resources.displayMetrics.density).toInt()
+            )
+            gravity = android.view.Gravity.CENTER_VERTICAL
+        }
+        val input = EditText(this).apply {
+            setText(value)
+            setTextColor(0xFFe0e0e0.toInt())
+            setHintTextColor(0xFF555566.toInt())
+            hint = "API key..."
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_PASSWORD
+            textSize = 11f
+            setPadding(16, 8, 16, 8)
+            setBackgroundResource(R.drawable.input_background)
+            layoutParams = LinearLayout.LayoutParams(0, (40 * resources.displayMetrics.density).toInt(), 1f).apply {
+                marginEnd = (4 * resources.displayMetrics.density).toInt()
+            }
+        }
+        val saveBtn = Button(this).apply {
+            text = "저장"
+            textSize = 11f
+            setTextColor(0xFFc084fc.toInt())
+            setBackgroundColor(0xFF2a2a4a.toInt())
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT, (40 * resources.displayMetrics.density).toInt()
+            )
+            setOnClickListener {
+                val key = input.text.toString().trim()
+                if (key == "****" || key.isEmpty()) return@setOnClickListener
+                promptPinAndSaveKeys(keyId, key)
+            }
+        }
+        row.addView(nameView)
+        row.addView(input)
+        row.addView(saveBtn)
+        billingKeysContainer.addView(row)
+    }
+
+    private fun showAddBillingKeyDialog() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        // 아직 추가 안 된 AI만 보여주기
+        val available = BILLING_AI_OPTIONS.filter { (keyId, _, _) ->
+            val saved = prefs.getString("${keyId}_admin_key", "") ?: ""
+            saved.isEmpty()
+        }
+        if (available.isEmpty()) {
+            Toast.makeText(this, "모든 AI 키가 이미 등록됨", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val names = available.map { it.second }.toTypedArray()
+        AlertDialog.Builder(this)
+            .setTitle("Billing API 키 추가")
+            .setItems(names) { _, which ->
+                val (keyId, label, color) = available[which]
+                addBillingKeyRow(keyId, label, color, "")
+            }
+            .show()
     }
 
     private fun backupKeysToDrive() {
@@ -402,10 +581,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     // ── Admin 키 암호화 저장/복원 ──
-    private fun promptPinAndSaveKeys(type: String) {
-        val keyInput = if (type == "anthropic") adminKeyInput else openaiKeyInput
-        val key = keyInput.text.toString().trim()
-        if (key == "****" || key.isEmpty()) return
+    private fun promptPinAndSaveKeys(type: String, key: String? = null) {
+        val actualKey = key ?: return
+        if (actualKey == "****" || actualKey.isEmpty()) return
 
         val pinInput = EditText(this).apply {
             hint = "PIN (4자리 이상)"
@@ -424,7 +602,7 @@ class MainActivity : AppCompatActivity() {
                     Toast.makeText(this, "PIN은 4자리 이상이어야 합니다", Toast.LENGTH_SHORT).show()
                     return@setPositiveButton
                 }
-                saveAdminKeyEncrypted(type, key, pin)
+                saveAdminKeyEncrypted(type, actualKey, pin)
             }
             .setNegativeButton("취소", null)
             .show()
@@ -435,10 +613,10 @@ class MainActivity : AppCompatActivity() {
 
         // 기존 저장된 키들로부터 합쳐서 암호화
         val keys = com.google.gson.JsonObject()
-        val existingClaude = prefs.getString("anthropic_admin_key", "") ?: ""
-        val existingGpt = prefs.getString("openai_admin_key", "") ?: ""
-        if (existingClaude.isNotEmpty()) keys.addProperty("anthropic", existingClaude)
-        if (existingGpt.isNotEmpty()) keys.addProperty("openai", existingGpt)
+        for ((keyId, _, _) in BILLING_AI_OPTIONS) {
+            val existing = prefs.getString("${keyId}_admin_key", "") ?: ""
+            if (existing.isNotEmpty()) keys.addProperty(keyId, existing)
+        }
 
         // 새 키로 덮어쓰기
         keys.addProperty(type, key)
@@ -447,13 +625,14 @@ class MainActivity : AppCompatActivity() {
         // 암호화
         val encrypted = KeyEncryption.encrypt(keysStr, pin)
 
-        // 로컬 저장 (암호화된 상태)
-        prefs.edit()
+        // 로컬 저장
+        val editor = prefs.edit()
             .putString("admin_keys_encrypted", encrypted)
-            .remove("admin_keys_plain") // 평문 제거
-            .putString("anthropic_admin_key", if (keys.has("anthropic")) keys.get("anthropic").asString else "")
-            .putString("openai_admin_key", if (keys.has("openai")) keys.get("openai").asString else "")
-            .apply()
+            .remove("admin_keys_plain")
+        for (entry in keys.entrySet()) {
+            editor.putString("${entry.key}_admin_key", entry.value.asString)
+        }
+        editor.apply()
 
         Toast.makeText(this, "🔐 Admin 키 암호화 저장됨", Toast.LENGTH_SHORT).show()
 
@@ -510,19 +689,17 @@ class MainActivity : AppCompatActivity() {
                         }
                         try {
                             val keys = com.google.gson.JsonParser.parseString(decrypted).asJsonObject
-                            val anthropic = if (keys.has("anthropic")) keys.get("anthropic").asString else ""
-                            val openai = if (keys.has("openai")) keys.get("openai").asString else ""
+                            val editor = prefs.edit().putString("admin_keys_encrypted", encrypted)
+                            var anyKey = false
+                            for (entry in keys.entrySet()) {
+                                editor.putString("${entry.key}_admin_key", entry.value.asString)
+                                anyKey = true
+                            }
+                            editor.apply()
 
-                            prefs.edit()
-                                .putString("admin_keys_encrypted", encrypted)
-                                .putString("anthropic_admin_key", anthropic)
-                                .putString("openai_admin_key", openai)
-                                .apply()
-
-                            if (anthropic.isNotEmpty()) adminKeyInput.setText("****")
-                            if (openai.isNotEmpty()) openaiKeyInput.setText("****")
+                            setupBillingKeys() // UI 갱신
                             Toast.makeText(this@MainActivity, "🔓 키 복원 완료", Toast.LENGTH_SHORT).show()
-                            if (anthropic.isNotEmpty() || openai.isNotEmpty()) fetchAdminCosts()
+                            if (anyKey) fetchAdminCosts()
                         } catch (_: Exception) {
                             Toast.makeText(this@MainActivity, "키 데이터 파싱 실패", Toast.LENGTH_SHORT).show()
                         }
@@ -668,12 +845,12 @@ class MainActivity : AppCompatActivity() {
         val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
         updateObsUI(obsLoggedIn)
 
-        // Admin API 키
-        val anthropicKey = prefs.getString("anthropic_admin_key", "")
-        if (!anthropicKey.isNullOrEmpty()) adminKeyInput.setText("****")
-        val openaiKey = prefs.getString("openai_admin_key", "")
-        if (!openaiKey.isNullOrEmpty()) openaiKeyInput.setText("****")
-        if (!anthropicKey.isNullOrEmpty() || !openaiKey.isNullOrEmpty()) fetchAdminCosts()
+        // Billing API 키 (동적)
+        setupBillingKeys()
+        val hasAnyKey = BILLING_AI_OPTIONS.any { (keyId, _, _) ->
+            (prefs.getString("${keyId}_admin_key", "") ?: "").isNotEmpty()
+        }
+        if (hasAnyKey) fetchAdminCosts()
 
         val lastUsage = prefs.getString("last_usage", null)
         if (lastUsage != null) displayUsageFromJson(lastUsage)

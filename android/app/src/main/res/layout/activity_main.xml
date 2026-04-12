@@ -2,14 +2,17 @@
 <ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    android:background="#1a1a2e">
+    android:background="#1a1a2e"
+    android:clipToPadding="false">
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:padding="24dp">
+        android:padding="24dp"
+        android:paddingBottom="80dp">
 
+        <!-- 헤더 -->
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
@@ -25,14 +28,15 @@
             android:text=""
             android:textColor="#888899"
             android:textSize="14sp"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginBottom="12dp" />
 
+        <!-- 로그인 상태 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
             android:gravity="center_vertical"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="12dp">
 
             <TextView
                 android:id="@+id/loginStatus"
@@ -63,224 +67,41 @@
                 android:visibility="gone" />
         </LinearLayout>
 
+        <!-- 사용량 카드 (항상 보임) -->
         <LinearLayout
             android:id="@+id/modelsContainer"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="16dp" />
+            android:layout_marginBottom="8dp" />
 
-        <!-- 버튼 3개: 모니터링 + 오버레이 + 새로고침 -->
+        <!-- 버튼 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginBottom="8dp">
+            android:layout_marginBottom="12dp">
 
             <Button
                 android:id="@+id/toggleButton"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="44dp"
                 android:layout_weight="1"
                 android:text="모니터링 시작"
                 android:backgroundTint="#c084fc"
                 android:textColor="#ffffff"
+                android:textSize="13sp"
                 android:layout_marginEnd="4dp" />
 
             <Button
                 android:id="@+id/refreshButton"
                 android:layout_width="0dp"
-                android:layout_height="48dp"
+                android:layout_height="44dp"
                 android:layout_weight="1"
                 android:text="새로고침"
                 android:backgroundTint="#2a2a4a"
-                android:textColor="#e0e0e0" />
-        </LinearLayout>
-
-        <Button
-            android:id="@+id/overlayButton"
-            android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:text="플로팅 오버레이 켜기"
-            android:backgroundTint="#22223a"
-            android:textColor="#c084fc"
-            android:textSize="13sp"
-            android:layout_marginBottom="4dp" />
-
-        <!-- 플로팅 정보량 모드 -->
-        <Spinner
-            android:id="@+id/overlayModeSpinner"
-            android:layout_width="match_parent"
-            android:layout_height="36dp"
-            android:background="#22223a"
-            android:layout_marginBottom="8dp" />
-
-        <!-- 오랑붕쌤 연결 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:gravity="center_vertical"
-            android:layout_marginBottom="8dp">
-
-            <TextView
-                android:id="@+id/obsStatus"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="오랑붕쌤: 연결 안됨"
-                android:textColor="#888899"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/obsConnectButton"
-                android:layout_width="wrap_content"
-                android:layout_height="36dp"
-                android:text="오랑붕쌤 연결"
-                android:backgroundTint="#10a37f"
-                android:textColor="#ffffff"
-                android:textSize="12sp" />
-        </LinearLayout>
-
-        <!-- Admin API 키 -->
-        <LinearLayout
-            android:id="@+id/adminApiSection"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="vertical"
-            android:layout_marginBottom="8dp">
-
-            <TextView
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Admin API 키 (실제 청구 비교용)"
-                android:textColor="#888899"
-                android:textSize="11sp"
-                android:layout_marginBottom="4dp" />
-
-            <!-- Anthropic -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="4dp">
-
-                <TextView
-                    android:layout_width="60dp"
-                    android:layout_height="40dp"
-                    android:text="Claude"
-                    android:textColor="#c96442"
-                    android:textSize="11sp"
-                    android:gravity="center_vertical" />
-
-                <EditText
-                    android:id="@+id/adminKeyInput"
-                    android:layout_width="0dp"
-                    android:layout_height="40dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/input_background"
-                    android:textColor="#e0e0e0"
-                    android:textColorHint="#555566"
-                    android:hint="sk-ant-admin-..."
-                    android:inputType="textPassword"
-                    android:padding="8dp"
-                    android:textSize="11sp"
-                    android:layout_marginEnd="4dp" />
-
-                <Button
-                    android:id="@+id/adminKeySave"
-                    android:layout_width="wrap_content"
-                    android:layout_height="40dp"
-                    android:text="저장"
-                    android:backgroundTint="#2a2a4a"
-                    android:textColor="#c084fc"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <!-- OpenAI -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="4dp">
-
-                <TextView
-                    android:layout_width="60dp"
-                    android:layout_height="40dp"
-                    android:text="GPT"
-                    android:textColor="#10a37f"
-                    android:textSize="11sp"
-                    android:gravity="center_vertical" />
-
-                <EditText
-                    android:id="@+id/openaiKeyInput"
-                    android:layout_width="0dp"
-                    android:layout_height="40dp"
-                    android:layout_weight="1"
-                    android:background="@drawable/input_background"
-                    android:textColor="#e0e0e0"
-                    android:textColorHint="#555566"
-                    android:hint="sk-admin-..."
-                    android:inputType="textPassword"
-                    android:padding="8dp"
-                    android:textSize="11sp"
-                    android:layout_marginEnd="4dp" />
-
-                <Button
-                    android:id="@+id/openaiKeySave"
-                    android:layout_width="wrap_content"
-                    android:layout_height="40dp"
-                    android:text="저장"
-                    android:backgroundTint="#2a2a4a"
-                    android:textColor="#c084fc"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="4dp">
-
-                <Button
-                    android:id="@+id/adminKeyBackup"
-                    android:layout_width="0dp"
-                    android:layout_height="36dp"
-                    android:layout_weight="1"
-                    android:text="☁️ Drive에 백업"
-                    android:backgroundTint="#22223a"
-                    android:textColor="#10a37f"
-                    android:textSize="11sp"
-                    android:layout_marginEnd="4dp" />
-
-                <Button
-                    android:id="@+id/adminKeyRestore"
-                    android:layout_width="0dp"
-                    android:layout_height="36dp"
-                    android:layout_weight="1"
-                    android:text="☁️ Drive에서 복원"
-                    android:backgroundTint="#22223a"
-                    android:textColor="#c084fc"
-                    android:textSize="11sp" />
-            </LinearLayout>
-
-            <TextView
-                android:id="@+id/adminKeyStatus"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="키 입력 후 저장 → PIN 설정 → 암호화 저장됨\n복원 후 **** 표시 = 키가 안전하게 로드된 상태"
-                android:textColor="#555566"
-                android:textSize="10sp"
-                android:layout_marginTop="4dp" />
-
-            <TextView
-                android:id="@+id/adminCostText"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text=""
-                android:textColor="#888899"
-                android:textSize="11sp"
-                android:layout_marginTop="4dp" />
+                android:textColor="#e0e0e0"
+                android:textSize="13sp" />
         </LinearLayout>
 
         <TextView
@@ -289,7 +110,8 @@
             android:layout_height="wrap_content"
             android:text="연결 안 됨"
             android:textColor="#888899"
-            android:textSize="12sp"
+            android:textSize="11sp"
+            android:gravity="center"
             android:layout_marginBottom="16dp" />
 
         <!-- API 요금 섹션 -->
@@ -394,90 +216,349 @@
                 android:padding="8dp" />
         </LinearLayout>
 
-        <!-- 설정 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="설정"
-            android:textColor="#c084fc"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="12dp" />
+        <!-- ═══ 접이식 섹션들 ═══ -->
 
-        <!-- 표시 모드 -->
-        <TextView
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="표시 모드"
-            android:textColor="#888899"
-            android:textSize="12sp"
-            android:layout_marginBottom="4dp" />
-
-        <RadioGroup
-            android:id="@+id/modeRadioGroup"
+        <!-- ▸ 플로팅 오버레이 -->
+        <LinearLayout
+            android:id="@+id/sectionOverlay"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="vertical"
-            android:layout_marginBottom="16dp">
+            android:layout_marginBottom="4dp">
 
-            <RadioButton
-                android:id="@+id/modeClaudeOnly"
+            <TextView
+                android:id="@+id/sectionOverlayHeader"
                 android:layout_width="match_parent"
-                android:layout_height="36dp"
-                android:text="Claude 단독 (세션 %, 주간 %)"
-                android:textColor="#e0e0e0"
-                android:textSize="13sp"
-                android:buttonTint="#c084fc"
-                android:checked="true" />
+                android:layout_height="44dp"
+                android:text="▸ 플로팅 오버레이"
+                android:textColor="#c084fc"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:background="#16213e" />
 
-            <RadioButton
-                android:id="@+id/modeApiCostOnly"
+            <LinearLayout
+                android:id="@+id/sectionOverlayBody"
                 android:layout_width="match_parent"
-                android:layout_height="36dp"
-                android:text="API 요금만 (오늘 + 이번 달)"
-                android:textColor="#e0e0e0"
-                android:textSize="13sp"
-                android:buttonTint="#c084fc" />
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:padding="12dp"
+                android:background="#16213e">
 
-            <RadioButton
-                android:id="@+id/modeBoth"
-                android:layout_width="match_parent"
-                android:layout_height="36dp"
-                android:text="둘 다 (세션 % + 요금)"
-                android:textColor="#e0e0e0"
-                android:textSize="13sp"
-                android:buttonTint="#c084fc" />
-        </RadioGroup>
+                <Button
+                    android:id="@+id/overlayButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:text="플로팅 오버레이 켜기"
+                    android:backgroundTint="#22223a"
+                    android:textColor="#c084fc"
+                    android:textSize="13sp"
+                    android:layout_marginBottom="8dp" />
 
-        <!-- 갱신 주기 -->
-        <TextView
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="정보량"
+                    android:textColor="#888899"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <Spinner
+                    android:id="@+id/overlayModeSpinner"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:background="#22223a" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ▸ 연결 & Billing API -->
+        <LinearLayout
+            android:id="@+id/sectionBilling"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="갱신 주기 (초)"
-            android:textColor="#888899"
-            android:textSize="12sp"
-            android:layout_marginBottom="4dp" />
+            android:orientation="vertical"
+            android:layout_marginBottom="4dp">
 
-        <EditText
-            android:id="@+id/refreshInput"
-            android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:background="@drawable/input_background"
-            android:textColor="#e0e0e0"
-            android:textColorHint="#555566"
-            android:hint="120"
-            android:inputType="number"
-            android:padding="12dp"
-            android:textSize="14sp"
-            android:layout_marginBottom="16dp" />
+            <TextView
+                android:id="@+id/sectionBillingHeader"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="▸ 연결 &amp; Billing API"
+                android:textColor="#c084fc"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:background="#16213e" />
 
-        <Button
-            android:id="@+id/saveButton"
+            <LinearLayout
+                android:id="@+id/sectionBillingBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:padding="12dp"
+                android:background="#16213e">
+
+                <!-- 오랑붕쌤 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginBottom="12dp">
+
+                    <TextView
+                        android:id="@+id/obsStatus"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:text="오랑붕쌤: 연결 안됨"
+                        android:textColor="#888899"
+                        android:textSize="12sp" />
+
+                    <Button
+                        android:id="@+id/obsConnectButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="오랑붕쌤 연결"
+                        android:backgroundTint="#10a37f"
+                        android:textColor="#ffffff"
+                        android:textSize="12sp" />
+                </LinearLayout>
+
+                <!-- Billing API 키 (동적) -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Billing API 키"
+                    android:textColor="#888899"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:id="@+id/billingKeysContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical" />
+
+                <!-- 키 추가 버튼 -->
+                <Button
+                    android:id="@+id/addBillingKeyButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:text="+ 다른 AI Billing 키 추가"
+                    android:backgroundTint="#22223a"
+                    android:textColor="#888899"
+                    android:textSize="11sp"
+                    android:layout_marginTop="4dp"
+                    android:layout_marginBottom="8dp" />
+
+                <!-- 백업/복원 -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="4dp">
+
+                    <Button
+                        android:id="@+id/adminKeyBackup"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="☁️ Drive에 백업"
+                        android:backgroundTint="#22223a"
+                        android:textColor="#10a37f"
+                        android:textSize="11sp"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/adminKeyRestore"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="☁️ Drive에서 복원"
+                        android:backgroundTint="#22223a"
+                        android:textColor="#c084fc"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <TextView
+                    android:id="@+id/adminKeyStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="키 입력 후 저장 → PIN 설정 → 암호화 저장됨"
+                    android:textColor="#555566"
+                    android:textSize="10sp"
+                    android:layout_marginTop="2dp" />
+
+                <TextView
+                    android:id="@+id/adminCostText"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text=""
+                    android:textColor="#888899"
+                    android:textSize="11sp"
+                    android:layout_marginTop="4dp" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ▸ 스킨 -->
+        <LinearLayout
+            android:id="@+id/sectionSkin"
             android:layout_width="match_parent"
-            android:layout_height="48dp"
-            android:text="설정 저장"
-            android:backgroundTint="#2a2a4a"
-            android:textColor="#c084fc" />
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:id="@+id/sectionSkinHeader"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="▸ 스킨"
+                android:textColor="#c084fc"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:background="#16213e" />
+
+            <LinearLayout
+                android:id="@+id/sectionSkinBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:padding="12dp"
+                android:background="#16213e">
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/skinGrid"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content" />
+
+                <!-- 심플하게 HorizontalScrollView로 대체 -->
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/skinContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- ▸ 설정 -->
+        <LinearLayout
+            android:id="@+id/sectionSettings"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:layout_marginBottom="4dp">
+
+            <TextView
+                android:id="@+id/sectionSettingsHeader"
+                android:layout_width="match_parent"
+                android:layout_height="44dp"
+                android:text="▸ 설정"
+                android:textColor="#c084fc"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:gravity="center_vertical"
+                android:paddingStart="8dp"
+                android:background="#16213e" />
+
+            <LinearLayout
+                android:id="@+id/sectionSettingsBody"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical"
+                android:visibility="gone"
+                android:padding="12dp"
+                android:background="#16213e">
+
+                <!-- 표시 모드 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="표시 모드"
+                    android:textColor="#888899"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
+
+                <RadioGroup
+                    android:id="@+id/modeRadioGroup"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="vertical"
+                    android:layout_marginBottom="16dp">
+
+                    <RadioButton
+                        android:id="@+id/modeClaudeOnly"
+                        android:layout_width="match_parent"
+                        android:layout_height="36dp"
+                        android:text="Claude 단독 (세션 %, 주간 %)"
+                        android:textColor="#e0e0e0"
+                        android:textSize="13sp"
+                        android:buttonTint="#c084fc"
+                        android:checked="true" />
+
+                    <RadioButton
+                        android:id="@+id/modeApiCostOnly"
+                        android:layout_width="match_parent"
+                        android:layout_height="36dp"
+                        android:text="API 요금만 (오늘 + 이번 달)"
+                        android:textColor="#e0e0e0"
+                        android:textSize="13sp"
+                        android:buttonTint="#c084fc" />
+
+                    <RadioButton
+                        android:id="@+id/modeBoth"
+                        android:layout_width="match_parent"
+                        android:layout_height="36dp"
+                        android:text="둘 다 (세션 % + 요금)"
+                        android:textColor="#e0e0e0"
+                        android:textSize="13sp"
+                        android:buttonTint="#c084fc" />
+                </RadioGroup>
+
+                <!-- 갱신 주기 -->
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="갱신 주기 (초)"
+                    android:textColor="#888899"
+                    android:textSize="12sp"
+                    android:layout_marginBottom="4dp" />
+
+                <EditText
+                    android:id="@+id/refreshInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="120"
+                    android:inputType="number"
+                    android:padding="12dp"
+                    android:textSize="14sp"
+                    android:layout_marginBottom="12dp" />
+
+                <Button
+                    android:id="@+id/saveButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="44dp"
+                    android:text="설정 저장"
+                    android:backgroundTint="#2a2a4a"
+                    android:textColor="#c084fc" />
+            </LinearLayout>
+        </LinearLayout>
 
     </LinearLayout>
 </ScrollView>
