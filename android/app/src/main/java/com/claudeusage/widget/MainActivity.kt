@@ -379,13 +379,31 @@ class MainActivity : AppCompatActivity() {
                         try {
                             val json = com.google.gson.JsonParser.parseString(body).asJsonObject
                             var claudeActual = 0.0
+
+                            // 응답 구조 탐색: data 배열의 각 bucket에서 비용 추출
                             val data = json.getAsJsonArray("data")
-                            data?.forEach { bucket ->
-                                claudeActual += bucket.asJsonObject.get("cost")?.asDouble ?: 0.0
+                            if (data != null && data.size() > 0) {
+                                // 첫 번째 bucket의 키 목록을 표시 (디버깅)
+                                val firstBucket = data[0].asJsonObject
+                                val keys = firstBucket.keySet().joinToString(", ")
+                                lines.add("Claude 응답 필드: $keys")
+
+                                data.forEach { bucket ->
+                                    val b = bucket.asJsonObject
+                                    // 가능한 모든 비용 필드명 시도
+                                    claudeActual += b.get("cost_usd")?.asDouble
+                                        ?: b.get("cost")?.asDouble
+                                        ?: b.get("spend")?.asDouble
+                                        ?: b.get("amount")?.asDouble
+                                        ?: b.get("total_cost")?.asDouble
+                                        ?: b.get("cost_cents")?.let { it.asDouble / 100.0 }
+                                        ?: 0.0
+                                }
                             }
                             if (claudeActual == 0.0) {
                                 claudeActual = json.get("total_cost")?.asDouble
-                                    ?: json.get("cost")?.asDouble ?: 0.0
+                                    ?: json.get("cost")?.asDouble
+                                    ?: json.get("spend")?.asDouble ?: 0.0
                             }
 
                             lines.add("Claude 이번달 비교:")
