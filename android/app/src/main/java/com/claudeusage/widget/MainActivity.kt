@@ -486,14 +486,14 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 // PIN 입력 받기
-                val pinInput = EditText(this).apply {
+                val pinInput = EditText(this@MainActivity).apply {
                     hint = "백업 시 설정한 PIN"
                     inputType = android.text.InputType.TYPE_CLASS_NUMBER or
                         android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
                     setPadding(48, 24, 48, 24)
                 }
 
-                AlertDialog.Builder(this)
+                AlertDialog.Builder(this@MainActivity)
                     .setTitle("🔓 키 복원")
                     .setMessage("암호화 해제 PIN을 입력하세요")
                     .setView(pinInput)
@@ -501,7 +501,7 @@ class MainActivity : AppCompatActivity() {
                         val pin = pinInput.text.toString()
                         val decrypted = KeyEncryption.decrypt(encrypted, pin)
                         if (decrypted == null) {
-                            Toast.makeText(this, "❌ PIN이 틀립니다", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "❌ PIN이 틀립니다", Toast.LENGTH_SHORT).show()
                             return@setPositiveButton
                         }
                         try {
@@ -517,10 +517,10 @@ class MainActivity : AppCompatActivity() {
 
                             if (anthropic.isNotEmpty()) adminKeyInput.setText("****")
                             if (openai.isNotEmpty()) openaiKeyInput.setText("****")
-                            Toast.makeText(this, "🔓 키 복원 완료", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "🔓 키 복원 완료", Toast.LENGTH_SHORT).show()
                             if (anthropic.isNotEmpty() || openai.isNotEmpty()) fetchAdminCosts()
                         } catch (_: Exception) {
-                            Toast.makeText(this, "키 데이터 파싱 실패", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "키 데이터 파싱 실패", Toast.LENGTH_SHORT).show()
                         }
                     }
                     .setNegativeButton("취소", null)
