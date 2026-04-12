@@ -299,30 +299,55 @@ class UsageMonitorService : Service() {
         finishScraping()
     }
 
-    // ── 오랑붕쌤 Drive API 직접 호출 ──
+    // ── 비용 데이터 통합 fetch (Billing 우선, Drive 보조) ──
     private fun fetchObsCostInBackground() {
         if (isObsFetching) return
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
         if (mode == DisplayMode.CLAUDE_ONLY) return
 
-        val token = prefs.getString("google_oauth_token", null)
-        if (token.isNullOrEmpty()) return
-
         isObsFetching = true
         Thread {
             try {
-                val result = DriveApiClient.fetchCostFromDrive(token)
-
-                if (result.tokenExpired) {
-                    // 토큰 만료 → obs_logged_in 해제
-                    prefs.edit().putBoolean("obs_logged_in", false)
-                        .remove("google_oauth_token").apply()
-                    isObsFetching = false
-                    return@Thread
+                // 1) 오랑붕쌤 추정 데이터 (Drive)
+                var estimatedData: ApiCostData? = null
+                val token = prefs.getString("google_oauth_token", null)
+                if (!token.isNullOrEmpty()) {
+                    val driveResult = DriveApiClient.fetchCostFromDrive(token)
+                    if (driveResult.tokenExpired) {
+                        prefs.edit().putBoolean("obs_logged_in", false)
+                            .remove("google_oauth_token").apply()
+                    } else {
+                        estimatedData = driveResult.costData
+                    }
                 }
 
-                val costData = result.costData
+                // 2) Billing API 실제 비용 + 병합
+                val anthropicKey = prefs.getString("anthropic_admin_key", null)
+                val openaiKey = prefs.getString("openai_admin_key", null)
+                val hasBillingKeys = !anthropicKey.isNullOrEmpty() || !openaiKey.isNullOrEmpty()
+
+                // 구독 정보 로드
+                val subsJson = prefs.getString("subscriptions", null)
+                val subscriptions = if (subsJson != null) {
+                    try { Gson().fromJson(subsJson, Array<Subscription>::class.java).toList() }
+                    catch (_: Exception) { emptyList() }
+                } else emptyList<Subscription>()
+
+                val costData = if (hasBillingKeys) {
+                    // Billing API 호출 → 추정치와 병합
+                    val merged = BillingApiClient.fetchAndMerge(
+                        anthropicKey = anthropicKey,
+                        openaiKey = openaiKey,
+                        estimatedData = estimatedData,
+                        subscriptions = subscriptions,
+                    )
+                    merged.costData
+                } else {
+                    // Billing 키 없으면 추정 데이터만 사용
+                    estimatedData?.copy(subscriptions = subscriptions)
+                }
+
                 if (costData != null) {
                     val costJson = Gson().toJson(costData)
                     prefs.edit().putString("last_api_cost", costJson).apply()

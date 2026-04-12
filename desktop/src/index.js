@@ -21,7 +21,98 @@ const AI_DEFS = {
   perp:   { name: 'Perplexity', color: '#20808d', url: 'https://www.perplexity.ai/settings/api' },
 };
 
-// 초기 로딩
+// ══════════════════════════════
+//  스킨 시스템
+// ══════════════════════════════
+const SKINS = [
+  { id: 'default',       label: '기본',     emoji: '🌙', preview: 'linear-gradient(135deg, #1a1a2e, #16213e)' },
+  { id: 'spring',        label: '봄',       emoji: '🌸', preview: 'linear-gradient(135deg, #ffe4eb, #fff5f5)' },
+  { id: 'summer',        label: '여름',     emoji: '🌊', preview: 'linear-gradient(135deg, #c8ebff, #e8f4f8)' },
+  { id: 'autumn',        label: '가을',     emoji: '🍂', preview: 'linear-gradient(135deg, #fae6c8, #faf5ef)' },
+  { id: 'winter',        label: '겨울',     emoji: '❄️', preview: 'linear-gradient(135deg, #dcebff, #eef2f7)' },
+  { id: 'fluffy-pink',   label: '몽글핑크', emoji: '🩷', preview: 'linear-gradient(135deg, #ffdcf0, #fff0f6)' },
+  { id: 'fluffy-purple', label: '몽글퍼플', emoji: '💜', preview: 'linear-gradient(135deg, #e6d7ff, #f5f0ff)' },
+  { id: 'fluffy-mint',   label: '몽글민트', emoji: '💚', preview: 'linear-gradient(135deg, #c8f5e6, #f0faf7)' },
+  { id: 'fluffy-yellow', label: '몽글옐로', emoji: '💛', preview: 'linear-gradient(135deg, #fff5b4, #fffde8)' },
+  { id: 'fluffy-sky',    label: '몽글스카이', emoji: '🩵', preview: 'linear-gradient(135deg, #d2e6ff, #f0f6ff)' },
+];
+
+let currentSkin = 'default';
+let customSkinImage = null; // Base64 data URL
+
+function applySkin(skinId) {
+  currentSkin = skinId;
+  document.body.setAttribute('data-skin', skinId);
+
+  // 커스텀 스킨이면 배경 이미지 적용
+  if (skinId === 'custom' && customSkinImage) {
+    document.body.style.backgroundImage = `url(${customSkinImage})`;
+    document.body.style.backgroundSize = 'cover';
+    document.body.style.backgroundPosition = 'center';
+  } else {
+    document.body.style.backgroundImage = '';
+  }
+
+  // 스킨 그리드 active 표시
+  $$('.skin-item').forEach(el => {
+    el.classList.toggle('active', el.dataset.skin === skinId);
+  });
+
+  // 설정 저장
+  window.api.saveSettings({ skin: skinId, customSkinImage: skinId === 'custom' ? customSkinImage : undefined });
+}
+
+function renderSkinGrid() {
+  const grid = $('#skinGrid');
+  grid.innerHTML = '';
+
+  SKINS.forEach(skin => {
+    const item = document.createElement('div');
+    item.className = 'skin-item' + (currentSkin === skin.id ? ' active' : '');
+    item.dataset.skin = skin.id;
+    item.innerHTML = `
+      <div class="skin-preview" style="background:${skin.preview}">${skin.emoji}</div>
+      <div class="skin-label">${skin.label}</div>
+    `;
+    item.onclick = () => applySkin(skin.id);
+    grid.appendChild(item);
+  });
+
+  // 커스텀 (사진 업로드)
+  const customItem = document.createElement('div');
+  customItem.className = 'skin-item' + (currentSkin === 'custom' ? ' active' : '');
+  customItem.dataset.skin = 'custom';
+  if (customSkinImage) {
+    customItem.innerHTML = `
+      <div class="skin-preview" style="background:url(${customSkinImage}) center/cover">📷</div>
+      <div class="skin-label">내 사진</div>
+    `;
+  } else {
+    customItem.innerHTML = `
+      <div class="skin-upload-btn" style="width:100%;height:100%;aspect-ratio:auto">+</div>
+      <div class="skin-label">사진</div>
+    `;
+  }
+  customItem.onclick = () => {
+    $('#skinFileInput').click();
+  };
+  grid.appendChild(customItem);
+}
+
+$('#skinFileInput').onchange = (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    customSkinImage = ev.target.result;
+    applySkin('custom');
+    renderSkinGrid();
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+};
+
+// ── 초기 로딩 ──
 (async () => {
   const settings = await window.api.getSettings();
   intervalInput.value = settings.refreshInterval || 120;
@@ -34,6 +125,12 @@ const AI_DEFS = {
 
   // 플로팅 모드 복원
   if (settings.overlayMode) $('#overlayModeSelect').value = settings.overlayMode;
+
+  // 스킨 복원
+  currentSkin = settings.skin || 'default';
+  customSkinImage = settings.customSkinImage || null;
+  renderSkinGrid();
+  applySkin(currentSkin);
 
   const usage = await window.api.getUsage();
   if (usage) renderUsage(usage);
@@ -136,34 +233,22 @@ function promptPinAndRestore() {
   });
 }
 
-window.api.onAdminCostUpdate(({ results, estimated }) => {
+// Admin 비용 업데이트 (통합 Billing 시스템)
+window.api.onAdminCostUpdate(({ costData }) => {
+  if (!costData) return;
   const lines = [];
-  if (results.claude) {
-    if (results.claude.actual != null) {
-      lines.push(`Claude 실제: $${results.claude.actual.toFixed(4)}`);
-      const est = estimated?.claude || 0;
-      if (est > 0) {
-        const diff = results.claude.actual - est;
-        lines.push(`  차이: ${diff >= 0 ? '+' : ''}$${diff.toFixed(4)} (추정 $${est.toFixed(4)})`);
-      }
-    } else {
-      lines.push(`Claude: ${results.claude.error || '오류'}`);
+  lines.push(`소스: ${sourceLabel(costData.source)}`);
+  (costData.byAI || []).filter(ai => ai.monthCost > 0).forEach(ai => {
+    const tag = ai.source === 'billing' || ai.source === 'hybrid' ? '✓실제' : '~추정';
+    lines.push(`${ai.name}: $${ai.monthCost.toFixed(4)} ${tag}`);
+    if (ai.monthDiff != null) {
+      const sign = ai.monthDiff >= 0 ? '+' : '';
+      lines.push(`  추정대비 ${sign}$${ai.monthDiff.toFixed(4)}`);
     }
-  }
-  if (results.gpt) {
-    if (results.gpt.actual != null) {
-      lines.push(`GPT 실제: $${results.gpt.actual.toFixed(4)}`);
-      const est = estimated?.gpt || 0;
-      if (est > 0) {
-        const diff = results.gpt.actual - est;
-        lines.push(`  차이: ${diff >= 0 ? '+' : ''}$${diff.toFixed(4)} (추정 $${est.toFixed(4)})`);
-      }
-    } else {
-      lines.push(`GPT: ${results.gpt.error || '오류'}`);
-    }
-  }
-  $('#adminCostText').textContent = lines.join('\n') || 'Admin API 키를 저장하세요';
+  });
+  $('#adminCostText').textContent = lines.join('\n') || 'Billing API 키를 저장하세요';
 });
+
 logoutBtn.onclick = async () => {
   await window.api.logout();
   setLoginState(false);
@@ -187,6 +272,18 @@ function colorClass(pct) {
   if (pct >= 90) return 'red';
   if (pct >= 70) return 'yellow';
   return 'green';
+}
+
+function sourceLabel(src) {
+  if (src === 'billing') return '실제 청구';
+  if (src === 'hybrid') return '실제+추정';
+  return '추정';
+}
+
+function sourceBadgeClass(src) {
+  if (src === 'billing') return 'billing';
+  if (src === 'hybrid') return 'hybrid';
+  return 'estimated';
 }
 
 function renderUsage(data) {
@@ -223,6 +320,12 @@ function addCard(item) {
 function renderCost(data) {
   if (!data) return;
 
+  // 소스 뱃지
+  const badge = $('#costSourceBadge');
+  const src = data.source || 'estimated';
+  badge.textContent = sourceLabel(src);
+  badge.className = 'source-badge ' + sourceBadgeClass(src);
+
   $('#costToday').textContent = `$${data.todayTotal.toFixed(4)}`;
   $('#costTodayKrw').textContent = `≈${Math.round(data.todayTotal * 1450).toLocaleString()}원`;
   $('#costMonth').textContent = `$${data.monthTotal.toFixed(4)}`;
@@ -235,9 +338,15 @@ function renderCost(data) {
     const def = AI_DEFS[ai.aiId] || { name: ai.name, color: '#888', url: null };
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px';
+
+    // 소스 태그
+    const srcTag = ai.source === 'billing' || ai.source === 'hybrid'
+      ? '<span style="font-size:9px;color:#4caf50;margin-left:2px">✓</span>'
+      : '<span style="font-size:9px;color:#ff9800;margin-left:2px">~</span>';
+
     const nameEl = def.url
-      ? `<a href="#" class="ai-link" data-url="${def.url}" style="flex:1;color:${def.color};text-decoration:underline;cursor:pointer">${def.name}</a>`
-      : `<span style="flex:1;color:#aaa">${def.name}</span>`;
+      ? `<a href="#" class="ai-link" data-url="${def.url}" style="flex:1;color:${def.color};text-decoration:underline;cursor:pointer">${def.name}${srcTag}</a>`
+      : `<span style="flex:1;color:var(--text-sub)">${def.name}${srcTag}</span>`;
     row.innerHTML = `
       <div style="width:8px;height:8px;border-radius:50%;background:${def.color}"></div>
       ${nameEl}
@@ -253,4 +362,30 @@ function renderCost(data) {
       window.api.openExternal(el.dataset.url);
     };
   });
+
+  // 구독 표시
+  const subsEl = $('#costSubs');
+  const subs = data.subscriptions || [];
+  if (subs.length > 0) {
+    subsEl.style.display = '';
+    subsEl.innerHTML = '<div style="font-size:10px;color:var(--text-sub);margin-top:8px;margin-bottom:4px">구독</div>';
+    subs.filter(s => s.isActive !== false).forEach(sub => {
+      const def = AI_DEFS[sub.aiId] || { name: sub.aiId, color: '#888' };
+      const row = document.createElement('div');
+      row.className = 'sub-row';
+      row.innerHTML = `
+        <span class="sub-name" style="color:${def.color}">${def.name} ${sub.planName}</span>
+        <span class="sub-cost">$${sub.monthlyFee}/mo</span>
+      `;
+      subsEl.appendChild(row);
+    });
+    // 총합
+    const monthWithSubs = data.monthTotal + subs.filter(s => s.isActive !== false).reduce((s, sub) => s + (sub.monthlyFee || 0), 0);
+    const totalDiv = document.createElement('div');
+    totalDiv.className = 'sub-total';
+    totalDiv.textContent = `총 (API+구독): $${monthWithSubs.toFixed(2)} (≈${Math.round(monthWithSubs * 1450).toLocaleString()}원)`;
+    subsEl.appendChild(totalDiv);
+  } else {
+    subsEl.style.display = 'none';
+  }
 }

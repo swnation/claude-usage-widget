@@ -11,13 +11,13 @@ const USAGE_URL = 'https://claude.ai/settings/usage';
 const OBS_URL = 'https://swnation.github.io/OrangBoongSSem/';
 const SCRAPE_TIMEOUT_MS = 30000;
 
-// ── AI 정의 (오랑붕쌤과 동일) ──
+// ── AI 정의 ──
 const AI_DEFS = {
-  gpt:    { name: 'GPT',        color: '#10a37f', usageUrl: 'https://platform.openai.com/usage' },
-  claude: { name: 'Claude',     color: '#c96442', usageUrl: 'https://console.anthropic.com/settings/billing' },
-  gemini: { name: 'Gemini',     color: '#4285f4', usageUrl: 'https://aistudio.google.com/apikey' },
-  grok:   { name: 'Grok',       color: '#1DA1F2', usageUrl: 'https://console.x.ai/' },
-  perp:   { name: 'Perplexity', color: '#20808d', usageUrl: 'https://www.perplexity.ai/settings/api' },
+  gpt:    { name: 'GPT',        color: '#10a37f', usageUrl: 'https://platform.openai.com/usage', hasBillingApi: true },
+  claude: { name: 'Claude',     color: '#c96442', usageUrl: 'https://console.anthropic.com/settings/billing', hasBillingApi: true },
+  gemini: { name: 'Gemini',     color: '#4285f4', usageUrl: 'https://aistudio.google.com/apikey', hasBillingApi: false },
+  grok:   { name: 'Grok',       color: '#1DA1F2', usageUrl: 'https://console.x.ai/', hasBillingApi: false },
+  perp:   { name: 'Perplexity', color: '#20808d', usageUrl: 'https://www.perplexity.ai/settings/api', hasBillingApi: false },
 };
 
 // ── 상태 ──
@@ -281,69 +281,199 @@ async function driveGet(urlPath, token) {
 
 let isObsFetching = false;
 
-async function scrapeObsCost() {
-  if (isObsFetching) return;
-  if (!settings.googleToken) return;
-
-  isObsFetching = true;
+// ── 오랑붕쌤 Drive에서 추정 비용만 가져오��� ──
+async function fetchDriveEstimated() {
+  if (!settings.googleToken) return null;
   const token = settings.googleToken;
 
-  try {
-    const now = new Date(Date.now() + 9*3600*1000);
-    const today = now.toISOString().slice(0,10);
-    const month = today.slice(0,7);
-    let todayTotal = 0, monthTotal = 0;
-    const byAIMap = {};
-    let anySuccess = false;
+  const now = new Date(Date.now() + 9*3600*1000);
+  const today = now.toISOString().slice(0,10);
+  const month = today.slice(0,7);
+  let todayTotal = 0, monthTotal = 0;
+  const byAIMap = {};
+  let anySuccess = false;
 
-    for (const [folderName, masterFile] of OBS_DOMAINS) {
-      try {
-        // 폴더 찾기
-        const q1 = encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-        const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q1}&fields=files(id)`, token);
-        if (!folders?.files?.length) continue;
-        const folderId = folders.files[0].id;
+  for (const [folderName, masterFile] of OBS_DOMAINS) {
+    try {
+      const q1 = encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
+      const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q1}&fields=files(id)`, token);
+      if (!folders?.files?.length) continue;
+      const folderId = folders.files[0].id;
 
-        // 마스터 파일 찾기
-        const q2 = encodeURIComponent(`name='${masterFile}' and '${folderId}' in parents and trashed=false`);
-        const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q2}&fields=files(id)`, token);
-        if (!files?.files?.length) continue;
-        const fileId = files.files[0].id;
+      const q2 = encodeURIComponent(`name='${masterFile}' and '${folderId}' in parents and trashed=false`);
+      const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q2}&fields=files(id)`, token);
+      if (!files?.files?.length) continue;
+      const fileId = files.files[0].id;
 
-        // 파일 읽기
-        const master = await driveGet(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, token);
-        if (!master?.usage_data) continue;
+      const master = await driveGet(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, token);
+      if (!master?.usage_data) continue;
 
-        anySuccess = true;
-        for (const [date, aiMap] of Object.entries(master.usage_data)) {
-          for (const [aiId, info] of Object.entries(aiMap)) {
-            const cost = info.cost || 0;
-            if (!byAIMap[aiId]) byAIMap[aiId] = { today: 0, month: 0 };
-            if (date === today) { todayTotal += cost; byAIMap[aiId].today += cost; }
-            if (date.startsWith(month)) { monthTotal += cost; byAIMap[aiId].month += cost; }
-          }
-        }
-      } catch (e) {
-        if (e.message === 'TOKEN_EXPIRED') {
-          settings.googleToken = null;
-          settings.obsLoggedIn = false;
-          saveSettings();
-          broadcastStatus('토큰 만료 — 오랑붕쌤 재연결 필요');
-          isObsFetching = false;
-          return;
+      anySuccess = true;
+      for (const [date, aiMap] of Object.entries(master.usage_data)) {
+        for (const [aiId, info] of Object.entries(aiMap)) {
+          const cost = info.cost || 0;
+          if (!byAIMap[aiId]) byAIMap[aiId] = { today: 0, month: 0 };
+          if (date === today) { todayTotal += cost; byAIMap[aiId].today += cost; }
+          if (date.startsWith(month)) { monthTotal += cost; byAIMap[aiId].month += cost; }
         }
       }
+    } catch (e) {
+      if (e.message === 'TOKEN_EXPIRED') {
+        settings.googleToken = null;
+        settings.obsLoggedIn = false;
+        saveSettings();
+        broadcastStatus('토큰 만료 — 오랑붕쌤 재연결 필요');
+        return null;
+      }
+    }
+  }
+
+  if (!anySuccess) return null;
+  return { todayTotal, monthTotal, byAIMap, bySys: [{ systemName: '오랑붕쌤', todayCost: todayTotal, monthCost: monthTotal }] };
+}
+
+// ── Billing API 호출 ──
+async function fetchBillingApi(aiId, key) {
+  const kstNow = new Date(Date.now() + 9*3600*1000);
+  const today = kstNow.toISOString().slice(0,10);
+
+  if (aiId === 'claude') {
+    const now = new Date();
+    const startingAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00Z`;
+    const endingAt = now.toISOString();
+    const res = await adminApiRequest('api.anthropic.com',
+      `/v1/organizations/cost_report?starting_at=${startingAt}&ending_at=${endingAt}&bucket_width=1d`, {
+      'x-api-key': key, 'anthropic-version': '2023-06-01',
+    });
+    if (!res.ok) return { error: res.error || `HTTP ${res.status}` };
+    let monthCents = 0, todayCents = 0;
+    (res.data?.data || []).forEach(bucket => {
+      let bucketTotal = 0;
+      (bucket.results || []).forEach(r => { bucketTotal += parseFloat(r.amount || '0'); });
+      monthCents += bucketTotal;
+      if ((bucket.started_at || '').startsWith(today)) todayCents += bucketTotal;
+    });
+    return { todayCost: todayCents / 100, monthCost: monthCents / 100 };
+  }
+
+  if (aiId === 'gpt') {
+    const now = new Date();
+    const monthStartEpoch = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+    const nowEpoch = Math.floor(now.getTime() / 1000);
+    const res = await adminApiRequest('api.openai.com',
+      `/v1/organization/costs?start_time=${monthStartEpoch}&end_time=${nowEpoch}&bucket_width=1d`, {
+      'Authorization': `Bearer ${key}`,
+    });
+    if (!res.ok) return { error: res.error || `HTTP ${res.status}` };
+    let monthTotal = 0, todayTotal = 0;
+    (res.data?.data || []).forEach(bucket => {
+      let bucketTotal = 0;
+      (bucket.results || []).forEach(r => { bucketTotal += r.amount?.value || 0; });
+      monthTotal += bucketTotal;
+      if (bucket.start_time) {
+        const bucketDate = new Date(bucket.start_time * 1000 + 9*3600*1000).toISOString().slice(0,10);
+        if (bucketDate === today) todayTotal += bucketTotal;
+      }
+    });
+    return { todayCost: todayTotal, monthCost: monthTotal };
+  }
+
+  return { error: 'Unsupported AI' };
+}
+
+// ── 통합 비용 fetch (Billing 우선 + Drive 보조) ──
+async function scrapeObsCost() {
+  if (isObsFetching) return;
+  isObsFetching = true;
+
+  try {
+    const hasBillingKeys = settings.adminKey || settings.openaiKey;
+
+    // 1) 오랑붕쌤 추정 데이터
+    const estimated = await fetchDriveEstimated();
+
+    // 2) Billing API 호출
+    const billingResults = {};
+    if (settings.adminKey) {
+      billingResults.claude = await fetchBillingApi('claude', settings.adminKey);
+    }
+    if (settings.openaiKey) {
+      billingResults.gpt = await fetchBillingApi('gpt', settings.openaiKey);
     }
 
-    if (anySuccess) {
-      const byAI = Object.entries(byAIMap).map(([aiId, data]) => {
-        const def = AI_DEFS[aiId] || { name: aiId, color: '#888' };
-        return { aiId, name: def.name, color: def.color, todayCost: data.today, monthCost: data.month };
-      }).sort((a, b) => b.monthCost - a.monthCost);
+    const hasBilling = Object.values(billingResults).some(r => !r.error);
+    const hasEstimated = estimated != null;
 
-      costData = { todayTotal, monthTotal, byAI, bySys: [{ systemName: '오랑붕쌤', todayCost: todayTotal, monthCost: monthTotal }], lastUpdated: new Date().toISOString() };
-      broadcastCost();
-      updateTrayFromUsage();
+    if (!hasBilling && !hasEstimated) { isObsFetching = false; return; }
+
+    // 3) AI별 병합
+    const estByAI = estimated?.byAIMap || {};
+    const allAiIds = new Set([...Object.keys(billingResults), ...Object.keys(estByAI)]);
+    let todayTotal = 0, monthTotal = 0;
+    let billingTodaySum = 0, billingMonthSum = 0;
+    let estTodaySum = 0, estMonthSum = 0;
+
+    const byAI = [];
+    for (const aiId of allAiIds) {
+      const def = AI_DEFS[aiId] || { name: aiId, color: '#888' };
+      const billing = billingResults[aiId];
+      const est = estByAI[aiId];
+
+      const billingToday = (billing && !billing.error) ? billing.todayCost : null;
+      const billingMonth = (billing && !billing.error) ? billing.monthCost : null;
+      const estimatedToday = est?.today || 0;
+      const estimatedMonth = est?.month || 0;
+
+      const effectiveToday = billingToday ?? estimatedToday;
+      const effectiveMonth = billingMonth ?? estimatedMonth;
+      todayTotal += effectiveToday;
+      monthTotal += effectiveMonth;
+
+      if (billingToday != null) billingTodaySum += billingToday;
+      if (billingMonth != null) billingMonthSum += billingMonth;
+      estTodaySum += estimatedToday;
+      estMonthSum += estimatedMonth;
+
+      // source 판단
+      let source = 'estimated';
+      if (billingMonth != null && estimatedMonth > 0) source = 'hybrid';
+      else if (billingMonth != null) source = 'billing';
+
+      byAI.push({
+        aiId, name: def.name, color: def.color,
+        todayCost: effectiveToday, monthCost: effectiveMonth,
+        billingToday, billingMonth, estimatedToday, estimatedMonth, source,
+        monthDiff: (billingMonth != null && estimatedMonth > 0) ? billingMonth - estimatedMonth : null,
+      });
+    }
+    byAI.sort((a, b) => b.monthCost - a.monthCost);
+
+    // 전체 소스
+    let source = 'estimated';
+    if (hasBilling && hasEstimated) source = 'hybrid';
+    else if (hasBilling) source = 'billing';
+
+    // 구독 정보
+    const subscriptions = settings.subscriptions || [];
+
+    costData = {
+      todayTotal, monthTotal, source,
+      billingToday: hasBilling ? billingTodaySum : null,
+      billingMonth: hasBilling ? billingMonthSum : null,
+      estimatedToday: hasEstimated ? estTodaySum : null,
+      estimatedMonth: hasEstimated ? estMonthSum : null,
+      byAI,
+      bySys: estimated?.bySys || [],
+      subscriptions,
+      lastUpdated: new Date().toISOString(),
+    };
+
+    broadcastCost();
+    updateTrayFromUsage();
+
+    // Admin 비교도 전송
+    if (hasBillingKeys && mainWin && !mainWin.isDestroyed()) {
+      mainWin.webContents.send('admin-cost-update', { costData });
     }
   } catch (_) {}
 
@@ -623,62 +753,10 @@ function adminApiRequest(hostname, path, headers) {
 }
 
 async function fetchAllAdminCosts() {
-  const results = { claude: null, gpt: null };
-
-  // Anthropic
-  if (settings.adminKey) {
-    const now = new Date();
-    const startingAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00Z`;
-    const endingAt = now.toISOString();
-    const res = await adminApiRequest('api.anthropic.com',
-      `/v1/organizations/cost_report?starting_at=${startingAt}&ending_at=${endingAt}&bucket_width=1d`, {
-      'x-api-key': settings.adminKey,
-      'anthropic-version': '2023-06-01',
-    });
-    if (res.ok) {
-      let claudeCents = 0;
-      // data[].results[].amount (센트 단위 문자열)
-      (res.data?.data || []).forEach(bucket => {
-        (bucket.results || []).forEach(r => {
-          claudeCents += parseFloat(r.amount || '0');
-        });
-      });
-      results.claude = { actual: claudeCents / 100 }; // 센트 → 달러
-    } else {
-      results.claude = { error: res.error || `HTTP ${res.status}` };
-    }
-  }
-
-  // OpenAI
-  if (settings.openaiKey) {
-    const now = new Date();
-    const monthStartEpoch = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
-    const nowEpoch = Math.floor(now.getTime() / 1000);
-    const res = await adminApiRequest('api.openai.com',
-      `/v1/organization/costs?start_time=${monthStartEpoch}&end_time=${nowEpoch}&bucket_width=1d`, {
-      'Authorization': `Bearer ${settings.openaiKey}`,
-    });
-    if (res.ok) {
-      let total = 0;
-      (res.data?.data || []).forEach(bucket => {
-        (bucket.results || []).forEach(r => { total += r.amount?.value || 0; });
-      });
-      results.gpt = { actual: total };
-    } else {
-      results.gpt = { error: res.error || `HTTP ${res.status}` };
-    }
-  }
-
-  // 추정치와 비교하여 전송
-  const estimated = {};
-  if (costData?.byAI) {
-    costData.byAI.forEach(ai => { estimated[ai.aiId] = ai.monthCost; });
-  }
-
-  if (mainWin && !mainWin.isDestroyed()) {
-    mainWin.webContents.send('admin-cost-update', { results, estimated });
-  }
-  return results;
+  // 이제 scrapeObsCost()가 Billing + Drive를 통합 처리하므로
+  // 이 함수는 즉시 통합 fetch를 트리거한다
+  await scrapeObsCost();
+  return costData;
 }
 
 // ────────────────────────────
@@ -784,6 +862,12 @@ ipcMain.handle('get-admin-keys', () => ({
   openai: settings.openaiKey ? '****' : '',
 }));
 ipcMain.handle('fetch-admin-cost', () => fetchAllAdminCosts());
+ipcMain.handle('get-subscriptions', () => settings.subscriptions || []);
+ipcMain.handle('save-subscriptions', (_, subs) => {
+  settings.subscriptions = subs;
+  saveSettings();
+  scrapeObsCost(); // 구독 변경 시 비용 재계산
+});
 ipcMain.handle('open-external', (_, url) => {
   const { shell } = require('electron');
   shell.openExternal(url);

@@ -16,6 +16,9 @@ contextBridge.exposeInMainWorld('api', {
   restoreAdminKeys: (pin) => ipcRenderer.invoke('restore-admin-keys', pin),
   getAdminKeys: () => ipcRenderer.invoke('get-admin-keys'),
   fetchAdminCost: () => ipcRenderer.invoke('fetch-admin-cost'),
+  // 구독 관리
+  getSubscriptions: () => ipcRenderer.invoke('get-subscriptions'),
+  saveSubscriptions: (subs) => ipcRenderer.invoke('save-subscriptions', subs),
   onObsStatus: (cb) => { ipcRenderer.on('obs-status', (_, s) => cb(s)); },
   onAdminCostUpdate: (cb) => { ipcRenderer.on('admin-cost-update', (_, d) => cb(d)); },
   quit: () => ipcRenderer.invoke('quit'),

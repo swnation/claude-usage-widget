@@ -2,7 +2,9 @@ package com.claudeusage.widget
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.PixelFormat
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -37,6 +39,27 @@ class FloatingOverlay private constructor(private val context: Context) {
         }
     }
 
+    // ── 스킨 정의 ──
+    data class SkinStyle(
+        val bgStartColor: Int,
+        val bgEndColor: Int,
+        val textColor: Int,
+        val cornerRadius: Float,
+    )
+
+    val SKIN_STYLES = mapOf(
+        "default" to SkinStyle(0xEB1a1a2e.toInt(), 0xEB16213e.toInt(), 0xFFe0e0e0.toInt(), 16f),
+        "spring" to SkinStyle(0xF0ffe4eb.toInt(), 0xF0fff5f5.toInt(), 0xFF5c3d4e.toInt(), 32f),
+        "summer" to SkinStyle(0xF0c8ebff.toInt(), 0xF0e8f4f8.toInt(), 0xFF1a4a5e.toInt(), 28f),
+        "autumn" to SkinStyle(0xF0fae6c8.toInt(), 0xF0faf5ef.toInt(), 0xFF5a3e1e.toInt(), 28f),
+        "winter" to SkinStyle(0xF0dcebff.toInt(), 0xF0eef2f7.toInt(), 0xFF2c3e5a.toInt(), 28f),
+        "fluffy-pink" to SkinStyle(0xF5ffdcf0.toInt(), 0xF5fff0f6.toInt(), 0xFF6e3050.toInt(), 40f),
+        "fluffy-purple" to SkinStyle(0xF5e6d7ff.toInt(), 0xF5f5f0ff.toInt(), 0xFF3e2060.toInt(), 40f),
+        "fluffy-mint" to SkinStyle(0xF5c8f5e6.toInt(), 0xF5f0faf7.toInt(), 0xFF1a4a3a.toInt(), 40f),
+        "fluffy-yellow" to SkinStyle(0xF5fff5b4.toInt(), 0xF5fffde8.toInt(), 0xFF5a4a10.toInt(), 40f),
+        "fluffy-sky" to SkinStyle(0xF5d2e6ff.toInt(), 0xF5f0f6ff.toInt(), 0xFF1a3060.toInt(), 40f),
+    )
+
     private var windowManager: WindowManager? = null
     private var overlayView: View? = null
     private val handler = Handler(Looper.getMainLooper())
@@ -48,12 +71,23 @@ class FloatingOverlay private constructor(private val context: Context) {
 
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
+        // 스킨 적용
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val skinId = prefs.getString("skin", "default") ?: "default"
+        val skin = SKIN_STYLES[skinId] ?: SKIN_STYLES["default"]!!
+
         val textView = TextView(context).apply {
             text = "세션 --%"
             textSize = 13f
-            setTextColor(0xFFe0e0e0.toInt())
-            setBackgroundColor(0xCC1a1a2e.toInt())
-            setPadding(24, 12, 24, 12)
+            setTextColor(skin.textColor)
+            background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(skin.bgStartColor, skin.bgEndColor)
+            ).apply {
+                cornerRadius = skin.cornerRadius
+            }
+            setPadding(24, 14, 24, 14)
+            elevation = if (skinId.startsWith("fluffy")) 8f else 4f
         }
 
         val params = WindowManager.LayoutParams(
