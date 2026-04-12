@@ -631,7 +631,7 @@ async function fetchAllAdminCosts() {
     const startingAt = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01T00:00:00Z`;
     const endingAt = now.toISOString();
     const res = await adminApiRequest('api.anthropic.com',
-      `/v1/organizations/cost_report?starting_at=${startingAt}&ending_at=${endingAt}&bucket_width=1mo`, {
+      `/v1/organizations/cost_report?starting_at=${startingAt}&ending_at=${endingAt}&bucket_width=1d`, {
       'x-api-key': settings.adminKey,
       'anthropic-version': '2023-06-01',
     });

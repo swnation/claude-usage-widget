@@ -360,7 +360,7 @@ class MainActivity : AppCompatActivity() {
                     val endingAt = now.toString()
                     val conn = java.net.URL(
                         "https://api.anthropic.com/v1/organizations/cost_report" +
-                        "?starting_at=$startingAt&ending_at=$endingAt&bucket_width=1mo"
+                        "?starting_at=$startingAt&ending_at=$endingAt&bucket_width=1d"
                     ).openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.setRequestProperty("x-api-key", anthropicKey)
@@ -376,8 +376,6 @@ class MainActivity : AppCompatActivity() {
                     val estClaude = estimated?.byAI?.find { it.aiId == "claude" }?.monthCost ?: 0.0
 
                     if (code == 200) {
-                        // 디버그: 응답 일부 표시
-                        lines.add("Claude ($code): ${body.take(200)}")
                         try {
                             val json = com.google.gson.JsonParser.parseString(body).asJsonObject
                             var claudeActual = 0.0
@@ -503,13 +501,14 @@ class MainActivity : AppCompatActivity() {
     private fun saveAdminKeyEncrypted(type: String, key: String, pin: String) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
-        // 기존 키 데이터 로드
-        val keysJson = prefs.getString("admin_keys_plain", "{}") ?: "{}"
-        val keys = try {
-            com.google.gson.Gson().fromJson(keysJson, com.google.gson.JsonObject::class.java)
-        } catch (_: Exception) { com.google.gson.JsonObject() }
+        // 기존 저장된 키들로부터 합쳐서 암호화
+        val keys = com.google.gson.JsonObject()
+        val existingClaude = prefs.getString("anthropic_admin_key", "") ?: ""
+        val existingGpt = prefs.getString("openai_admin_key", "") ?: ""
+        if (existingClaude.isNotEmpty()) keys.addProperty("anthropic", existingClaude)
+        if (existingGpt.isNotEmpty()) keys.addProperty("openai", existingGpt)
 
-        // 키 추가/업데이트
+        // 새 키로 덮어쓰기
         keys.addProperty(type, key)
         val keysStr = keys.toString()
 
