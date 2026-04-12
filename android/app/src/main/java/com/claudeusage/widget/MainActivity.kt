@@ -390,10 +390,11 @@ class MainActivity : AppCompatActivity() {
             // OpenAI Admin API
             if (openaiKey.isNotEmpty()) {
                 try {
-                    val monthStart = java.time.LocalDate.now().withDayOfMonth(1).toString()
-                    val tomorrow = java.time.LocalDate.now().plusDays(1).toString()
+                    val monthStartEpoch = java.time.LocalDate.now().withDayOfMonth(1)
+                        .atStartOfDay(java.time.ZoneOffset.UTC).toEpochSecond()
+                    val nowEpoch = java.time.Instant.now().epochSecond
                     val conn = java.net.URL(
-                        "https://api.openai.com/v1/organization/costs?start_date=$monthStart&end_date=$tomorrow"
+                        "https://api.openai.com/v1/organization/costs?start_time=$monthStartEpoch&end_time=$nowEpoch&bucket_width=1d"
                     ).openConnection() as java.net.HttpURLConnection
                     conn.requestMethod = "GET"
                     conn.setRequestProperty("Authorization", "Bearer $openaiKey")

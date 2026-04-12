@@ -646,10 +646,10 @@ async function fetchAllAdminCosts() {
   // OpenAI
   if (settings.openaiKey) {
     const now = new Date();
-    const monthStart = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-01`;
-    const tomorrow = new Date(now.getTime() + 86400000).toISOString().slice(0,10);
+    const monthStartEpoch = Math.floor(new Date(now.getFullYear(), now.getMonth(), 1).getTime() / 1000);
+    const nowEpoch = Math.floor(now.getTime() / 1000);
     const res = await adminApiRequest('api.openai.com',
-      `/v1/organization/costs?start_date=${monthStart}&end_date=${tomorrow}`, {
+      `/v1/organization/costs?start_time=${monthStartEpoch}&end_time=${nowEpoch}&bucket_width=1d`, {
       'Authorization': `Bearer ${settings.openaiKey}`,
     });
     if (res.ok) {
