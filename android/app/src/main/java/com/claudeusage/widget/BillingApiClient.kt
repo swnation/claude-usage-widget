@@ -70,7 +70,7 @@ object BillingApiClient {
                 val bucketObj = bucket.asJsonObject
                 var bucketTotal = 0.0
                 bucketObj.getAsJsonArray("results")?.forEach { r ->
-                    val amount = r.asJsonObject.get("amount")?.asString ?: "0"
+                    val amount = r.asJsonObject.get("amount")?.takeIf { it.isJsonPrimitive }?.asString ?: "0"
                     bucketTotal += amount.toDoubleOrNull() ?: 0.0
                 }
                 monthCents += bucketTotal
@@ -131,7 +131,7 @@ object BillingApiClient {
                 var bucketTotal = 0.0
                 bucketObj.getAsJsonArray("results")?.forEach { r ->
                     bucketTotal += r.asJsonObject.getAsJsonObject("amount")
-                        ?.get("value")?.asDouble ?: 0.0
+                        ?.get("value")?.takeIf { it.isJsonPrimitive }?.asDouble ?: 0.0
                 }
                 monthTotal += bucketTotal
 
