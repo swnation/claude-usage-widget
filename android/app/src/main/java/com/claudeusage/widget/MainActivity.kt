@@ -87,6 +87,28 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 커스텀 스킨 사진 선택
+    private val customSkinPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            // 영구 URI 권한 획득
+            try {
+                contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            } catch (_: Exception) {}
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            prefs.edit()
+                .putString("skin", "custom")
+                .putString("custom_skin_uri", uri.toString())
+                .apply()
+            setupSkinSelector()
+            FloatingOverlay.getInstance(applicationContext).updateSkin()
+            Toast.makeText(this, "커스텀 스킨 적용!", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -363,10 +385,85 @@ class MainActivity : AppCompatActivity() {
             item.setOnClickListener {
                 prefs.edit().putString("skin", skin.id).apply()
                 setupSkinSelector() // refresh
+                // 오버레이 실시간 스킨 업데이트
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
                 Toast.makeText(this, "${skin.label} 스킨 적용!", Toast.LENGTH_SHORT).show()
             }
             container.addView(item)
         }
+
+        // ── 커스텀 스킨 (사진) ──
+        val customItem = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+            val size = (64 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        }
+        val customPreview = if (currentSkin == "custom") {
+            // 저장된 사진 미리보기
+            val uriStr = prefs.getString("custom_skin_uri", null)
+            if (uriStr != null) {
+                try {
+                    val uri = android.net.Uri.parse(uriStr)
+                    val stream = contentResolver.openInputStream(uri)
+                    val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
+                    stream?.close()
+                    if (bitmap != null) {
+                        ImageView(this).apply {
+                            val s = (48 * resources.displayMetrics.density).toInt()
+                            layoutParams = LinearLayout.LayoutParams(s, s)
+                            scaleType = ImageView.ScaleType.CENTER_CROP
+                            setImageBitmap(bitmap)
+                            clipToOutline = true
+                            outlineProvider = object : android.view.ViewOutlineProvider() {
+                                override fun getOutline(view: View, outline: android.graphics.Outline) {
+                                    outline.setRoundRect(0, 0, view.width, view.height,
+                                        12f * resources.displayMetrics.density)
+                                }
+                            }
+                            foreground = GradientDrawable().apply {
+                                shape = GradientDrawable.RECTANGLE
+                                cornerRadius = 12f * resources.displayMetrics.density
+                                setStroke((2 * resources.displayMetrics.density).toInt(), 0xFFc084fc.toInt())
+                            }
+                        }
+                    } else null
+                } catch (_: Exception) { null }
+            } else null
+        } else null
+
+        val customPreviewFinal = customPreview ?: View(this).apply {
+            val s = (48 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(s, s)
+            background = GradientDrawable().apply {
+                shape = GradientDrawable.RECTANGLE
+                cornerRadius = 12f * resources.displayMetrics.density
+                setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF888899.toInt())
+                setColor(0xFF22223a.toInt())
+            }
+            if (currentSkin == "custom") {
+                foreground = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = 12f * resources.displayMetrics.density
+                    setStroke((2 * resources.displayMetrics.density).toInt(), 0xFFc084fc.toInt())
+                }
+            }
+        }
+        val customLabel = TextView(this).apply {
+            text = "📷\n커스텀"
+            textSize = 9f
+            setTextColor(0xFFe0e0e0.toInt())
+            gravity = android.view.Gravity.CENTER
+        }
+        customItem.addView(customPreviewFinal)
+        customItem.addView(customLabel)
+        customItem.setOnClickListener {
+            customSkinPicker.launch(arrayOf("image/*"))
+        }
+        container.addView(customItem)
     }
 
     // ── 동적 Billing 키 ──
