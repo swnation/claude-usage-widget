@@ -1,0 +1,50 @@
+{
+  "name": "카본 테크",
+  "author": "AI Assistant",
+  "version": 1,
+  "overlay": {
+    "background": {
+      "type": "gradient",
+      "colors": [
+        "#1C1C1C",
+        "#000000"
+      ],
+      "direction": "tl_br",
+      "opacity": 0.95
+    },
+    "text": {
+      "color": "#FFFFFF",
+      "shadow": {
+        "color": "#000000",
+        "radius": 4.0,
+        "dx": 1.0,
+        "dy": 1.0
+      }
+    },
+    "shape": {
+      "cornerRadius": 2.0,
+      "border": {
+        "color": "#444444",
+        "width": 1.5
+      },
+      "elevation": 12.0
+    },
+    "padding": {
+      "horizontal": 20,
+      "vertical": 16
+    }
+  },
+  "app": {
+    "backgroundColor": "#121212",
+    "sectionColor": "#1E1E1E",
+    "cardColor": "#252525",
+    "textColor": "#E0E0E0",
+    "subtextColor": "#888888",
+    "accentColor": "#E60000",
+    "isDark": true
+  },
+  "widget": {
+    "backgroundColor": "#121212",
+    "opacity": 0.9
+  }
+}
