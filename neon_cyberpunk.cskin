@@ -1,0 +1,51 @@
+{
+  "name": "네온 사이버펑크",
+  "author": "AI Assistant",
+  "version": 1,
+  "overlay": {
+    "background": {
+      "type": "gradient",
+      "colors": [
+        "#0a0820",
+        "#1a0040",
+        "#0a0820"
+      ],
+      "direction": "top_bottom",
+      "opacity": 0.95
+    },
+    "text": {
+      "color": "#4DDFFC",
+      "shadow": {
+        "color": "#00FFC0",
+        "radius": 8.0,
+        "dx": 0.0,
+        "dy": 0.0
+      }
+    },
+    "shape": {
+      "cornerRadius": 4.0,
+      "border": {
+        "color": "#FF00FF",
+        "width": 1.0
+      },
+      "elevation": 10.0
+    },
+    "padding": {
+      "horizontal": 20,
+      "vertical": 16
+    }
+  },
+  "app": {
+    "backgroundColor": "#0a0820",
+    "sectionColor": "#150030",
+    "cardColor": "#1a0040",
+    "textColor": "#4DDFFC",
+    "subtextColor": "#A0B0D0",
+    "accentColor": "#FF00FF",
+    "isDark": true
+  },
+  "widget": {
+    "backgroundColor": "#0a0820",
+    "opacity": 0.9
+  }
+}

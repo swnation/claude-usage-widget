@@ -1,0 +1,48 @@
+{
+  "name": "몬치치",
+  "author": "AI Assistant",
+  "version": 1,
+  "overlay": {
+    "background": {
+      "type": "solid",
+      "colors": [
+        "#8B4513"
+      ],
+      "opacity": 0.9
+    },
+    "text": {
+      "color": "#FFB6C1",
+      "shadow": {
+        "color": "#5C2E0E",
+        "radius": 2.0,
+        "dx": 1.0,
+        "dy": 1.0
+      }
+    },
+    "shape": {
+      "cornerRadius": 16.0,
+      "border": {
+        "color": "#D2B48C",
+        "width": 3.0
+      },
+      "elevation": 4.0
+    },
+    "padding": {
+      "horizontal": 24,
+      "vertical": 20
+    }
+  },
+  "app": {
+    "backgroundColor": "#FDF5E6",
+    "sectionColor": "#FFF8DC",
+    "cardColor": "#FAEBD7",
+    "textColor": "#5C2E0E",
+    "subtextColor": "#A0522D",
+    "accentColor": "#D87093",
+    "isDark": false
+  },
+  "widget": {
+    "backgroundColor": "#8B4513",
+    "opacity": 0.85
+  }
+}

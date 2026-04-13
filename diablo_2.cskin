@@ -1,0 +1,48 @@
+{
+  "name": "디아블로 II",
+  "author": "AI Assistant",
+  "version": 1,
+  "overlay": {
+    "background": {
+      "type": "solid",
+      "colors": [
+        "#1A1108"
+      ],
+      "opacity": 0.95
+    },
+    "text": {
+      "color": "#8B0000",
+      "shadow": {
+        "color": "#000000",
+        "radius": 4.0,
+        "dx": 2.0,
+        "dy": 2.0
+      }
+    },
+    "shape": {
+      "cornerRadius": 0.0,
+      "border": {
+        "color": "#A9A9A9",
+        "width": 2.0
+      },
+      "elevation": 8.0
+    },
+    "padding": {
+      "horizontal": 24,
+      "vertical": 18
+    }
+  },
+  "app": {
+    "backgroundColor": "#0D0804",
+    "sectionColor": "#1A1108",
+    "cardColor": "#2A1B12",
+    "textColor": "#D4B895",
+    "subtextColor": "#8C7355",
+    "accentColor": "#8B0000",
+    "isDark": true
+  },
+  "widget": {
+    "backgroundColor": "#1A1108",
+    "opacity": 0.95
+  }
+}
