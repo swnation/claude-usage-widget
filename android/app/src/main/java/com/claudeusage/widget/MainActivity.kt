@@ -372,8 +372,29 @@ class MainActivity : AppCompatActivity() {
         try {
             val skin = FloatingOverlay.getAppColors(this)
 
-            // 메인 배경
-            findViewById<android.widget.ScrollView>(R.id.mainScrollView)?.setBackgroundColor(skin.bgColor)
+            // .cskin 파일의 배경 이미지 확인
+            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+            val skinId = prefs.getString("skin", "default") ?: "default"
+            var sectionBgColor = skin.sectionBgColor
+
+            val scrollView = findViewById<android.widget.ScrollView>(R.id.mainScrollView)
+            if (skinId == "custom-file") {
+                val json = prefs.getString("custom_skin_json", null)
+                val skinData = json?.let { CustomSkinData.fromJson(it) }
+                val bgBitmap = skinData?.appBackgroundBitmap()
+                if (bgBitmap != null) {
+                    // 배경 이미지 적용
+                    val drawable = android.graphics.drawable.BitmapDrawable(resources, bgBitmap)
+                    drawable.gravity = android.view.Gravity.FILL
+                    scrollView?.background = drawable
+                    // 섹션을 반투명으로
+                    sectionBgColor = skinData.sectionColorWithOpacity()
+                } else {
+                    scrollView?.setBackgroundColor(skin.bgColor)
+                }
+            } else {
+                scrollView?.setBackgroundColor(skin.bgColor)
+            }
 
             // 헤더 텍스트
             planNameText.setTextColor(skin.subtextColor)
@@ -389,12 +410,12 @@ class MainActivity : AppCompatActivity() {
             )
             headers.forEach { id ->
                 findViewById<TextView>(id)?.apply {
-                    setBackgroundColor(skin.sectionBgColor)
+                    setBackgroundColor(sectionBgColor)
                     setTextColor(skin.accentColor)
                 }
             }
             bodies.forEach { id ->
-                findViewById<LinearLayout>(id)?.setBackgroundColor(skin.sectionBgColor)
+                findViewById<LinearLayout>(id)?.setBackgroundColor(sectionBgColor)
             }
 
             // 상태 텍스트

@@ -61,7 +61,9 @@ data class CustomSkinData(
 
     data class AppStyle(
         val backgroundColor: String = "#1a1a2e",
+        val backgroundImage: String? = null,  // base64 PNG/JPG 배경 이미지
         val sectionColor: String = "#16213e",
+        val sectionOpacity: Double = 1.0,     // 섹션 반투명도 (0.0~1.0)
         val cardColor: String = "#22223a",
         val textColor: String = "#e0e0e0",
         val subtextColor: String = "#888899",
@@ -147,6 +149,21 @@ data class CustomSkinData(
         val w = widget ?: WidgetStyle()
         val c = parseColor(w.backgroundColor, 0xFF1a1a2e.toInt())
         val alpha = ((w.opacity) * 255).toInt().coerceIn(0, 255)
+        return (c and 0x00FFFFFF) or (alpha shl 24)
+    }
+
+    fun appBackgroundBitmap(): android.graphics.Bitmap? {
+        val b64 = app?.backgroundImage ?: return null
+        return try {
+            val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+            android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (_: Exception) { null }
+    }
+
+    fun sectionColorWithOpacity(): Int {
+        val a = app ?: AppStyle()
+        val c = parseColor(a.sectionColor, 0xFF16213e.toInt())
+        val alpha = ((a.sectionOpacity) * 255).toInt().coerceIn(0, 255)
         return (c and 0x00FFFFFF) or (alpha shl 24)
     }
 
