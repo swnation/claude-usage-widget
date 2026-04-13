@@ -82,24 +82,26 @@ class UsageWidgetProvider : AppWidgetProvider() {
         } else null
 
         // ── 스킨 적용 ──
-        val skin = FloatingOverlay.getAppColors(context)
-        // 배경 (반투명)
-        val bgAlpha = 0xDD000000.toInt()
-        val skinBg = (skin.bgColor and 0x00FFFFFF) or bgAlpha
-        views.setInt(R.id.widgetRoot, "setBackgroundColor", skinBg)
-        // 플랜 이름 색상
-        views.setTextColor(R.id.widgetPlanName, skin.accentColor)
-        // 라벨 색상
-        views.setTextColor(R.id.widgetSessionLabel, skin.subtextColor)
-        views.setTextColor(R.id.widgetWeeklyLabel, skin.subtextColor)
-        views.setTextColor(R.id.widgetUpdateTime, skin.subtextColor)
-        views.setTextColor(R.id.widgetSessionReset, skin.subtextColor)
-        views.setTextColor(R.id.widgetWeeklyReset, skin.subtextColor)
+        val skin = try { FloatingOverlay.getAppColors(context) } catch (_: Exception) { null }
+        if (skin != null) {
+            val bgAlpha = 0xDD000000.toInt()
+            val skinBg = (skin.bgColor and 0x00FFFFFF) or bgAlpha
+            views.setInt(R.id.widgetRoot, "setBackgroundColor", skinBg)
+            views.setTextColor(R.id.widgetPlanName, skin.accentColor)
+            views.setTextColor(R.id.widgetSessionLabel, skin.subtextColor)
+            views.setTextColor(R.id.widgetWeeklyLabel, skin.subtextColor)
+            views.setTextColor(R.id.widgetUpdateTime, skin.subtextColor)
+            views.setTextColor(R.id.widgetSessionReset, skin.subtextColor)
+            views.setTextColor(R.id.widgetWeeklyReset, skin.subtextColor)
+        }
 
+        val skinFinal = skin ?: FloatingOverlay.AppSkinColors(
+            0xFF1a1a2e.toInt(), 0xFF16213e.toInt(), 0xFF22223a.toInt(),
+            0xFFe0e0e0.toInt(), 0xFF888899.toInt(), 0xFFc084fc.toInt(), true)
         when (mode) {
-            DisplayMode.CLAUDE_ONLY -> renderClaudeOnly(views, usage, loggedIn, skin)
-            DisplayMode.API_COST_ONLY -> renderApiCostOnly(views, cost, skin)
-            DisplayMode.BOTH -> renderBoth(views, usage, cost, loggedIn, skin)
+            DisplayMode.CLAUDE_ONLY -> renderClaudeOnly(views, usage, loggedIn, skinFinal)
+            DisplayMode.API_COST_ONLY -> renderApiCostOnly(views, cost, skinFinal)
+            DisplayMode.BOTH -> renderBoth(views, usage, cost, loggedIn, skinFinal)
         }
 
         // 위젯 탭 → 앱 열기

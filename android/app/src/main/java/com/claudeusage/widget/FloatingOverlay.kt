@@ -172,6 +172,10 @@ class FloatingOverlay private constructor(private val context: Context) {
 
     fun updateSkin() {
         val tv = overlayView as? TextView ?: return
+        try { applySkinInternal(tv) } catch (_: Exception) { applyDefaultSkin(tv) }
+    }
+
+    private fun applySkinInternal(tv: TextView) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val skinId = prefs.getString("skin", "default") ?: "default"
 
@@ -355,15 +359,21 @@ class FloatingOverlay private constructor(private val context: Context) {
 
         /** 현재 선택된 스킨의 앱 전체 색상을 반환 */
         fun getAppColors(context: Context): AppSkinColors {
-            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val skinId = prefs.getString("skin", "default") ?: "default"
-            if (skinId == "custom-file") {
-                val json = prefs.getString("custom_skin_json", null)
-                val skinData = json?.let { CustomSkinData.fromJson(it) }
-                if (skinData != null) return skinData.toAppSkinColors()
+            return try {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+                val skinId = prefs.getString("skin", "default") ?: "default"
+                if (skinId == "custom-file") {
+                    val json = prefs.getString("custom_skin_json", null)
+                    val skinData = json?.let { CustomSkinData.fromJson(it) }
+                    if (skinData != null) return skinData.toAppSkinColors()
+                }
+                val overlay = getInstance(context)
+                overlay.APP_SKIN_COLORS[skinId] ?: overlay.APP_SKIN_COLORS["default"]!!
+            } catch (_: Exception) {
+                // 기본 다크 스킨 폴백
+                AppSkinColors(0xFF1a1a2e.toInt(), 0xFF16213e.toInt(), 0xFF22223a.toInt(),
+                    0xFFe0e0e0.toInt(), 0xFF888899.toInt(), 0xFFc084fc.toInt(), true)
             }
-            return getInstance(context).APP_SKIN_COLORS[skinId]
-                ?: getInstance(context).APP_SKIN_COLORS["default"]!!
         }
 
         fun wasShowing(context: Context): Boolean =
