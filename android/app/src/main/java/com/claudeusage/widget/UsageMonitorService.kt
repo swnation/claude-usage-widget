@@ -425,6 +425,9 @@ class UsageMonitorService : Service() {
             Intent(this, UsageMonitorService::class.java).apply { action = ACTION_STOP },
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
 
+        // 스킨 강조색 적용
+        val skin = FloatingOverlay.getAppColors(this)
+
         val builder = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(android.R.drawable.ic_menu_info_details)
             .setOngoing(true)
@@ -432,6 +435,7 @@ class UsageMonitorService : Service() {
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "중지", stopPI)
             .setCategory(NotificationCompat.CATEGORY_STATUS)
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setColor(skin.accentColor)
 
         when (mode) {
             DisplayMode.CLAUDE_ONLY -> {

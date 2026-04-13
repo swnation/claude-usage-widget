@@ -47,6 +47,17 @@ class FloatingOverlay private constructor(private val context: Context) {
         val cornerRadius: Float,
     )
 
+    // 앱 전체 스킨 색상 (Activity, Widget, Notification)
+    data class AppSkinColors(
+        val bgColor: Int,         // 메인 배경
+        val sectionBgColor: Int,  // 섹션 헤더/바디 배경
+        val cardBgColor: Int,     // 카드/입력 배경
+        val textColor: Int,       // 주요 텍스트
+        val subtextColor: Int,    // 보조 텍스트
+        val accentColor: Int,     // 강조색 (버튼, 하이라이트)
+        val isDark: Boolean,      // 다크 테마 여부
+    )
+
     val SKIN_STYLES = mapOf(
         "default" to SkinStyle(0xEB1a1a2e.toInt(), 0xEB16213e.toInt(), 0xFFe0e0e0.toInt(), 16f),
         "spring" to SkinStyle(0xF0ffe4eb.toInt(), 0xF0fff5f5.toInt(), 0xFF5c3d4e.toInt(), 32f),
@@ -58,6 +69,19 @@ class FloatingOverlay private constructor(private val context: Context) {
         "fluffy-mint" to SkinStyle(0xF5c8f5e6.toInt(), 0xF5f0faf7.toInt(), 0xFF1a4a3a.toInt(), 40f),
         "fluffy-yellow" to SkinStyle(0xF5fff5b4.toInt(), 0xF5fffde8.toInt(), 0xFF5a4a10.toInt(), 40f),
         "fluffy-sky" to SkinStyle(0xF5d2e6ff.toInt(), 0xF5f0f6ff.toInt(), 0xFF1a3060.toInt(), 40f),
+    )
+
+    val APP_SKIN_COLORS = mapOf(
+        "default" to AppSkinColors(0xFF1a1a2e.toInt(), 0xFF16213e.toInt(), 0xFF22223a.toInt(), 0xFFe0e0e0.toInt(), 0xFF888899.toInt(), 0xFFc084fc.toInt(), true),
+        "spring" to AppSkinColors(0xFFffe4eb.toInt(), 0xFFffd6e0.toInt(), 0xFFfff0f3.toInt(), 0xFF5c3d4e.toInt(), 0xFF9a7a8a.toInt(), 0xFFd4608a.toInt(), false),
+        "summer" to AppSkinColors(0xFFc8ebff.toInt(), 0xFFb0d8f0.toInt(), 0xFFe0f2ff.toInt(), 0xFF1a4a5e.toInt(), 0xFF5a8a9e.toInt(), 0xFF2a8ab8.toInt(), false),
+        "autumn" to AppSkinColors(0xFFfae6c8.toInt(), 0xFFf0d4a8.toInt(), 0xFFfff5e8.toInt(), 0xFF5a3e1e.toInt(), 0xFF9a7e5e.toInt(), 0xFFc07030.toInt(), false),
+        "winter" to AppSkinColors(0xFFdcebff.toInt(), 0xFFc8d8f0.toInt(), 0xFFeef2f7.toInt(), 0xFF2c3e5a.toInt(), 0xFF6a7a9a.toInt(), 0xFF5a7ab5.toInt(), false),
+        "fluffy-pink" to AppSkinColors(0xFFffdcf0.toInt(), 0xFFffc8e4.toInt(), 0xFFfff0f6.toInt(), 0xFF6e3050.toInt(), 0xFFa06888.toInt(), 0xFFd05090.toInt(), false),
+        "fluffy-purple" to AppSkinColors(0xFFe6d7ff.toInt(), 0xFFd4c0f8.toInt(), 0xFFf5f0ff.toInt(), 0xFF3e2060.toInt(), 0xFF7a60a0.toInt(), 0xFF8050c0.toInt(), false),
+        "fluffy-mint" to AppSkinColors(0xFFc8f5e6.toInt(), 0xFFa8e8d0.toInt(), 0xFFf0faf7.toInt(), 0xFF1a4a3a.toInt(), 0xFF5a8a7a.toInt(), 0xFF30a070.toInt(), false),
+        "fluffy-yellow" to AppSkinColors(0xFFfff5b4.toInt(), 0xFFf0e890.toInt(), 0xFFfffde8.toInt(), 0xFF5a4a10.toInt(), 0xFF9a8a40.toInt(), 0xFFb0a020.toInt(), false),
+        "fluffy-sky" to AppSkinColors(0xFFd2e6ff.toInt(), 0xFFb8d4f8.toInt(), 0xFFf0f6ff.toInt(), 0xFF1a3060.toInt(), 0xFF5a7098.toInt(), 0xFF4070c0.toInt(), false),
     )
 
     private var windowManager: WindowManager? = null
@@ -283,6 +307,14 @@ class FloatingOverlay private constructor(private val context: Context) {
             return instance ?: synchronized(this) {
                 instance ?: FloatingOverlay(context.applicationContext).also { instance = it }
             }
+        }
+
+        /** 현재 선택된 스킨의 앱 전체 색상을 반환 */
+        fun getAppColors(context: Context): AppSkinColors {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            val skinId = prefs.getString("skin", "default") ?: "default"
+            return getInstance(context).APP_SKIN_COLORS[skinId]
+                ?: getInstance(context).APP_SKIN_COLORS["default"]!!
         }
 
         fun wasShowing(context: Context): Boolean =

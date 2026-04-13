@@ -81,10 +81,25 @@ class UsageWidgetProvider : AppWidgetProvider() {
             catch (_: Exception) { null }
         } else null
 
+        // ── 스킨 적용 ──
+        val skin = FloatingOverlay.getAppColors(context)
+        // 배경 (반투명)
+        val bgAlpha = 0xDD000000.toInt()
+        val skinBg = (skin.bgColor and 0x00FFFFFF) or bgAlpha
+        views.setInt(R.id.widgetRoot, "setBackgroundColor", skinBg)
+        // 플랜 이름 색상
+        views.setTextColor(R.id.widgetPlanName, skin.accentColor)
+        // 라벨 색상
+        views.setTextColor(R.id.widgetSessionLabel, skin.subtextColor)
+        views.setTextColor(R.id.widgetWeeklyLabel, skin.subtextColor)
+        views.setTextColor(R.id.widgetUpdateTime, skin.subtextColor)
+        views.setTextColor(R.id.widgetSessionReset, skin.subtextColor)
+        views.setTextColor(R.id.widgetWeeklyReset, skin.subtextColor)
+
         when (mode) {
-            DisplayMode.CLAUDE_ONLY -> renderClaudeOnly(views, usage, loggedIn)
-            DisplayMode.API_COST_ONLY -> renderApiCostOnly(views, cost)
-            DisplayMode.BOTH -> renderBoth(views, usage, cost, loggedIn)
+            DisplayMode.CLAUDE_ONLY -> renderClaudeOnly(views, usage, loggedIn, skin)
+            DisplayMode.API_COST_ONLY -> renderApiCostOnly(views, cost, skin)
+            DisplayMode.BOTH -> renderBoth(views, usage, cost, loggedIn, skin)
         }
 
         // 위젯 탭 → 앱 열기
@@ -107,7 +122,7 @@ class UsageWidgetProvider : AppWidgetProvider() {
         appWidgetManager.updateAppWidget(widgetId, views)
     }
 
-    private fun renderClaudeOnly(views: RemoteViews, usage: PlanUsage?, loggedIn: Boolean) {
+    private fun renderClaudeOnly(views: RemoteViews, usage: PlanUsage?, loggedIn: Boolean, skin: FloatingOverlay.AppSkinColors) {
         val hasData = usage != null && usage.session != null
         views.setTextViewText(R.id.widgetStatus, if (hasData) "🟢" else if (loggedIn) "🟡" else "🔴")
         views.setTextViewText(R.id.widgetPlanName,
@@ -127,17 +142,17 @@ class UsageWidgetProvider : AppWidgetProvider() {
 
             val weeklyPct = usage.weekly?.usedPercent?.toInt()?.coerceIn(0, 100) ?: 0
             views.setTextViewText(R.id.widgetWeeklyPercent, "${weeklyPct}%")
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setTextColor(R.id.widgetWeeklyPercent, skin.accentColor)
             views.setProgressBar(R.id.widgetWeeklyBar, 100, weeklyPct, false)
             views.setTextViewText(R.id.widgetWeeklyReset, usage.weekly?.resetTimeText() ?: "")
 
             views.setTextViewText(R.id.widgetUpdateTime, formatUpdateTime(usage.lastUpdated))
         } else {
-            setDefaultValues(views, loggedIn)
+            setDefaultValues(views, loggedIn, skin)
         }
     }
 
-    private fun renderApiCostOnly(views: RemoteViews, cost: ApiCostData?) {
+    private fun renderApiCostOnly(views: RemoteViews, cost: ApiCostData?, skin: FloatingOverlay.AppSkinColors) {
         views.setTextViewText(R.id.widgetStatus, if (cost != null) "💰" else "🟡")
         views.setTextViewText(R.id.widgetPlanName, "API 요금")
         views.setTextViewText(R.id.widgetSessionLabel, "오늘")
@@ -150,7 +165,7 @@ class UsageWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widgetSessionReset, cost.todayKrw())
 
             views.setTextViewText(R.id.widgetWeeklyPercent, cost.monthText())
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setTextColor(R.id.widgetWeeklyPercent, skin.accentColor)
             views.setProgressBar(R.id.widgetWeeklyBar, 100, 0, false)
             views.setTextViewText(R.id.widgetWeeklyReset, cost.monthKrw())
 
@@ -159,14 +174,14 @@ class UsageWidgetProvider : AppWidgetProvider() {
             views.setTextViewText(R.id.widgetSessionPercent, "--")
             views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
             views.setTextViewText(R.id.widgetWeeklyPercent, "--")
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setTextColor(R.id.widgetWeeklyPercent, skin.accentColor)
             views.setTextViewText(R.id.widgetSessionReset, "")
             views.setTextViewText(R.id.widgetWeeklyReset, "")
             views.setTextViewText(R.id.widgetUpdateTime, "로딩 중")
         }
     }
 
-    private fun renderBoth(views: RemoteViews, usage: PlanUsage?, cost: ApiCostData?, loggedIn: Boolean) {
+    private fun renderBoth(views: RemoteViews, usage: PlanUsage?, cost: ApiCostData?, loggedIn: Boolean, skin: FloatingOverlay.AppSkinColors) {
         val hasData = usage != null && usage.session != null
         views.setTextViewText(R.id.widgetStatus,
             if (hasData && cost != null) "🟢" else if (hasData || cost != null) "🟡" else "🔴")
@@ -192,12 +207,12 @@ class UsageWidgetProvider : AppWidgetProvider() {
 
         if (cost != null) {
             views.setTextViewText(R.id.widgetWeeklyPercent, cost.todayText())
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setTextColor(R.id.widgetWeeklyPercent, skin.accentColor)
             views.setProgressBar(R.id.widgetWeeklyBar, 100, 0, false)
             views.setTextViewText(R.id.widgetWeeklyReset, cost.todayKrw())
         } else {
             views.setTextViewText(R.id.widgetWeeklyPercent, "--")
-            views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+            views.setTextColor(R.id.widgetWeeklyPercent, skin.accentColor)
             views.setProgressBar(R.id.widgetWeeklyBar, 100, 0, false)
             views.setTextViewText(R.id.widgetWeeklyReset, "")
         }
@@ -206,11 +221,11 @@ class UsageWidgetProvider : AppWidgetProvider() {
         views.setTextViewText(R.id.widgetUpdateTime, formatUpdateTime(lastUpdated))
     }
 
-    private fun setDefaultValues(views: RemoteViews, loggedIn: Boolean) {
+    private fun setDefaultValues(views: RemoteViews, loggedIn: Boolean, skin: FloatingOverlay.AppSkinColors) {
         views.setTextViewText(R.id.widgetSessionPercent, "--%")
         views.setTextColor(R.id.widgetSessionPercent, COLOR_GREEN)
         views.setTextViewText(R.id.widgetWeeklyPercent, "--%")
-        views.setTextColor(R.id.widgetWeeklyPercent, COLOR_PURPLE)
+        views.setTextColor(R.id.widgetWeeklyPercent, skin.accentColor)
         views.setTextViewText(R.id.widgetSessionReset, "")
         views.setTextViewText(R.id.widgetWeeklyReset, "")
         views.setTextViewText(R.id.widgetUpdateTime, if (!loggedIn) "" else "새로고침")

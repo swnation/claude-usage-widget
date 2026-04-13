@@ -104,7 +104,9 @@ class MainActivity : AppCompatActivity() {
                 .putString("custom_skin_uri", uri.toString())
                 .apply()
             setupSkinSelector()
+            applySkin()
             FloatingOverlay.getInstance(applicationContext).updateSkin()
+            UsageWidgetProvider.updateAll(this)
             Toast.makeText(this, "커스텀 스킨 적용!", Toast.LENGTH_SHORT).show()
         }
     }
@@ -200,6 +202,9 @@ class MainActivity : AppCompatActivity() {
         // Billing API (동적)
         billingKeysContainer = findViewById(R.id.billingKeysContainer)
         adminCostText = findViewById(R.id.adminCostText)
+
+        // ── 앱 스킨 적용 ──
+        applySkin()
 
         // ── 접이식 섹션 ──
         setupAccordion(R.id.sectionOverlayHeader, R.id.sectionOverlayBody)
@@ -328,6 +333,72 @@ class MainActivity : AppCompatActivity() {
         findViewById<Button>(R.id.adminKeyBackup).setOnClickListener { backupKeysToDrive() }
     }
 
+    // ── 앱 스킨 적용 ──
+    private fun applySkin() {
+        val skin = FloatingOverlay.getAppColors(this)
+
+        // 메인 배경
+        findViewById<android.widget.ScrollView>(R.id.mainScrollView).setBackgroundColor(skin.bgColor)
+
+        // 헤더 텍스트
+        findViewById<TextView>(R.id.planNameText).setTextColor(skin.subtextColor)
+
+        // 섹션 헤더 & 바디 배경/텍스트
+        val headers = listOf(
+            R.id.sectionOverlayHeader, R.id.sectionBillingHeader,
+            R.id.sectionSkinHeader, R.id.sectionSettingsHeader
+        )
+        val bodies = listOf(
+            R.id.sectionOverlayBody, R.id.sectionBillingBody,
+            R.id.sectionSkinBody, R.id.sectionSettingsBody
+        )
+        headers.forEach { id ->
+            findViewById<TextView>(id).apply {
+                setBackgroundColor(skin.sectionBgColor)
+                setTextColor(skin.accentColor)
+            }
+        }
+        bodies.forEach { id ->
+            findViewById<LinearLayout>(id).setBackgroundColor(skin.sectionBgColor)
+        }
+
+        // 제목 텍스트 색상
+        findViewById<TextView>(android.R.id.content)?.let { /* skip */ }
+        // 상태 텍스트
+        statusText.setTextColor(skin.subtextColor)
+
+        // 버튼 강조색
+        toggleButton.backgroundTintList = android.content.res.ColorStateList.valueOf(skin.accentColor)
+        overlayButton.setTextColor(skin.accentColor)
+        saveButton.setTextColor(skin.accentColor)
+
+        // 로그인 버튼
+        loginButton.backgroundTintList = android.content.res.ColorStateList.valueOf(skin.accentColor)
+
+        // 카드 배경 (API 요금 섹션)
+        costByAiContainer.setBackgroundColor(skin.cardBgColor)
+
+        // 라디오 버튼 텍스트 & 틴트
+        val radioTint = android.content.res.ColorStateList.valueOf(skin.accentColor)
+        for (i in 0 until modeRadioGroup.childCount) {
+            (modeRadioGroup.getChildAt(i) as? RadioButton)?.apply {
+                setTextColor(skin.textColor)
+                buttonTintList = radioTint
+            }
+        }
+
+        // 갱신 주기 입력 텍스트
+        refreshInput.setTextColor(skin.textColor)
+        refreshInput.setHintTextColor(skin.subtextColor)
+
+        // 설정 화면 내 라벨들
+        if (!skin.isDark) {
+            // 밝은 스킨: 비용 카드 내부 텍스트도 어둡게
+            costTodayText.setTextColor(skin.accentColor)
+            costMonthText.setTextColor(skin.accentColor)
+        }
+    }
+
     // ── 접이식 섹션 토글 ──
     private fun setupAccordion(headerId: Int, bodyId: Int) {
         val header = findViewById<TextView>(headerId)
@@ -385,8 +456,9 @@ class MainActivity : AppCompatActivity() {
             item.setOnClickListener {
                 prefs.edit().putString("skin", skin.id).apply()
                 setupSkinSelector() // refresh
-                // 오버레이 실시간 스킨 업데이트
-                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                applySkin() // 앱 화면 스킨
+                FloatingOverlay.getInstance(applicationContext).updateSkin() // 오버레이 스킨
+                UsageWidgetProvider.updateAll(this) // 위젯 스킨
                 Toast.makeText(this, "${skin.label} 스킨 적용!", Toast.LENGTH_SHORT).show()
             }
             container.addView(item)
