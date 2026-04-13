@@ -92,22 +92,26 @@ class MainActivity : AppCompatActivity() {
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            // 영구 URI 권한 획득
             try {
-                contentResolver.takePersistableUriPermission(
-                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-                )
-            } catch (_: Exception) {}
-            val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-            prefs.edit()
-                .putString("skin", "custom")
-                .putString("custom_skin_uri", uri.toString())
-                .apply()
-            setupSkinSelector()
-            applySkin()
-            FloatingOverlay.getInstance(applicationContext).updateSkin()
-            UsageWidgetProvider.updateAll(this)
-            Toast.makeText(this, "커스텀 스킨 적용!", Toast.LENGTH_SHORT).show()
+                // 사진을 앱 내부 저장소에 복사 (URI 권한 문제 방지)
+                val inStream = contentResolver.openInputStream(uri) ?: return@registerForActivityResult
+                val file = java.io.File(filesDir, "custom_skin_bg.png")
+                file.outputStream().use { out -> inStream.copyTo(out) }
+                inStream.close()
+
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+                prefs.edit()
+                    .putString("skin", "custom")
+                    .putString("custom_skin_path", file.absolutePath)
+                    .apply()
+                setupSkinSelector()
+                applySkin()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                UsageWidgetProvider.updateAll(this)
+                Toast.makeText(this, "커스텀 스킨 적용!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "사진 로드 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
         }
     }
 
@@ -505,13 +509,10 @@ class MainActivity : AppCompatActivity() {
         }
         val customPreview = if (currentSkin == "custom") {
             // 저장된 사진 미리보기
-            val uriStr = prefs.getString("custom_skin_uri", null)
-            if (uriStr != null) {
+            val path = prefs.getString("custom_skin_path", null)
+            if (path != null) {
                 try {
-                    val uri = android.net.Uri.parse(uriStr)
-                    val stream = contentResolver.openInputStream(uri)
-                    val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
-                    stream?.close()
+                    val bitmap = android.graphics.BitmapFactory.decodeFile(path)
                     if (bitmap != null) {
                         ImageView(this).apply {
                             val s = (48 * resources.displayMetrics.density).toInt()

@@ -82,6 +82,7 @@ class FloatingOverlay private constructor(private val context: Context) {
         "fluffy-mint" to AppSkinColors(0xFFc8f5e6.toInt(), 0xFFa8e8d0.toInt(), 0xFFf0faf7.toInt(), 0xFF1a4a3a.toInt(), 0xFF5a8a7a.toInt(), 0xFF30a070.toInt(), false),
         "fluffy-yellow" to AppSkinColors(0xFFfff5b4.toInt(), 0xFFf0e890.toInt(), 0xFFfffde8.toInt(), 0xFF5a4a10.toInt(), 0xFF9a8a40.toInt(), 0xFFb0a020.toInt(), false),
         "fluffy-sky" to AppSkinColors(0xFFd2e6ff.toInt(), 0xFFb8d4f8.toInt(), 0xFFf0f6ff.toInt(), 0xFF1a3060.toInt(), 0xFF5a7098.toInt(), 0xFF4070c0.toInt(), false),
+        "custom" to AppSkinColors(0xFF1a1a2e.toInt(), 0xFF16213e.toInt(), 0xFF22223a.toInt(), 0xFFe0e0e0.toInt(), 0xFF888899.toInt(), 0xFFc084fc.toInt(), true),
     )
 
     private var windowManager: WindowManager? = null
@@ -221,24 +222,19 @@ class FloatingOverlay private constructor(private val context: Context) {
             // fallback
             applyDefaultSkin(tv)
         } else if (skinId == "custom") {
-            // 커스텀 스킨: 사진 배경
-            val uriStr = prefs.getString("custom_skin_uri", null)
-            if (uriStr != null) {
-                try {
-                    val uri = Uri.parse(uriStr)
-                    val stream = context.contentResolver.openInputStream(uri)
-                    val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
-                    stream?.close()
-                    if (bitmap != null) {
-                        val drawable = android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
-                        drawable.alpha = 220
-                        tv.background = drawable
-                        tv.setTextColor(0xFFffffff.toInt())
-                        tv.setShadowLayer(4f, 1f, 1f, 0xFF000000.toInt())
-                        tv.elevation = 6f
-                        return
-                    }
-                } catch (_: Exception) {}
+            // 커스텀 스킨: 사진 배경 (내부 저장소 파일)
+            val path = prefs.getString("custom_skin_path", null)
+            if (path != null) {
+                val bitmap = android.graphics.BitmapFactory.decodeFile(path)
+                if (bitmap != null) {
+                    val drawable = android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
+                    drawable.alpha = 220
+                    tv.background = drawable
+                    tv.setTextColor(0xFFffffff.toInt())
+                    tv.setShadowLayer(4f, 1f, 1f, 0xFF000000.toInt())
+                    tv.elevation = 6f
+                    return
+                }
             }
             applyDefaultSkin(tv)
         } else {
