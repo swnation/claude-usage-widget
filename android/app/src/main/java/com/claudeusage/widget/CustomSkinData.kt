@@ -102,14 +102,28 @@ data class CustomSkinData(
         }
     }
 
+    fun isSolidBackground(): Boolean =
+        overlay?.background?.type == "solid" || (overlay?.background?.colors?.size ?: 0) <= 1
+
     fun overlayBgColors(): IntArray {
         val colors = overlay?.background?.colors
         if (colors.isNullOrEmpty()) return intArrayOf(0xEB1a1a2e.toInt(), 0xEB16213e.toInt())
         val alpha = ((overlay?.background?.opacity ?: 0.92) * 255).toInt().coerceIn(0, 255)
-        return colors.map { hex ->
+        val result = colors.map { hex ->
             val c = parseColor(hex, 0xFF1a1a2e.toInt())
             (c and 0x00FFFFFF) or (alpha shl 24)
         }.toIntArray()
+        // GradientDrawable는 최소 2색 필요 — 1색이면 복제
+        if (result.size == 1) return intArrayOf(result[0], result[0])
+        return result
+    }
+
+    fun overlaySolidColor(): Int {
+        val colors = overlay?.background?.colors
+        if (colors.isNullOrEmpty()) return 0xEB1a1a2e.toInt()
+        val alpha = ((overlay?.background?.opacity ?: 0.92) * 255).toInt().coerceIn(0, 255)
+        val c = parseColor(colors[0], 0xFF1a1a2e.toInt())
+        return (c and 0x00FFFFFF) or (alpha shl 24)
     }
 
     fun overlayTextColor(): Int {

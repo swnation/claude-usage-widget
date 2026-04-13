@@ -185,19 +185,31 @@ class FloatingOverlay private constructor(private val context: Context) {
             val json = prefs.getString("custom_skin_json", null)
             val skinData = json?.let { CustomSkinData.fromJson(it) }
             if (skinData != null) {
-                // 배경: 이미지 우선, 없으면 그라데이션
+                // 배경: 이미지 → 단색 → 그라데이션
                 val bgImage = skinData.overlayBgImage()
                 if (skinData.overlay?.background?.type == "image" && bgImage != null) {
                     val drawable = android.graphics.drawable.BitmapDrawable(context.resources, bgImage)
                     drawable.alpha = ((skinData.overlay.background.opacity) * 255).toInt().coerceIn(0, 255)
                     tv.background = drawable
+                } else if (skinData.isSolidBackground()) {
+                    // 단색 배경
+                    tv.background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        setColor(skinData.overlaySolidColor())
+                        cornerRadius = skinData.overlayCornerRadius()
+                        skinData.overlay?.shape?.border?.let { b ->
+                            if (b.width > 0) {
+                                setStroke(b.width.toInt(), CustomSkinData.parseColor(b.color, 0))
+                            }
+                        }
+                    }
                 } else {
+                    // 그라데이션 배경
                     tv.background = GradientDrawable(
                         skinData.overlayGradientOrientation(),
                         skinData.overlayBgColors()
                     ).apply {
                         cornerRadius = skinData.overlayCornerRadius()
-                        // 테두리
                         skinData.overlay?.shape?.border?.let { b ->
                             if (b.width > 0) {
                                 setStroke(b.width.toInt(), CustomSkinData.parseColor(b.color, 0))
