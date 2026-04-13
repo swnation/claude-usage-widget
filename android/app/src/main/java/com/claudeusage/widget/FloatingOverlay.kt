@@ -71,24 +71,16 @@ class FloatingOverlay private constructor(private val context: Context) {
 
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
-        // 스킨 적용
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val skinId = prefs.getString("skin", "default") ?: "default"
-        val skin = SKIN_STYLES[skinId] ?: SKIN_STYLES["default"]!!
-
         val textView = TextView(context).apply {
             text = "세션 --%"
             textSize = 13f
-            setTextColor(skin.textColor)
-            background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(skin.bgStartColor, skin.bgEndColor)
-            ).apply {
-                cornerRadius = skin.cornerRadius
-            }
             setPadding(24, 14, 24, 14)
-            elevation = if (skinId.startsWith("fluffy")) 8f else 4f
         }
+
+        overlayView = textView
+
+        // 스킨 적용 (custom 포함)
+        updateSkin()
 
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -141,7 +133,6 @@ class FloatingOverlay private constructor(private val context: Context) {
             }
         }
 
-        overlayView = textView
         windowManager?.addView(textView, params)
         startUpdating(textView)
         saveState(true)
@@ -153,6 +144,52 @@ class FloatingOverlay private constructor(private val context: Context) {
             putExtra("auto_refresh", true)
         }
         context.startActivity(intent)
+    }
+
+    fun updateSkin() {
+        val tv = overlayView as? TextView ?: return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val skinId = prefs.getString("skin", "default") ?: "default"
+
+        if (skinId == "custom") {
+            // 커스텀 스킨: 사진 배경
+            val uriStr = prefs.getString("custom_skin_uri", null)
+            if (uriStr != null) {
+                try {
+                    val uri = Uri.parse(uriStr)
+                    val stream = context.contentResolver.openInputStream(uri)
+                    val bitmap = android.graphics.BitmapFactory.decodeStream(stream)
+                    stream?.close()
+                    if (bitmap != null) {
+                        val drawable = android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
+                        drawable.alpha = 220
+                        tv.background = drawable
+                        tv.setTextColor(0xFFffffff.toInt())
+                        tv.setShadowLayer(4f, 1f, 1f, 0xFF000000.toInt())
+                        tv.elevation = 6f
+                        return
+                    }
+                } catch (_: Exception) {}
+            }
+            // fallback to default
+            val skin = SKIN_STYLES["default"]!!
+            tv.background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(skin.bgStartColor, skin.bgEndColor)
+            ).apply { cornerRadius = skin.cornerRadius }
+            tv.setTextColor(skin.textColor)
+            tv.setShadowLayer(0f, 0f, 0f, 0)
+            tv.elevation = 4f
+        } else {
+            val skin = SKIN_STYLES[skinId] ?: SKIN_STYLES["default"]!!
+            tv.background = GradientDrawable(
+                GradientDrawable.Orientation.TL_BR,
+                intArrayOf(skin.bgStartColor, skin.bgEndColor)
+            ).apply { cornerRadius = skin.cornerRadius }
+            tv.setTextColor(skin.textColor)
+            tv.setShadowLayer(0f, 0f, 0f, 0)
+            tv.elevation = if (skinId.startsWith("fluffy")) 8f else 4f
+        }
     }
 
     fun hide() {
