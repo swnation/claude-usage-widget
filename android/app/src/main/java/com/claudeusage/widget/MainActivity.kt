@@ -111,6 +111,36 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 커스텀 스킨 파일(.cskin) 선택
+    private val cskinFilePicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val stream = contentResolver.openInputStream(uri)
+                val json = stream?.bufferedReader()?.readText() ?: return@registerForActivityResult
+                stream.close()
+                val skinData = CustomSkinData.fromJson(json)
+                if (skinData == null) {
+                    Toast.makeText(this, "스킨 파일 파싱 실패", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+                prefs.edit()
+                    .putString("skin", "custom-file")
+                    .putString("custom_skin_json", json)
+                    .apply()
+                setupSkinSelector()
+                applySkin()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                UsageWidgetProvider.updateAll(this)
+                Toast.makeText(this, "${skinData.name} 스킨 적용!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "파일 읽기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -536,6 +566,68 @@ class MainActivity : AppCompatActivity() {
             customSkinPicker.launch(arrayOf("image/*"))
         }
         container.addView(customItem)
+
+        // ── 파일 스킨 (.cskin) ──
+        val fileItem = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+            val size = (64 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(size, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (8 * resources.displayMetrics.density).toInt()
+            }
+        }
+        val fileSkinName = if (currentSkin == "custom-file") {
+            val json = prefs.getString("custom_skin_json", null)
+            json?.let { CustomSkinData.fromJson(it)?.name } ?: "파일"
+        } else "파일"
+        val filePreview = View(this).apply {
+            val s = (48 * resources.displayMetrics.density).toInt()
+            layoutParams = LinearLayout.LayoutParams(s, s)
+            if (currentSkin == "custom-file") {
+                val json = prefs.getString("custom_skin_json", null)
+                val skinData = json?.let { CustomSkinData.fromJson(it) }
+                if (skinData != null) {
+                    val colors = skinData.overlayBgColors()
+                    background = GradientDrawable(
+                        skinData.overlayGradientOrientation(), colors
+                    ).apply {
+                        cornerRadius = skinData.overlayCornerRadius() * resources.displayMetrics.density
+                    }
+                } else {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 12f * resources.displayMetrics.density
+                        setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF888899.toInt())
+                        setColor(0xFF22223a.toInt())
+                    }
+                }
+                foreground = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = 12f * resources.displayMetrics.density
+                    setStroke((2 * resources.displayMetrics.density).toInt(), 0xFFc084fc.toInt())
+                }
+            } else {
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = 12f * resources.displayMetrics.density
+                    setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF888899.toInt())
+                    setColor(0xFF22223a.toInt())
+                }
+            }
+        }
+        val fileLabel = TextView(this).apply {
+            text = "📄\n$fileSkinName"
+            textSize = 9f
+            setTextColor(0xFFe0e0e0.toInt())
+            gravity = android.view.Gravity.CENTER
+        }
+        fileItem.addView(filePreview)
+        fileItem.addView(fileLabel)
+        fileItem.setOnClickListener {
+            cskinFilePicker.launch(arrayOf("application/json", "*/*"))
+        }
+        container.addView(fileItem)
     }
 
     // ── 동적 Billing 키 ──

@@ -175,7 +175,48 @@ class FloatingOverlay private constructor(private val context: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val skinId = prefs.getString("skin", "default") ?: "default"
 
-        if (skinId == "custom") {
+        if (skinId == "custom-file") {
+            // 파일 스킨 (.cskin)
+            val json = prefs.getString("custom_skin_json", null)
+            val skinData = json?.let { CustomSkinData.fromJson(it) }
+            if (skinData != null) {
+                // 배경: 이미지 우선, 없으면 그라데이션
+                val bgImage = skinData.overlayBgImage()
+                if (skinData.overlay?.background?.type == "image" && bgImage != null) {
+                    val drawable = android.graphics.drawable.BitmapDrawable(context.resources, bgImage)
+                    drawable.alpha = ((skinData.overlay.background.opacity) * 255).toInt().coerceIn(0, 255)
+                    tv.background = drawable
+                } else {
+                    tv.background = GradientDrawable(
+                        skinData.overlayGradientOrientation(),
+                        skinData.overlayBgColors()
+                    ).apply {
+                        cornerRadius = skinData.overlayCornerRadius()
+                        // 테두리
+                        skinData.overlay?.shape?.border?.let { b ->
+                            if (b.width > 0) {
+                                setStroke(b.width.toInt(), CustomSkinData.parseColor(b.color, 0))
+                            }
+                        }
+                    }
+                }
+                tv.setTextColor(skinData.overlayTextColor())
+                tv.setPadding(skinData.overlayPaddingH(), skinData.overlayPaddingV(),
+                    skinData.overlayPaddingH(), skinData.overlayPaddingV())
+                tv.elevation = skinData.overlayElevation()
+                // 텍스트 그림자
+                val shadow = skinData.overlay?.text?.shadow
+                if (shadow != null && shadow.radius > 0) {
+                    tv.setShadowLayer(shadow.radius, shadow.dx, shadow.dy,
+                        CustomSkinData.parseColor(shadow.color, 0xFF000000.toInt()))
+                } else {
+                    tv.setShadowLayer(0f, 0f, 0f, 0)
+                }
+                return
+            }
+            // fallback
+            applyDefaultSkin(tv)
+        } else if (skinId == "custom") {
             // 커스텀 스킨: 사진 배경
             val uriStr = prefs.getString("custom_skin_uri", null)
             if (uriStr != null) {
@@ -195,15 +236,7 @@ class FloatingOverlay private constructor(private val context: Context) {
                     }
                 } catch (_: Exception) {}
             }
-            // fallback to default
-            val skin = SKIN_STYLES["default"]!!
-            tv.background = GradientDrawable(
-                GradientDrawable.Orientation.TL_BR,
-                intArrayOf(skin.bgStartColor, skin.bgEndColor)
-            ).apply { cornerRadius = skin.cornerRadius }
-            tv.setTextColor(skin.textColor)
-            tv.setShadowLayer(0f, 0f, 0f, 0)
-            tv.elevation = 4f
+            applyDefaultSkin(tv)
         } else {
             val skin = SKIN_STYLES[skinId] ?: SKIN_STYLES["default"]!!
             tv.background = GradientDrawable(
@@ -214,6 +247,17 @@ class FloatingOverlay private constructor(private val context: Context) {
             tv.setShadowLayer(0f, 0f, 0f, 0)
             tv.elevation = if (skinId.startsWith("fluffy")) 8f else 4f
         }
+    }
+
+    private fun applyDefaultSkin(tv: TextView) {
+        val skin = SKIN_STYLES["default"]!!
+        tv.background = GradientDrawable(
+            GradientDrawable.Orientation.TL_BR,
+            intArrayOf(skin.bgStartColor, skin.bgEndColor)
+        ).apply { cornerRadius = skin.cornerRadius }
+        tv.setTextColor(skin.textColor)
+        tv.setShadowLayer(0f, 0f, 0f, 0)
+        tv.elevation = 4f
     }
 
     fun hide() {
@@ -313,6 +357,11 @@ class FloatingOverlay private constructor(private val context: Context) {
         fun getAppColors(context: Context): AppSkinColors {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             val skinId = prefs.getString("skin", "default") ?: "default"
+            if (skinId == "custom-file") {
+                val json = prefs.getString("custom_skin_json", null)
+                val skinData = json?.let { CustomSkinData.fromJson(it) }
+                if (skinData != null) return skinData.toAppSkinColors()
+            }
             return getInstance(context).APP_SKIN_COLORS[skinId]
                 ?: getInstance(context).APP_SKIN_COLORS["default"]!!
         }
