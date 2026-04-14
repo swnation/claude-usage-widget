@@ -253,14 +253,7 @@ object BillingApiClient {
             return BillingResult(0.0, 0.0, e.message ?: "xAI 연결 실패")
         }
     }
-                    ?: obj.get("amount")?.takeIf { it.isJsonPrimitive }?.asDouble
-                    ?: obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
-                    ?: 0.0
-                monthTotal += cost
 
-                val date = obj.get("date")?.asString
-                    ?: obj.get("start_time")?.asString?.take(10)
-                    ?: ""
     /**
      * 서비스 계정 JSON으로 OAuth2 액세스 토큰을 생성한다.
      */
