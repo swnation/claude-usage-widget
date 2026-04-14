@@ -165,43 +165,94 @@ object BillingApiClient {
             val startTime = "${monthStart}T00:00:00Z"
             val endTime = Instant.now().toString()
 
-            val conn = URL(
-                "https://management-api.x.ai/v1/billing/teams/$teamId/usage" +
-                "?start_time=$startTime&end_time=$endTime&aggregation=daily"
-            ).openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.setRequestProperty("Authorization", "Bearer $managementKey")
-            conn.setRequestProperty("Content-Type", "application/json")
-            conn.connectTimeout = 15000
-            conn.readTimeout = 15000
+            // xAI Management API - 여러 URL 패턴 시도
+            val urls = listOf(
+                "https://management-api.x.ai/v1/billing/teams/$teamId/usage?start_time=$startTime&end_time=$endTime",
+                "https://api.x.ai/v1/billing/teams/$teamId/usage?start_time=$startTime&end_time=$endTime",
+            )
 
-            val code = conn.responseCode
-            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-            val body = stream?.bufferedReader()?.readText() ?: ""
-            conn.disconnect()
+            var lastError = ""
+            for (apiUrl in urls) {
+                val conn = URL(apiUrl).openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+                conn.setRequestProperty("Authorization", "Bearer $managementKey")
+                conn.setRequestProperty("Accept", "application/json")
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
 
-            if (code != 200) {
-                val errMsg = try {
-                    JsonParser.parseString(body).asJsonObject
-                        .get("error")?.asString
-                        ?: JsonParser.parseString(body).asJsonObject
-                            .get("message")?.asString
-                } catch (_: Exception) { null } ?: "HTTP $code"
-                return BillingResult(0.0, 0.0, errMsg)
+                val code = conn.responseCode
+                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+                val body = stream?.bufferedReader()?.readText() ?: ""
+                conn.disconnect()
+
+                if (code == 405 || code == 404) {
+                    lastError = "HTTP $code ($apiUrl)"
+                    continue // 다음 URL 시도
+                }
+
+                if (code != 200) {
+                    val errMsg = try {
+                        val errJson = JsonParser.parseString(body).asJsonObject
+                        errJson.get("error")?.asString
+                            ?: errJson.get("message")?.asString
+                            ?: errJson.get("detail")?.asString
+                    } catch (_: Exception) { null } ?: "HTTP $code: $body"
+                    return BillingResult(0.0, 0.0, errMsg)
+                }
+
+                // 성공 - 응답 파싱
+                val json = JsonParser.parseString(body)
+                var monthTotal = 0.0
+                var todayTotal = 0.0
+
+                // 응답이 배열인 경우와 객체인 경우 모두 처리
+                val usageArray = when {
+                    json.isJsonArray -> json.asJsonArray
+                    json.isJsonObject -> {
+                        val obj = json.asJsonObject
+                        obj.getAsJsonArray("usage")
+                            ?: obj.getAsJsonArray("data")
+                            ?: obj.getAsJsonArray("results")
+                            ?: obj.getAsJsonArray("items")
+                    }
+                    else -> null
+                }
+
+                if (usageArray != null) {
+                    usageArray.forEach { item ->
+                        val obj = item.asJsonObject
+                        val cost = obj.get("cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+                            ?: obj.get("amount")?.takeIf { it.isJsonPrimitive }?.asDouble
+                            ?: obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+                            ?: obj.get("total_amount")?.takeIf { it.isJsonPrimitive }?.asDouble
+                            ?: 0.0
+                        monthTotal += cost
+
+                        val date = obj.get("date")?.asString
+                            ?: obj.get("start_time")?.asString?.take(10)
+                            ?: obj.get("period")?.asString?.take(10)
+                            ?: ""
+                        if (date == today || date.startsWith(today)) {
+                            todayTotal += cost
+                        }
+                    }
+                } else if (json.isJsonObject) {
+                    // 단일 객체 응답 (총합만 있는 경우)
+                    val obj = json.asJsonObject
+                    monthTotal = obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+                        ?: obj.get("total_amount")?.takeIf { it.isJsonPrimitive }?.asDouble
+                        ?: obj.get("cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+                        ?: 0.0
+                }
+
+                return BillingResult(todayTotal, monthTotal)
             }
 
-            val json = JsonParser.parseString(body).asJsonObject
-            var monthTotal = 0.0
-            var todayTotal = 0.0
-
-            // usage 배열에서 일별 비용 합산
-            val usageArray = json.getAsJsonArray("usage")
-                ?: json.getAsJsonArray("data")
-                ?: json.getAsJsonArray("results")
-
-            usageArray?.forEach { item ->
-                val obj = item.asJsonObject
-                val cost = obj.get("cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+            return BillingResult(0.0, 0.0, lastError.ifEmpty { "모든 엔드포인트 실패" })
+        } catch (e: Exception) {
+            return BillingResult(0.0, 0.0, e.message ?: "xAI 연결 실패")
+        }
+    }
                     ?: obj.get("amount")?.takeIf { it.isJsonPrimitive }?.asDouble
                     ?: obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
                     ?: 0.0
@@ -210,43 +261,69 @@ object BillingApiClient {
                 val date = obj.get("date")?.asString
                     ?: obj.get("start_time")?.asString?.take(10)
                     ?: ""
-                if (date == today || date.startsWith(today)) {
-                    todayTotal += cost
-                }
-            }
+    /**
+     * 서비스 계정 JSON으로 OAuth2 액세스 토큰을 생성한다.
+     */
+    private fun getServiceAccountToken(serviceAccountJson: String): String? {
+        try {
+            val sa = JsonParser.parseString(serviceAccountJson).asJsonObject
+            val clientEmail = sa.get("client_email")?.asString ?: return null
+            val privateKeyPem = sa.get("private_key")?.asString ?: return null
+            val tokenUri = sa.get("token_uri")?.asString ?: "https://oauth2.googleapis.com/token"
 
-            // cost가 센트 단위일 수 있음 — 100 넘으면 센트로 간주
-            if (monthTotal > 100 && monthTotal > todayTotal * 30) {
-                monthTotal /= 100.0
-                todayTotal /= 100.0
-            }
+            val now = System.currentTimeMillis() / 1000
+            val b64Flags = android.util.Base64.URL_SAFE or android.util.Base64.NO_WRAP or android.util.Base64.NO_PADDING
+            val header = android.util.Base64.encodeToString(
+                """{"alg":"RS256","typ":"JWT"}""".toByteArray(), b64Flags)
+            val claims = android.util.Base64.encodeToString(
+                """{"iss":"$clientEmail","scope":"https://www.googleapis.com/auth/bigquery.readonly","aud":"$tokenUri","iat":$now,"exp":${now + 3600}}""".toByteArray(), b64Flags)
+            val signInput = "$header.$claims"
 
-            return BillingResult(todayTotal, monthTotal)
-        } catch (e: Exception) {
-            return BillingResult(0.0, 0.0, e.message ?: "xAI 연결 실패")
-        }
+            val keyPem = privateKeyPem
+                .replace("-----BEGIN PRIVATE KEY-----", "")
+                .replace("-----END PRIVATE KEY-----", "")
+                .replace("\\n", "").replace("\n", "").trim()
+            val keyBytes = android.util.Base64.decode(keyPem, android.util.Base64.DEFAULT)
+            val keySpec = java.security.spec.PKCS8EncodedKeySpec(keyBytes)
+            val privateKey = java.security.KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+            val sig = java.security.Signature.getInstance("SHA256withRSA").run {
+                initSign(privateKey)
+                update(signInput.toByteArray())
+                sign()
+            }
+            val jwt = "$signInput." + android.util.Base64.encodeToString(sig, b64Flags)
+
+            val conn = URL(tokenUri).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
+            conn.doOutput = true
+            conn.outputStream.write("grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer&assertion=$jwt".toByteArray())
+            val code = conn.responseCode
+            val body = (if (code in 200..299) conn.inputStream else conn.errorStream)?.bufferedReader()?.readText() ?: ""
+            conn.disconnect()
+            if (code != 200) return null
+            return JsonParser.parseString(body).asJsonObject.get("access_token")?.asString
+        } catch (_: Exception) { return null }
     }
 
     /**
-     * 사전 조건: GCP 콘솔에서 빌링 데이터를 BigQuery로 내보내기 설정 필요.
-     *
-     * @param apiKey GCP API 키 (BigQuery 읽기 권한)
-     * @param projectId GCP 프로젝트 ID
-     * @param datasetId BigQuery 데이터셋 ID (빌링 내보내기 대상)
-     * @param tableId 테이블 ID (보통 gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX)
+     * Google Cloud BigQuery를 통해 Gemini 실제 비용을 가져온다.
+     * 서비스 계정 JSON 파일로 인증.
      */
     fun fetchGeminiBilling(
-        apiKey: String,
+        serviceAccountJson: String,
         projectId: String,
         datasetId: String,
         tableId: String,
     ): BillingResult {
         try {
+            val accessToken = getServiceAccountToken(serviceAccountJson)
+                ?: return BillingResult(0.0, 0.0, "서비스 계정 인증 실패. JSON 파일을 확인하세요.")
+
             val localNow = LocalDate.now(ZoneId.systemDefault())
             val monthStart = localNow.withDayOfMonth(1)
             val today = localNow.toString()
 
-            // BigQuery SQL: Gemini 서비스 이번달 일별 비용
             val query = """
                 SELECT
                   DATE(usage_start_time) as date,
@@ -267,9 +344,10 @@ object BillingApiClient {
             }
 
             val conn = URL(
-                "https://bigquery.googleapis.com/bigquery/v2/projects/$projectId/queries?key=$apiKey"
+                "https://bigquery.googleapis.com/bigquery/v2/projects/$projectId/queries"
             ).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $accessToken")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.connectTimeout = 30000
             conn.readTimeout = 30000
@@ -319,7 +397,7 @@ object BillingApiClient {
      * @param subscriptions 구독 목록
      */
     data class GeminiConfig(
-        val apiKey: String,
+        val serviceAccountJson: String,
         val projectId: String,
         val datasetId: String,
         val tableId: String,
@@ -357,7 +435,7 @@ object BillingApiClient {
         // Gemini: BigQuery 빌링 조회
         if (geminiConfig != null) {
             val result = fetchGeminiBilling(
-                geminiConfig.apiKey, geminiConfig.projectId,
+                geminiConfig.serviceAccountJson, geminiConfig.projectId,
                 geminiConfig.datasetId, geminiConfig.tableId
             )
             billingResults["gemini"] = result

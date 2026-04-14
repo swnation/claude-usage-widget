@@ -199,6 +199,31 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // GCP 서비스 계정 JSON 파일 선택
+    private val gcpServiceAccountPicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val stream = contentResolver.openInputStream(uri)
+                val json = stream?.bufferedReader()?.readText() ?: return@registerForActivityResult
+                stream.close()
+                val sa = com.google.gson.JsonParser.parseString(json).asJsonObject
+                val email = sa.get("client_email")?.asString
+                if (email.isNullOrEmpty()) {
+                    Toast.makeText(this, "유효하지 않은 서비스 계정 JSON", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+                PreferenceManager.getDefaultSharedPreferences(this).edit()
+                    .putString("gcp_service_account_json", json).apply()
+                findViewById<TextView>(R.id.gcpServiceAccountStatus)?.text = "서비스 계정: $email"
+                Toast.makeText(this, "서비스 계정 등록: $email", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "파일 읽기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -412,7 +437,20 @@ class MainActivity : AppCompatActivity() {
 
         // (오랑붕쌤 연결/Drive 백업 제거됨)
 
-        // Gemini BigQuery 설정
+        // Gemini BigQuery 설정 - 서비스 계정 파일
+        findViewById<Button>(R.id.gcpServiceAccountButton).setOnClickListener {
+            gcpServiceAccountPicker.launch(arrayOf("application/json", "*/*"))
+        }
+        val saStatus = findViewById<TextView>(R.id.gcpServiceAccountStatus)
+        val saJson = PreferenceManager.getDefaultSharedPreferences(this).getString("gcp_service_account_json", null)
+        if (saJson != null) {
+            try {
+                val email = com.google.gson.JsonParser.parseString(saJson).asJsonObject.get("client_email")?.asString
+                saStatus.text = "서비스 계정: ${email ?: "등록됨"}"
+                saStatus.setTextColor(0xFF4ade80.toInt())
+            } catch (_: Exception) {}
+        }
+
         val gcpProjectInput = findViewById<EditText>(R.id.gcpProjectIdInput)
         val gcpDatasetInput = findViewById<EditText>(R.id.gcpDatasetIdInput)
         val gcpTableInput = findViewById<EditText>(R.id.gcpTableIdInput)
@@ -435,10 +473,10 @@ class MainActivity : AppCompatActivity() {
                 .apply()
             Toast.makeText(this, "Gemini Billing 설정 저장됨", Toast.LENGTH_SHORT).show()
             // Gemini admin key가 이미 등록되어 있으면 바로 조회
-            if (gcpPrefs.getString("gemini_admin_key", "")?.isNotEmpty() == true) {
+            if (gcpPrefs.getString("gcp_service_account_json", null) != null) {
                 fetchAdminCosts()
             } else {
-                Toast.makeText(this, "Billing API 키에서 Gemini 키를 먼저 등록하세요", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "서비스 계정 JSON 파일을 먼저 등록하세요", Toast.LENGTH_SHORT).show()
             }
         }
 
@@ -935,13 +973,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildGeminiConfig(prefs: android.content.SharedPreferences): BillingApiClient.GeminiConfig? {
-        val apiKey = prefs.getString("gemini_admin_key", null)
-        if (apiKey.isNullOrEmpty()) return null
+        val saJson = prefs.getString("gcp_service_account_json", null)
+        if (saJson.isNullOrEmpty()) return null
         val projectId = prefs.getString("gcp_project_id", null) ?: return null
         val datasetId = prefs.getString("gcp_dataset_id", null) ?: return null
         val tableId = prefs.getString("gcp_table_id", null) ?: return null
         if (projectId.isEmpty() || datasetId.isEmpty() || tableId.isEmpty()) return null
-        return BillingApiClient.GeminiConfig(apiKey, projectId, datasetId, tableId)
+        return BillingApiClient.GeminiConfig(saJson, projectId, datasetId, tableId)
     }
 
     private fun buildGrokConfig(prefs: android.content.SharedPreferences): BillingApiClient.GrokConfig? {

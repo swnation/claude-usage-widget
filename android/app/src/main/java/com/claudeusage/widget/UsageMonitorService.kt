@@ -338,7 +338,7 @@ class UsageMonitorService : Service() {
                     // Billing API 호출 → 추정치와 병합
                     // Gemini BigQuery 설정
                     val geminiConfig = run {
-                        val gKey = prefs.getString("gemini_admin_key", null)
+                        val gKey = prefs.getString("gcp_service_account_json", null)
                         val pId = prefs.getString("gcp_project_id", null)
                         val dId = prefs.getString("gcp_dataset_id", null)
                         val tId = prefs.getString("gcp_table_id", null)

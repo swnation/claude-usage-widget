@@ -364,7 +364,26 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="GCP 빌링→BigQuery 내보내기 + Gemini API 키 등록 필요"
+                    android:text="GCP 빌링→BigQuery 내보내기 + 서비스 계정 JSON 필요"
+                    android:textColor="#555566"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="8dp" />
+
+                <Button
+                    android:id="@+id/gcpServiceAccountButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:text="서비스 계정 JSON 파일 선택"
+                    android:backgroundTint="#22223a"
+                    android:textColor="#4285f4"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:id="@+id/gcpServiceAccountStatus"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="서비스 계정: 미등록"
                     android:textColor="#555566"
                     android:textSize="10sp"
                     android:layout_marginBottom="8dp" />
