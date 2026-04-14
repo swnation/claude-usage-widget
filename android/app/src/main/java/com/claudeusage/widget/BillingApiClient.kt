@@ -153,16 +153,109 @@ object BillingApiClient {
     }
 
     /**
+     * Google Cloud BigQuery를 통해 Gemini 실제 비용을 가져온다.
+     * 사전 조건: GCP 콘솔에서 빌링 데이터를 BigQuery로 내보내기 설정 필요.
+     *
+     * @param oauthToken Google OAuth 토큰 (BigQuery 읽기 권한 필요)
+     * @param projectId GCP 프로젝트 ID
+     * @param datasetId BigQuery 데이터셋 ID (빌링 내보내기 대상)
+     * @param tableId 테이블 ID (보통 gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX)
+     */
+    fun fetchGeminiBilling(
+        oauthToken: String,
+        projectId: String,
+        datasetId: String,
+        tableId: String,
+    ): BillingResult {
+        try {
+            val localNow = LocalDate.now(ZoneId.systemDefault())
+            val monthStart = localNow.withDayOfMonth(1)
+            val today = localNow.toString()
+
+            // BigQuery SQL: Gemini 서비스 이번달 일별 비용
+            val query = """
+                SELECT
+                  DATE(usage_start_time) as date,
+                  SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) as net_cost
+                FROM `$projectId.$datasetId.$tableId`
+                WHERE (service.description LIKE '%Gemini%'
+                       OR service.description LIKE '%Vertex AI%'
+                       OR service.description LIKE '%generativelanguage%')
+                  AND DATE(usage_start_time) >= '$monthStart'
+                GROUP BY date
+                ORDER BY date
+            """.trimIndent()
+
+            val requestBody = com.google.gson.JsonObject().apply {
+                addProperty("query", query)
+                addProperty("useLegacySql", false)
+                addProperty("maxResults", 100)
+            }
+
+            val conn = URL(
+                "https://bigquery.googleapis.com/bigquery/v2/projects/$projectId/queries"
+            ).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $oauthToken")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.connectTimeout = 30000
+            conn.readTimeout = 30000
+            conn.doOutput = true
+            conn.outputStream.write(requestBody.toString().toByteArray())
+
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.readText() ?: ""
+            conn.disconnect()
+
+            if (code != 200) {
+                val errMsg = try {
+                    JsonParser.parseString(body).asJsonObject
+                        .getAsJsonObject("error")?.get("message")?.asString
+                } catch (_: Exception) { null } ?: "HTTP $code"
+                return BillingResult(0.0, 0.0, errMsg)
+            }
+
+            val json = JsonParser.parseString(body).asJsonObject
+            var monthTotal = 0.0
+            var todayTotal = 0.0
+
+            json.getAsJsonArray("rows")?.forEach { row ->
+                val fields = row.asJsonObject.getAsJsonArray("f")
+                val date = fields[0].asJsonObject.get("v")?.asString ?: ""
+                val cost = fields[1].asJsonObject.get("v")?.asString?.toDoubleOrNull() ?: 0.0
+                monthTotal += cost
+                if (date == today) {
+                    todayTotal = cost
+                }
+            }
+
+            return BillingResult(todayTotal, monthTotal)
+        } catch (e: Exception) {
+            return BillingResult(0.0, 0.0, e.message ?: "BigQuery 연결 실패")
+        }
+    }
+
+    /**
      * 모든 Billing API를 호출하고 오랑붕쌤 추정치와 병합한다.
      *
      * @param anthropicKey Anthropic Admin API 키 (null이면 스킵)
      * @param openaiKey OpenAI API 키 (null이면 스킵)
+     * @param geminiConfig GCP BigQuery 설정 (null이면 스킵)
      * @param estimatedData 오랑붕쌤에서 가져온 추정 데이터 (null이면 스킵)
      * @param subscriptions 구독 목록
      */
+    data class GeminiConfig(
+        val oauthToken: String,
+        val projectId: String,
+        val datasetId: String,
+        val tableId: String,
+    )
+
     fun fetchAndMerge(
         anthropicKey: String?,
         openaiKey: String?,
+        geminiConfig: GeminiConfig? = null,
         estimatedData: ApiCostData?,
         subscriptions: List<Subscription> = emptyList(),
     ): MergedCostResult {
@@ -180,6 +273,16 @@ object BillingApiClient {
             val result = fetchOpenAiBilling(openaiKey)
             billingResults["gpt"] = result
             if (result.error != null) errors.add("GPT: ${result.error}")
+        }
+
+        // Gemini: BigQuery 빌링 조회
+        if (geminiConfig != null) {
+            val result = fetchGeminiBilling(
+                geminiConfig.oauthToken, geminiConfig.projectId,
+                geminiConfig.datasetId, geminiConfig.tableId
+            )
+            billingResults["gemini"] = result
+            if (result.error != null) errors.add("Gemini: ${result.error}")
         }
 
         val hasBilling = billingResults.values.any { it.error == null }

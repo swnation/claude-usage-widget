@@ -405,6 +405,75 @@
                     android:textColor="#888899"
                     android:textSize="11sp"
                     android:layout_marginTop="4dp" />
+
+                <!-- Gemini BigQuery 설정 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Gemini Billing (BigQuery)"
+                    android:textColor="#4285f4"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="GCP 빌링 → BigQuery 내보내기 설정 필요"
+                    android:textColor="#555566"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="8dp" />
+
+                <EditText
+                    android:id="@+id/gcpProjectIdInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="GCP 프로젝트 ID"
+                    android:inputType="text"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <EditText
+                    android:id="@+id/gcpDatasetIdInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="BigQuery 데이터셋 ID"
+                    android:inputType="text"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <EditText
+                    android:id="@+id/gcpTableIdInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="테이블 ID (gcp_billing_export_v1_XXXXXX)"
+                    android:inputType="text"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <Button
+                    android:id="@+id/gcpSaveButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:text="Gemini Billing 저장"
+                    android:backgroundTint="#22223a"
+                    android:textColor="#4285f4"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
             </LinearLayout>
         </LinearLayout>
 

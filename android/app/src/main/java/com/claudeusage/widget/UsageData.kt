@@ -181,7 +181,7 @@ object AiDefs {
         AiDef("claude", "Claude", "#c96442",
             "https://console.anthropic.com/settings/billing", true),
         AiDef("gemini", "Gemini", "#4285f4",
-            "https://aistudio.google.com/apikey", false),
+            "https://aistudio.google.com/apikey", true),
         AiDef("grok", "Grok", "#1DA1F2",
             "https://console.x.ai/", false),
         AiDef("perp", "Perplexity", "#20808d",

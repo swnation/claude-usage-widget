@@ -365,6 +365,35 @@ class MainActivity : AppCompatActivity() {
         // Admin API 키 복원/백업
         findViewById<Button>(R.id.adminKeyRestore).setOnClickListener { restoreKeysFromDrive() }
         findViewById<Button>(R.id.adminKeyBackup).setOnClickListener { backupKeysToDrive() }
+
+        // Gemini BigQuery 설정
+        val gcpProjectInput = findViewById<EditText>(R.id.gcpProjectIdInput)
+        val gcpDatasetInput = findViewById<EditText>(R.id.gcpDatasetIdInput)
+        val gcpTableInput = findViewById<EditText>(R.id.gcpTableIdInput)
+        val gcpPrefs = PreferenceManager.getDefaultSharedPreferences(this)
+        gcpProjectInput.setText(gcpPrefs.getString("gcp_project_id", ""))
+        gcpDatasetInput.setText(gcpPrefs.getString("gcp_dataset_id", ""))
+        gcpTableInput.setText(gcpPrefs.getString("gcp_table_id", ""))
+        findViewById<Button>(R.id.gcpSaveButton).setOnClickListener {
+            val pId = gcpProjectInput.text.toString().trim()
+            val dId = gcpDatasetInput.text.toString().trim()
+            val tId = gcpTableInput.text.toString().trim()
+            if (pId.isEmpty() || dId.isEmpty() || tId.isEmpty()) {
+                Toast.makeText(this, "모든 필드를 입력하세요", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            gcpPrefs.edit()
+                .putString("gcp_project_id", pId)
+                .putString("gcp_dataset_id", dId)
+                .putString("gcp_table_id", tId)
+                .apply()
+            Toast.makeText(this, "Gemini Billing 설정 저장됨", Toast.LENGTH_SHORT).show()
+            if (gcpPrefs.getString("google_oauth_token", null) != null) {
+                fetchAdminCosts()
+            } else {
+                Toast.makeText(this, "오랑붕쌤 연결 후 사용 가능합니다", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     // ── 앱 스킨 적용 ──
@@ -804,6 +833,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private fun buildGeminiConfig(prefs: android.content.SharedPreferences): BillingApiClient.GeminiConfig? {
+        val token = prefs.getString("google_oauth_token", null) ?: return null
+        val projectId = prefs.getString("gcp_project_id", null) ?: return null
+        val datasetId = prefs.getString("gcp_dataset_id", null) ?: return null
+        val tableId = prefs.getString("gcp_table_id", null) ?: return null
+        if (projectId.isEmpty() || datasetId.isEmpty() || tableId.isEmpty()) return null
+        return BillingApiClient.GeminiConfig(token, projectId, datasetId, tableId)
+    }
+
     private fun fetchAdminCosts() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
@@ -831,6 +869,7 @@ class MainActivity : AppCompatActivity() {
             val result = BillingApiClient.fetchAndMerge(
                 anthropicKey = anthropicKey.ifEmpty { null },
                 openaiKey = openaiKey.ifEmpty { null },
+                geminiConfig = buildGeminiConfig(prefs),
                 estimatedData = estimated,
                 subscriptions = subscriptions,
             )
@@ -1392,7 +1431,8 @@ class MainActivity : AppCompatActivity() {
         val token = prefs.getString("google_oauth_token", null)
         val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
         val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
-        val hasBillingKeys = anthropicKey.isNotEmpty() || openaiKey.isNotEmpty()
+        val hasGeminiConfig = buildGeminiConfig(prefs) != null
+        val hasBillingKeys = anthropicKey.isNotEmpty() || openaiKey.isNotEmpty() || hasGeminiConfig
         val hasToken = !token.isNullOrEmpty()
 
         if (!hasBillingKeys && !hasToken) return
@@ -1427,6 +1467,7 @@ class MainActivity : AppCompatActivity() {
                 val merged = BillingApiClient.fetchAndMerge(
                     anthropicKey = anthropicKey.ifEmpty { null },
                     openaiKey = openaiKey.ifEmpty { null },
+                    geminiConfig = buildGeminiConfig(prefs),
                     estimatedData = estimatedData,
                     subscriptions = subscriptions,
                 )
