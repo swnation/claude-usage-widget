@@ -145,6 +145,29 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // .cskin 스킨의 배경 이미지 별도 선택
+    private val cskinBgImagePicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val inStream = contentResolver.openInputStream(uri) ?: return@registerForActivityResult
+                val file = java.io.File(filesDir, "cskin_bg.png")
+                file.outputStream().use { out -> inStream.copyTo(out) }
+                inStream.close()
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+                prefs.edit().putString("cskin_bg_path", file.absolutePath).apply()
+                setupSkinSelector()
+                applySkin()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                UsageWidgetProvider.updateAll(this)
+                Toast.makeText(this, "배경 이미지 적용!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "이미지 로드 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -411,12 +434,16 @@ class MainActivity : AppCompatActivity() {
             if (skinId == "custom-file") {
                 val json = prefs.getString("custom_skin_json", null)
                 val skinData = json?.let { CustomSkinData.fromJson(it) }
-                val bgBitmap = skinData?.appBackgroundBitmap()
+                // 우선순위: 별도 선택한 배경 이미지 > base64 > 단색
+                val bgPath = prefs.getString("cskin_bg_path", null)
+                val bgBitmap = bgPath?.let { android.graphics.BitmapFactory.decodeFile(it) }
+                    ?: skinData?.appBackgroundBitmap()
                 if (bgBitmap != null) {
                     val drawable = android.graphics.drawable.BitmapDrawable(resources, bgBitmap)
                     drawable.gravity = android.view.Gravity.FILL
                     scrollView?.background = drawable
-                    sectionBgColor = skinData.sectionColorWithOpacity()
+                    sectionBgColor = skinData?.sectionColorWithOpacity()
+                        ?: ((skin.sectionBgColor and 0x00FFFFFF) or 0xCC000000.toInt())
                 } else {
                     scrollView?.setBackgroundColor(skin.bgColor)
                 }
@@ -690,6 +717,49 @@ class MainActivity : AppCompatActivity() {
             cskinFilePicker.launch(arrayOf("application/json", "*/*"))
         }
         container.addView(fileItem)
+
+        // ── 배경 이미지 선택 (파일 스킨 활성화 시만) ──
+        if (currentSkin == "custom-file") {
+            val bgItem = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(8, 8, 8, 8)
+                val size = (64 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = (8 * resources.displayMetrics.density).toInt()
+                }
+            }
+            val hasBgPath = prefs.getString("cskin_bg_path", null) != null
+            val bgPreview = View(this).apply {
+                val s = (48 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s)
+                if (hasBgPath) {
+                    val bm = android.graphics.BitmapFactory.decodeFile(prefs.getString("cskin_bg_path", null))
+                    if (bm != null) {
+                        background = android.graphics.drawable.BitmapDrawable(resources, bm)
+                    }
+                } else {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 12f * resources.displayMetrics.density
+                        setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF4285f4.toInt())
+                        setColor(0xFF22223a.toInt())
+                    }
+                }
+            }
+            val bgLabel = TextView(this).apply {
+                text = "🖼\n배경"
+                textSize = 9f
+                setTextColor(0xFFe0e0e0.toInt())
+                gravity = android.view.Gravity.CENTER
+            }
+            bgItem.addView(bgPreview)
+            bgItem.addView(bgLabel)
+            bgItem.setOnClickListener {
+                cskinBgImagePicker.launch(arrayOf("image/*"))
+            }
+            container.addView(bgItem)
+        }
     }
 
     // ── 동적 Billing 키 ──
