@@ -179,6 +179,8 @@ class MainActivity : AppCompatActivity() {
                 applySkin()
                 FloatingOverlay.getInstance(applicationContext).updateSkin()
                 UsageWidgetProvider.updateAll(this)
+                // 로컬에 자동 저장
+                SkinManager.saveCurrent(this)
                 val bgMsg = if (bgSaved) " + 배경 이미지" else ""
                 Toast.makeText(this, "${skinData.name} 스킨 적용!$bgMsg", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
@@ -949,6 +951,139 @@ class MainActivity : AppCompatActivity() {
                 cskinBgImagePicker.launch(arrayOf("image/*"))
             }
             container.addView(bgItem)
+        }
+
+        // ── 저장된 스킨 목록 ──
+        setupSavedSkins()
+
+        // ── 플로팅 스킨 토글 ──
+        val overlayToggle = findViewById<android.widget.CheckBox>(R.id.overlaySkiEnabled)
+        overlayToggle?.isChecked = prefs.getBoolean("overlay_skin_enabled", true)
+        overlayToggle?.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("overlay_skin_enabled", checked).apply()
+            if (checked) {
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+            } else {
+                // 오버레이 스킨 끄기 → 기본 다크로
+                val overlay = FloatingOverlay.getInstance(applicationContext)
+                try {
+                    val tv = overlay.javaClass.getDeclaredField("overlayView").let {
+                        it.isAccessible = true; it.get(overlay)
+                    } as? android.widget.TextView
+                    if (tv != null) {
+                        val defaultSkin = overlay.SKIN_STYLES["default"]!!
+                        tv.background = android.graphics.drawable.GradientDrawable(
+                            android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                            intArrayOf(defaultSkin.bgStartColor, defaultSkin.bgEndColor)
+                        ).apply { cornerRadius = defaultSkin.cornerRadius }
+                        tv.setTextColor(defaultSkin.textColor)
+                        tv.setShadowLayer(0f, 0f, 0f, 0)
+                        tv.elevation = 4f
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
+    private fun setupSavedSkins() {
+        val savedContainer = findViewById<LinearLayout>(R.id.savedSkinsContainer) ?: return
+        val savedLabel = findViewById<TextView>(R.id.savedSkinsLabel)
+        val savedScroll = findViewById<android.widget.HorizontalScrollView>(R.id.savedSkinsScroll)
+        savedContainer.removeAllViews()
+
+        val savedSkins = SkinManager.listSaved(this)
+        if (savedSkins.isEmpty()) {
+            savedLabel?.visibility = View.GONE
+            savedScroll?.visibility = View.GONE
+            return
+        }
+        savedLabel?.visibility = View.VISIBLE
+        savedScroll?.visibility = View.VISIBLE
+
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+
+        savedSkins.forEach { saved ->
+            val item = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                gravity = android.view.Gravity.CENTER
+                setPadding(8, 8, 8, 8)
+                val size = (64 * resources.displayMetrics.density).toInt()
+                layoutParams = LinearLayout.LayoutParams(size, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                    marginEnd = (8 * resources.displayMetrics.density).toInt()
+                }
+            }
+
+            // 미리보기: 배경 이미지 또는 cskin 색상
+            val preview = if (saved.hasAppBg) {
+                val bm = android.graphics.BitmapFactory.decodeFile(java.io.File(saved.dirPath, "bg.png").absolutePath)
+                if (bm != null) {
+                    ImageView(this).apply {
+                        val s = (48 * resources.displayMetrics.density).toInt()
+                        layoutParams = LinearLayout.LayoutParams(s, s)
+                        scaleType = ImageView.ScaleType.CENTER_CROP
+                        setImageBitmap(bm)
+                        clipToOutline = true
+                        outlineProvider = object : android.view.ViewOutlineProvider() {
+                            override fun getOutline(view: View, outline: android.graphics.Outline) {
+                                outline.setRoundRect(0, 0, view.width, view.height, 12f * resources.displayMetrics.density)
+                            }
+                        }
+                    }
+                } else null
+            } else null
+
+            val previewFinal = preview ?: run {
+                // JSON에서 색상 읽기
+                val json = java.io.File(saved.dirPath, "skin.json").readText()
+                val skinData = CustomSkinData.fromJson(json)
+                View(this).apply {
+                    val s = (48 * resources.displayMetrics.density).toInt()
+                    layoutParams = LinearLayout.LayoutParams(s, s)
+                    val colors = skinData?.overlayBgColors() ?: intArrayOf(0xFF22223a.toInt(), 0xFF22223a.toInt())
+                    background = android.graphics.drawable.GradientDrawable(
+                        skinData?.overlayGradientOrientation() ?: android.graphics.drawable.GradientDrawable.Orientation.TL_BR,
+                        colors
+                    ).apply { cornerRadius = 12f * resources.displayMetrics.density }
+                }
+            }
+
+            val label = TextView(this).apply {
+                text = saved.name
+                textSize = 8f
+                setTextColor(0xFFe0e0e0.toInt())
+                gravity = android.view.Gravity.CENTER
+                maxLines = 1
+            }
+
+            item.addView(previewFinal)
+            item.addView(label)
+
+            // 탭: 로드
+            item.setOnClickListener {
+                SkinManager.load(this, saved)
+                setupSkinSelector()
+                applySkin()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                UsageWidgetProvider.updateAll(this)
+                Toast.makeText(this, "${saved.name} 적용!", Toast.LENGTH_SHORT).show()
+            }
+
+            // 롱프레스: 삭제
+            item.setOnLongClickListener {
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("스킨 삭제")
+                    .setMessage("'${saved.name}' 스킨을 삭제할까요?")
+                    .setPositiveButton("삭제") { _, _ ->
+                        SkinManager.delete(this, saved)
+                        setupSavedSkins()
+                        Toast.makeText(this, "삭제됨", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
+                true
+            }
+
+            savedContainer.addView(item)
         }
     }
 

@@ -568,6 +568,44 @@
                         android:layout_height="wrap_content"
                         android:orientation="horizontal" />
                 </HorizontalScrollView>
+
+                <!-- 플로팅 스킨 토글 -->
+                <CheckBox
+                    android:id="@+id/overlaySkiEnabled"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="플로팅 오버레이에도 스킨 적용"
+                    android:textColor="#e0e0e0"
+                    android:textSize="12sp"
+                    android:buttonTint="#c084fc"
+                    android:checked="true"
+                    android:layout_marginTop="8dp" />
+
+                <!-- 저장된 스킨 -->
+                <TextView
+                    android:id="@+id/savedSkinsLabel"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="저장된 스킨"
+                    android:textColor="#888899"
+                    android:textSize="11sp"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp"
+                    android:visibility="gone" />
+
+                <HorizontalScrollView
+                    android:id="@+id/savedSkinsScroll"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/savedSkinsContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
             </LinearLayout>
         </LinearLayout>
 

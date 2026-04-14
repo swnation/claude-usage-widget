@@ -173,6 +173,12 @@ class FloatingOverlay private constructor(private val context: Context) {
 
     fun updateSkin() {
         val tv = overlayView as? TextView ?: return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val overlaySkinEnabled = prefs.getBoolean("overlay_skin_enabled", true)
+        if (!overlaySkinEnabled) {
+            applyDefaultSkin(tv)
+            return
+        }
         try { applySkinInternal(tv) } catch (_: Exception) { applyDefaultSkin(tv) }
     }
 
