@@ -383,12 +383,23 @@ class MainActivity : AppCompatActivity() {
                 val skinData = json?.let { CustomSkinData.fromJson(it) }
                 val bgBitmap = skinData?.appBackgroundBitmap()
                 if (bgBitmap != null) {
-                    // 배경 이미지 적용
                     val drawable = android.graphics.drawable.BitmapDrawable(resources, bgBitmap)
                     drawable.gravity = android.view.Gravity.FILL
                     scrollView?.background = drawable
-                    // 섹션을 반투명으로
                     sectionBgColor = skinData.sectionColorWithOpacity()
+                } else {
+                    scrollView?.setBackgroundColor(skin.bgColor)
+                }
+            } else if (skinId == "custom") {
+                // 사진 스킨: 앱 배경에도 사진 적용
+                val path = prefs.getString("custom_skin_path", null)
+                val bitmap = path?.let { android.graphics.BitmapFactory.decodeFile(it) }
+                if (bitmap != null) {
+                    val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap)
+                    drawable.gravity = android.view.Gravity.FILL
+                    scrollView?.background = drawable
+                    // 섹션 반투명 (사진이 비쳐 보이도록)
+                    sectionBgColor = (skin.sectionBgColor and 0x00FFFFFF) or 0xCC000000.toInt()
                 } else {
                     scrollView?.setBackgroundColor(skin.bgColor)
                 }
