@@ -224,6 +224,98 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 키 내보내기 (파일 저장 위치 선택)
+    private val keyExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+                val encrypted = prefs.getString("admin_keys_encrypted", null)
+                if (encrypted.isNullOrEmpty()) {
+                    Toast.makeText(this, "저장된 키가 없습니다", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+                // GCP/Grok 설정도 함께 내보내기
+                val exportData = com.google.gson.JsonObject().apply {
+                    addProperty("admin_keys_encrypted", encrypted)
+                    addProperty("gcp_project_id", prefs.getString("gcp_project_id", ""))
+                    addProperty("gcp_dataset_id", prefs.getString("gcp_dataset_id", ""))
+                    addProperty("gcp_table_id", prefs.getString("gcp_table_id", ""))
+                    addProperty("grok_team_id", prefs.getString("grok_team_id", ""))
+                    addProperty("gcp_service_account_json", prefs.getString("gcp_service_account_json", ""))
+                }
+                contentResolver.openOutputStream(uri)?.use { out ->
+                    out.write(exportData.toString().toByteArray())
+                }
+                Toast.makeText(this, "키 내보내기 완료", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "내보내기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    // 키 가져오기 (파일 선택)
+    private val keyImportLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val stream = contentResolver.openInputStream(uri)
+                val json = stream?.bufferedReader()?.readText() ?: return@registerForActivityResult
+                stream.close()
+                val obj = com.google.gson.JsonParser.parseString(json).asJsonObject
+                val encrypted = obj.get("admin_keys_encrypted")?.asString
+                if (encrypted.isNullOrEmpty()) {
+                    Toast.makeText(this, "유효하지 않은 백업 파일", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+                // PIN 입력 후 복원
+                val pinInput = EditText(this).apply {
+                    hint = "백업 시 설정한 PIN"
+                    inputType = android.text.InputType.TYPE_CLASS_NUMBER or
+                        android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                    setPadding(48, 24, 48, 24)
+                }
+                androidx.appcompat.app.AlertDialog.Builder(this)
+                    .setTitle("키 가져오기")
+                    .setMessage("암호화 해제 PIN을 입력하세요")
+                    .setView(pinInput)
+                    .setPositiveButton("복원") { _, _ ->
+                        val pin = pinInput.text.toString()
+                        val decrypted = KeyEncryption.decrypt(encrypted, pin)
+                        if (decrypted == null) {
+                            Toast.makeText(this, "PIN이 틀립니다", Toast.LENGTH_SHORT).show()
+                            return@setPositiveButton
+                        }
+                        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+                        val editor = prefs.edit().putString("admin_keys_encrypted", encrypted)
+                        // 개별 키 복원
+                        try {
+                            val keys = com.google.gson.JsonParser.parseString(decrypted).asJsonObject
+                            for (entry in keys.entrySet()) {
+                                editor.putString("${entry.key}_admin_key", entry.value.asString)
+                            }
+                        } catch (_: Exception) {}
+                        // GCP/Grok 설정 복원
+                        obj.get("gcp_project_id")?.asString?.let { if (it.isNotEmpty()) editor.putString("gcp_project_id", it) }
+                        obj.get("gcp_dataset_id")?.asString?.let { if (it.isNotEmpty()) editor.putString("gcp_dataset_id", it) }
+                        obj.get("gcp_table_id")?.asString?.let { if (it.isNotEmpty()) editor.putString("gcp_table_id", it) }
+                        obj.get("grok_team_id")?.asString?.let { if (it.isNotEmpty()) editor.putString("grok_team_id", it) }
+                        obj.get("gcp_service_account_json")?.asString?.let { if (it.isNotEmpty()) editor.putString("gcp_service_account_json", it) }
+                        editor.apply()
+                        Toast.makeText(this, "키 복원 완료!", Toast.LENGTH_SHORT).show()
+                        setupBillingKeys()
+                        fetchAdminCosts()
+                    }
+                    .setNegativeButton("취소", null)
+                    .show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "가져오기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
@@ -435,7 +527,13 @@ class MainActivity : AppCompatActivity() {
             updateCostSectionVisibility()
         }
 
-        // (오랑붕쌤 연결/Drive 백업 제거됨)
+        // 키 내보내기/가져오기
+        findViewById<Button>(R.id.keyExportButton).setOnClickListener {
+            keyExportLauncher.launch("claude_widget_keys.json")
+        }
+        findViewById<Button>(R.id.keyImportButton).setOnClickListener {
+            keyImportLauncher.launch(arrayOf("application/json", "*/*"))
+        }
 
         // Gemini BigQuery 설정 - 서비스 계정 파일
         findViewById<Button>(R.id.gcpServiceAccountButton).setOnClickListener {

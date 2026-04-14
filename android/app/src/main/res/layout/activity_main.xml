@@ -332,6 +332,35 @@
                     android:layout_marginTop="4dp"
                     android:layout_marginBottom="8dp" />
 
+                <!-- 키 백업/복원 (파일) -->
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginBottom="4dp">
+
+                    <Button
+                        android:id="@+id/keyExportButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="키 내보내기"
+                        android:backgroundTint="#22223a"
+                        android:textColor="#4ade80"
+                        android:textSize="11sp"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/keyImportButton"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="키 가져오기"
+                        android:backgroundTint="#22223a"
+                        android:textColor="#c084fc"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
                 <TextView
                     android:id="@+id/adminKeyStatus"
                     android:layout_width="match_parent"
