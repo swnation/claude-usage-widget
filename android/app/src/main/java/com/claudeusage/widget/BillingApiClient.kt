@@ -156,13 +156,13 @@ object BillingApiClient {
      * Google Cloud BigQuery를 통해 Gemini 실제 비용을 가져온다.
      * 사전 조건: GCP 콘솔에서 빌링 데이터를 BigQuery로 내보내기 설정 필요.
      *
-     * @param oauthToken Google OAuth 토큰 (BigQuery 읽기 권한 필요)
+     * @param apiKey GCP API 키 (BigQuery 읽기 권한)
      * @param projectId GCP 프로젝트 ID
      * @param datasetId BigQuery 데이터셋 ID (빌링 내보내기 대상)
      * @param tableId 테이블 ID (보통 gcp_billing_export_v1_XXXXXX_XXXXXX_XXXXXX)
      */
     fun fetchGeminiBilling(
-        oauthToken: String,
+        apiKey: String,
         projectId: String,
         datasetId: String,
         tableId: String,
@@ -193,10 +193,9 @@ object BillingApiClient {
             }
 
             val conn = URL(
-                "https://bigquery.googleapis.com/bigquery/v2/projects/$projectId/queries"
+                "https://bigquery.googleapis.com/bigquery/v2/projects/$projectId/queries?key=$apiKey"
             ).openConnection() as HttpURLConnection
             conn.requestMethod = "POST"
-            conn.setRequestProperty("Authorization", "Bearer $oauthToken")
             conn.setRequestProperty("Content-Type", "application/json")
             conn.connectTimeout = 30000
             conn.readTimeout = 30000
@@ -246,7 +245,7 @@ object BillingApiClient {
      * @param subscriptions 구독 목록
      */
     data class GeminiConfig(
-        val oauthToken: String,
+        val apiKey: String,
         val projectId: String,
         val datasetId: String,
         val tableId: String,
@@ -278,7 +277,7 @@ object BillingApiClient {
         // Gemini: BigQuery 빌링 조회
         if (geminiConfig != null) {
             val result = fetchGeminiBilling(
-                geminiConfig.oauthToken, geminiConfig.projectId,
+                geminiConfig.apiKey, geminiConfig.projectId,
                 geminiConfig.datasetId, geminiConfig.tableId
             )
             billingResults["gemini"] = result

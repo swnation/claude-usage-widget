@@ -388,10 +388,11 @@ class MainActivity : AppCompatActivity() {
                 .putString("gcp_table_id", tId)
                 .apply()
             Toast.makeText(this, "Gemini Billing 설정 저장됨", Toast.LENGTH_SHORT).show()
-            if (gcpPrefs.getString("google_oauth_token", null) != null) {
+            // Gemini admin key가 이미 등록되어 있으면 바로 조회
+            if (gcpPrefs.getString("gemini_admin_key", "")?.isNotEmpty() == true) {
                 fetchAdminCosts()
             } else {
-                Toast.makeText(this, "오랑붕쌤 연결 후 사용 가능합니다", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Billing API 키에서 Gemini 키를 먼저 등록하세요", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -834,12 +835,13 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun buildGeminiConfig(prefs: android.content.SharedPreferences): BillingApiClient.GeminiConfig? {
-        val token = prefs.getString("google_oauth_token", null) ?: return null
+        val apiKey = prefs.getString("gemini_admin_key", null)
+        if (apiKey.isNullOrEmpty()) return null
         val projectId = prefs.getString("gcp_project_id", null) ?: return null
         val datasetId = prefs.getString("gcp_dataset_id", null) ?: return null
         val tableId = prefs.getString("gcp_table_id", null) ?: return null
         if (projectId.isEmpty() || datasetId.isEmpty() || tableId.isEmpty()) return null
-        return BillingApiClient.GeminiConfig(token, projectId, datasetId, tableId)
+        return BillingApiClient.GeminiConfig(apiKey, projectId, datasetId, tableId)
     }
 
     private fun fetchAdminCosts() {

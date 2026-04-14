@@ -338,12 +338,12 @@ class UsageMonitorService : Service() {
                     // Billing API 호출 → 추정치와 병합
                     // Gemini BigQuery 설정
                     val geminiConfig = run {
-                        val token = prefs.getString("google_oauth_token", null)
+                        val gKey = prefs.getString("gemini_admin_key", null)
                         val pId = prefs.getString("gcp_project_id", null)
                         val dId = prefs.getString("gcp_dataset_id", null)
                         val tId = prefs.getString("gcp_table_id", null)
-                        if (token != null && !pId.isNullOrEmpty() && !dId.isNullOrEmpty() && !tId.isNullOrEmpty())
-                            BillingApiClient.GeminiConfig(token, pId, dId, tId) else null
+                        if (!gKey.isNullOrEmpty() && !pId.isNullOrEmpty() && !dId.isNullOrEmpty() && !tId.isNullOrEmpty())
+                            BillingApiClient.GeminiConfig(gKey, pId, dId, tId) else null
                     }
                     val merged = BillingApiClient.fetchAndMerge(
                         anthropicKey = anthropicKey,

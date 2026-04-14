@@ -420,7 +420,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="GCP 빌링 → BigQuery 내보내기 설정 필요"
+                    android:text="GCP 빌링→BigQuery 내보내기 + Gemini API 키 등록 필요"
                     android:textColor="#555566"
                     android:textSize="10sp"
                     android:layout_marginBottom="8dp" />
