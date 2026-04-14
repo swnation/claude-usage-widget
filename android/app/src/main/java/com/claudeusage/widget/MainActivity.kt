@@ -115,30 +115,70 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // 커스텀 스킨 파일(.cskin) 선택
+    // 커스텀 스킨 파일 선택 (.cskin JSON 또는 .zip = JSON + 배경이미지)
     private val cskinFilePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
             try {
-                val stream = contentResolver.openInputStream(uri)
-                val json = stream?.bufferedReader()?.readText() ?: return@registerForActivityResult
-                stream.close()
+                val inStream = contentResolver.openInputStream(uri) ?: return@registerForActivityResult
+                val bytes = inStream.readBytes()
+                inStream.close()
+
+                var json: String? = null
+                var bgSaved = false
+
+                // ZIP인지 확인 (PK 시그니처: 0x504B)
+                if (bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
+                    // ZIP 파일: JSON + 이미지 추출
+                    val tempZip = java.io.File(cacheDir, "skin_temp.zip")
+                    tempZip.writeBytes(bytes)
+                    val zipFile = java.util.zip.ZipFile(tempZip)
+                    for (entry in zipFile.entries()) {
+                        val name = entry.name.lowercase()
+                        if (name.endsWith(".cskin") || name.endsWith(".json")) {
+                            json = zipFile.getInputStream(entry).bufferedReader().readText()
+                        } else if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp")) {
+                            val bgFile = java.io.File(filesDir, "cskin_bg.png")
+                            bgFile.outputStream().use { out ->
+                                zipFile.getInputStream(entry).copyTo(out)
+                            }
+                            bgSaved = true
+                        }
+                    }
+                    zipFile.close()
+                    tempZip.delete()
+                } else {
+                    // 일반 JSON 파일
+                    json = String(bytes)
+                }
+
+                if (json == null) {
+                    Toast.makeText(this, "스킨 JSON을 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
                 val skinData = CustomSkinData.fromJson(json)
                 if (skinData == null) {
                     Toast.makeText(this, "스킨 파일 파싱 실패", Toast.LENGTH_SHORT).show()
                     return@registerForActivityResult
                 }
                 val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-                prefs.edit()
+                val editor = prefs.edit()
                     .putString("skin", "custom-file")
                     .putString("custom_skin_json", json)
-                    .apply()
+                if (bgSaved) {
+                    editor.putString("cskin_bg_path", java.io.File(filesDir, "cskin_bg.png").absolutePath)
+                } else if (!json.contains("backgroundImage")) {
+                    // ZIP에 이미지 없고 base64도 없으면 기존 배경 초기화
+                    editor.remove("cskin_bg_path")
+                }
+                editor.apply()
                 setupSkinSelector()
                 applySkin()
                 FloatingOverlay.getInstance(applicationContext).updateSkin()
                 UsageWidgetProvider.updateAll(this)
-                Toast.makeText(this, "${skinData.name} 스킨 적용!", Toast.LENGTH_SHORT).show()
+                val bgMsg = if (bgSaved) " + 배경 이미지" else ""
+                Toast.makeText(this, "${skinData.name} 스킨 적용!$bgMsg", Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 Toast.makeText(this, "파일 읽기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
             }
