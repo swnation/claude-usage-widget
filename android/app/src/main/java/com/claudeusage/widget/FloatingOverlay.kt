@@ -245,7 +245,7 @@ class FloatingOverlay private constructor(private val context: Context) {
                     tv.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
                         try {
                             val path = android.graphics.Path()
-                            val svgPath = android.util.PathParser.createPathFromPathData(clipPathData)
+                            val svgPath = androidx.core.graphics.PathParser.createPathFromPathData(clipPathData)
                             val scaleX = if (refW > 0) v.width.toFloat() / refW else 1f
                             val scaleY = if (refH > 0) v.height.toFloat() / refH else 1f
                             val matrix = android.graphics.Matrix()
