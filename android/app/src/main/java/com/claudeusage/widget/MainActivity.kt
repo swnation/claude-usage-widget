@@ -47,9 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var costMonthText: TextView
     private lateinit var costMonthKrw: TextView
     private lateinit var costByAiContainer: LinearLayout
-    // 오랑붕쌤 연결
-    private lateinit var obsStatus: TextView
-    private lateinit var obsConnectButton: Button
+    // (오랑붕쌤 제거됨)
     // Admin API (동적)
     private lateinit var billingKeysContainer: LinearLayout
     private lateinit var adminCostText: TextView
@@ -78,14 +76,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private val obsLoginLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        if (result.resultCode == ObsLoginActivity.RESULT_LOGGED_IN) {
-            updateObsUI(true)
-            fetchObsCost()
-        }
-    }
+    // (오랑붕쌤 로그인 제거됨)
 
     // 커스텀 스킨 사진 선택
     private val customSkinPicker = registerForActivityResult(
@@ -294,8 +285,7 @@ class MainActivity : AppCompatActivity() {
         costMonthKrw = findViewById(R.id.costMonthKrw)
         costByAiContainer = findViewById(R.id.costByAiContainer)
         // 오랑붕쌤 연결
-        obsStatus = findViewById(R.id.obsStatus)
-        obsConnectButton = findViewById(R.id.obsConnectButton)
+        // (오랑붕쌤 UI 제거됨)
         // Billing API (동적)
         billingKeysContainer = findViewById(R.id.billingKeysContainer)
         adminCostText = findViewById(R.id.adminCostText)
@@ -420,14 +410,7 @@ class MainActivity : AppCompatActivity() {
             updateCostSectionVisibility()
         }
 
-        // 오랑붕쌤 연결
-        obsConnectButton.setOnClickListener {
-            obsLoginLauncher.launch(Intent(this, ObsLoginActivity::class.java))
-        }
-
-        // Admin API 키 복원/백업
-        findViewById<Button>(R.id.adminKeyRestore).setOnClickListener { restoreKeysFromDrive() }
-        findViewById<Button>(R.id.adminKeyBackup).setOnClickListener { backupKeysToDrive() }
+        // (오랑붕쌤 연결/Drive 백업 제거됨)
 
         // Gemini BigQuery 설정
         val gcpProjectInput = findViewById<EditText>(R.id.gcpProjectIdInput)
@@ -951,18 +934,6 @@ class MainActivity : AppCompatActivity() {
         overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
     }
 
-    private fun updateObsUI(connected: Boolean) {
-        if (connected) {
-            obsStatus.text = "오랑붕쌤: ✓ 연결됨"
-            obsStatus.setTextColor(getColor(android.R.color.holo_green_light))
-            obsConnectButton.text = "재연결"
-        } else {
-            obsStatus.text = "오랑붕쌤: 연결 안됨"
-            obsStatus.setTextColor(0xFF888899.toInt())
-            obsConnectButton.text = "오랑붕쌤 연결"
-        }
-    }
-
     private fun buildGeminiConfig(prefs: android.content.SharedPreferences): BillingApiClient.GeminiConfig? {
         val apiKey = prefs.getString("gemini_admin_key", null)
         if (apiKey.isNullOrEmpty()) return null
@@ -1313,9 +1284,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateCostSectionVisibility()
 
-        // 오랑붕쌤 상태
-        val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
-        updateObsUI(obsLoggedIn)
+        // (오랑붕쌤 상태 제거됨)
 
         // Billing API 키 (동적)
         setupBillingKeys()
@@ -1589,7 +1558,6 @@ class MainActivity : AppCompatActivity() {
                     withContext(Dispatchers.Main) {
                         prefs.edit().putBoolean("obs_logged_in", false)
                             .remove("google_oauth_token").apply()
-                        updateObsUI(false)
                     }
                 } else {
                     estimatedData = driveResult.costData
