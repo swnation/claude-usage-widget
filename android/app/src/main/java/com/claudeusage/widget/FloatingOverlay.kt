@@ -235,6 +235,37 @@ class FloatingOverlay private constructor(private val context: Context) {
                 } else {
                     tv.setShadowLayer(0f, 0f, 0f, 0)
                 }
+                // SVG clipPath 모양 클리핑
+                val clipPathData = skinData.overlay?.shape?.clipPath
+                if (!clipPathData.isNullOrEmpty()) {
+                    tv.clipToOutline = false
+                    tv.outlineProvider = null
+                    val refW = skinData.overlay.shape.width
+                    val refH = skinData.overlay.shape.height
+                    tv.addOnLayoutChangeListener { v, _, _, _, _, _, _, _, _ ->
+                        try {
+                            val path = android.graphics.Path()
+                            val svgPath = android.util.PathParser.createPathFromPathData(clipPathData)
+                            val scaleX = if (refW > 0) v.width.toFloat() / refW else 1f
+                            val scaleY = if (refH > 0) v.height.toFloat() / refH else 1f
+                            val matrix = android.graphics.Matrix()
+                            matrix.setScale(scaleX, scaleY)
+                            svgPath.transform(matrix)
+                            v.clipToOutline = true
+                            v.outlineProvider = object : android.view.ViewOutlineProvider() {
+                                override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                                    // Outline은 convex path만 지원 → 시도하고 실패시 rect
+                                    try {
+                                        outline.setPath(svgPath)
+                                    } catch (_: Exception) {
+                                        outline.setRect(0, 0, view.width, view.height)
+                                    }
+                                }
+                            }
+                            v.invalidateOutline()
+                        } catch (_: Exception) {}
+                    }
+                }
                 return
             }
             // fallback

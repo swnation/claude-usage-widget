@@ -47,6 +47,9 @@ data class CustomSkinData(
         val cornerRadius: Float = 16f,
         val border: Border? = null,
         val elevation: Float = 4f,
+        val clipPath: String? = null,  // SVG path data (예: "M10,0 L20,10 L10,20 L0,10 Z")
+        val width: Int = 0,            // clipPath용 기준 너비 (0이면 자동)
+        val height: Int = 0,           // clipPath용 기준 높이 (0이면 자동)
     )
 
     data class Border(
