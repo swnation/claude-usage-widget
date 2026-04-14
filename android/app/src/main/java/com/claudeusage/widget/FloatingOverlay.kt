@@ -186,7 +186,9 @@ class FloatingOverlay private constructor(private val context: Context) {
             val skinData = json?.let { CustomSkinData.fromJson(it) }
             if (skinData != null) {
                 // 배경: 별도 이미지 파일 → base64 이미지 → 단색 → 그라데이션
-                val bgPath = prefs.getString("cskin_bg_path", null)
+                // 오버레이 전용 배경 > 공용 배경
+                val bgPath = prefs.getString("cskin_overlay_bg_path", null)
+                    ?: prefs.getString("cskin_bg_path", null)
                 val fileBitmap = bgPath?.let { android.graphics.BitmapFactory.decodeFile(it) }
                 val bgImage = fileBitmap ?: skinData.overlayBgImage()
                 val isImageType = fileBitmap != null || (skinData.overlay?.background?.type == "image" && bgImage != null)

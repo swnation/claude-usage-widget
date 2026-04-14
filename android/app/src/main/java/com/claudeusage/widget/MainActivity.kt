@@ -118,20 +118,27 @@ class MainActivity : AppCompatActivity() {
 
                 var json: String? = null
                 var bgSaved = false
+                var overlayBgSaved = false
 
                 // ZIP인지 확인 (PK 시그니처: 0x504B)
                 if (bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
-                    // ZIP 파일: JSON + 이미지 추출
                     val tempZip = java.io.File(cacheDir, "skin_temp.zip")
                     tempZip.writeBytes(bytes)
                     val zipFile = java.util.zip.ZipFile(tempZip)
                     for (entry in zipFile.entries()) {
                         val name = entry.name.lowercase()
+                        val baseName = name.substringAfterLast("/")
                         if (name.endsWith(".cskin") || name.endsWith(".json")) {
                             json = zipFile.getInputStream(entry).bufferedReader().readText()
+                        } else if (baseName.startsWith("overlay_bg") || baseName.startsWith("overlay.")) {
+                            // 오버레이 전용 배경
+                            java.io.File(filesDir, "cskin_overlay_bg.png").outputStream().use { out ->
+                                zipFile.getInputStream(entry).copyTo(out)
+                            }
+                            overlayBgSaved = true
                         } else if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp")) {
-                            val bgFile = java.io.File(filesDir, "cskin_bg.png")
-                            bgFile.outputStream().use { out ->
+                            // 앱 배경
+                            java.io.File(filesDir, "cskin_bg.png").outputStream().use { out ->
                                 zipFile.getInputStream(entry).copyTo(out)
                             }
                             bgSaved = true
@@ -160,8 +167,12 @@ class MainActivity : AppCompatActivity() {
                 if (bgSaved) {
                     editor.putString("cskin_bg_path", java.io.File(filesDir, "cskin_bg.png").absolutePath)
                 } else if (!json.contains("backgroundImage")) {
-                    // ZIP에 이미지 없고 base64도 없으면 기존 배경 초기화
                     editor.remove("cskin_bg_path")
+                }
+                if (overlayBgSaved) {
+                    editor.putString("cskin_overlay_bg_path", java.io.File(filesDir, "cskin_overlay_bg.png").absolutePath)
+                } else {
+                    editor.remove("cskin_overlay_bg_path")
                 }
                 editor.apply()
                 setupSkinSelector()
@@ -609,36 +620,37 @@ class MainActivity : AppCompatActivity() {
             var sectionBgColor = skin.sectionBgColor
 
             val scrollView = findViewById<android.widget.ScrollView>(R.id.mainScrollView)
+            val bgImageView = findViewById<ImageView>(R.id.bgImageView)
             if (skinId == "custom-file") {
                 val json = prefs.getString("custom_skin_json", null)
                 val skinData = json?.let { CustomSkinData.fromJson(it) }
-                // 우선순위: 별도 선택한 배경 이미지 > base64 > 단색
                 val bgPath = prefs.getString("cskin_bg_path", null)
                 val bgBitmap = bgPath?.let { android.graphics.BitmapFactory.decodeFile(it) }
                     ?: skinData?.appBackgroundBitmap()
                 if (bgBitmap != null) {
-                    val drawable = android.graphics.drawable.BitmapDrawable(resources, bgBitmap)
-                    drawable.gravity = android.view.Gravity.FILL
-                    scrollView?.background = drawable
+                    bgImageView?.setImageBitmap(bgBitmap)
+                    bgImageView?.visibility = View.VISIBLE
+                    scrollView?.setBackgroundColor(0x00000000) // 투명
                     sectionBgColor = skinData?.sectionColorWithOpacity()
                         ?: ((skin.sectionBgColor and 0x00FFFFFF) or 0xCC000000.toInt())
                 } else {
+                    bgImageView?.visibility = View.GONE
                     scrollView?.setBackgroundColor(skin.bgColor)
                 }
             } else if (skinId == "custom") {
-                // 사진 스킨: 앱 배경에도 사진 적용
                 val path = prefs.getString("custom_skin_path", null)
                 val bitmap = path?.let { android.graphics.BitmapFactory.decodeFile(it) }
                 if (bitmap != null) {
-                    val drawable = android.graphics.drawable.BitmapDrawable(resources, bitmap)
-                    drawable.gravity = android.view.Gravity.FILL
-                    scrollView?.background = drawable
-                    // 섹션 반투명 (사진이 비쳐 보이도록)
+                    bgImageView?.setImageBitmap(bitmap)
+                    bgImageView?.visibility = View.VISIBLE
+                    scrollView?.setBackgroundColor(0x00000000)
                     sectionBgColor = (skin.sectionBgColor and 0x00FFFFFF) or 0xCC000000.toInt()
                 } else {
+                    bgImageView?.visibility = View.GONE
                     scrollView?.setBackgroundColor(skin.bgColor)
                 }
             } else {
+                bgImageView?.visibility = View.GONE
                 scrollView?.setBackgroundColor(skin.bgColor)
             }
 
