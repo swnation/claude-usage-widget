@@ -458,6 +458,25 @@ class MainActivity : AppCompatActivity() {
                 Toast.makeText(this, "Billing API 키에서 Gemini 키를 먼저 등록하세요", Toast.LENGTH_SHORT).show()
             }
         }
+
+        // Grok Team ID
+        val grokTeamInput = findViewById<EditText>(R.id.grokTeamIdInput)
+        val grokPrefs = PreferenceManager.getDefaultSharedPreferences(this)
+        grokTeamInput.setText(grokPrefs.getString("grok_team_id", ""))
+        findViewById<Button>(R.id.grokSaveButton).setOnClickListener {
+            val teamId = grokTeamInput.text.toString().trim()
+            if (teamId.isEmpty()) {
+                Toast.makeText(this, "Team ID를 입력하세요", Toast.LENGTH_SHORT).show()
+                return@setOnClickListener
+            }
+            grokPrefs.edit().putString("grok_team_id", teamId).apply()
+            Toast.makeText(this, "Grok Team ID 저장됨", Toast.LENGTH_SHORT).show()
+            if (grokPrefs.getString("grok_admin_key", "")?.isNotEmpty() == true) {
+                fetchAdminCosts()
+            } else {
+                Toast.makeText(this, "Billing API 키에서 Grok 키를 먼저 등록하세요", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     // ── 앱 스킨 적용 ──
@@ -954,6 +973,14 @@ class MainActivity : AppCompatActivity() {
         return BillingApiClient.GeminiConfig(apiKey, projectId, datasetId, tableId)
     }
 
+    private fun buildGrokConfig(prefs: android.content.SharedPreferences): BillingApiClient.GrokConfig? {
+        val key = prefs.getString("grok_admin_key", null)
+        if (key.isNullOrEmpty()) return null
+        val teamId = prefs.getString("grok_team_id", null)
+        if (teamId.isNullOrEmpty()) return null
+        return BillingApiClient.GrokConfig(key, teamId)
+    }
+
     private fun fetchAdminCosts() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
@@ -982,6 +1009,7 @@ class MainActivity : AppCompatActivity() {
                 anthropicKey = anthropicKey.ifEmpty { null },
                 openaiKey = openaiKey.ifEmpty { null },
                 geminiConfig = buildGeminiConfig(prefs),
+                grokConfig = buildGrokConfig(prefs),
                 estimatedData = estimated,
                 subscriptions = subscriptions,
             )
@@ -1544,7 +1572,8 @@ class MainActivity : AppCompatActivity() {
         val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
         val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
         val hasGeminiConfig = buildGeminiConfig(prefs) != null
-        val hasBillingKeys = anthropicKey.isNotEmpty() || openaiKey.isNotEmpty() || hasGeminiConfig
+        val hasGrokConfig = buildGrokConfig(prefs) != null
+        val hasBillingKeys = anthropicKey.isNotEmpty() || openaiKey.isNotEmpty() || hasGeminiConfig || hasGrokConfig
         val hasToken = !token.isNullOrEmpty()
 
         if (!hasBillingKeys && !hasToken) return

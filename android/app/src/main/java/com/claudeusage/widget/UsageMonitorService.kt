@@ -345,10 +345,18 @@ class UsageMonitorService : Service() {
                         if (!gKey.isNullOrEmpty() && !pId.isNullOrEmpty() && !dId.isNullOrEmpty() && !tId.isNullOrEmpty())
                             BillingApiClient.GeminiConfig(gKey, pId, dId, tId) else null
                     }
+                    // Grok xAI 설정
+                    val grokConfig = run {
+                        val gKey = prefs.getString("grok_admin_key", null)
+                        val tId = prefs.getString("grok_team_id", null)
+                        if (!gKey.isNullOrEmpty() && !tId.isNullOrEmpty())
+                            BillingApiClient.GrokConfig(gKey, tId) else null
+                    }
                     val merged = BillingApiClient.fetchAndMerge(
                         anthropicKey = anthropicKey,
                         openaiKey = openaiKey,
                         geminiConfig = geminiConfig,
+                        grokConfig = grokConfig,
                         estimatedData = estimatedData,
                         subscriptions = subscriptions,
                     )

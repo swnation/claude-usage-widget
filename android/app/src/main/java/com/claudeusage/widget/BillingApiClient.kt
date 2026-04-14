@@ -153,7 +153,81 @@ object BillingApiClient {
     }
 
     /**
-     * Google Cloud BigQuery를 통해 Gemini 실제 비용을 가져온다.
+     * xAI Management API로 Grok 사용량/비용을 가져온다.
+     * @param managementKey xAI Management Key (Console → Management Keys에서 생성)
+     * @param teamId xAI Team ID
+     */
+    fun fetchGrokBilling(managementKey: String, teamId: String): BillingResult {
+        try {
+            val localNow = LocalDate.now(ZoneId.systemDefault())
+            val monthStart = localNow.withDayOfMonth(1)
+            val today = localNow.toString()
+            val startTime = "${monthStart}T00:00:00Z"
+            val endTime = Instant.now().toString()
+
+            val conn = URL(
+                "https://management-api.x.ai/v1/billing/teams/$teamId/usage" +
+                "?start_time=$startTime&end_time=$endTime&aggregation=daily"
+            ).openConnection() as HttpURLConnection
+            conn.requestMethod = "GET"
+            conn.setRequestProperty("Authorization", "Bearer $managementKey")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.readText() ?: ""
+            conn.disconnect()
+
+            if (code != 200) {
+                val errMsg = try {
+                    JsonParser.parseString(body).asJsonObject
+                        .get("error")?.asString
+                        ?: JsonParser.parseString(body).asJsonObject
+                            .get("message")?.asString
+                } catch (_: Exception) { null } ?: "HTTP $code"
+                return BillingResult(0.0, 0.0, errMsg)
+            }
+
+            val json = JsonParser.parseString(body).asJsonObject
+            var monthTotal = 0.0
+            var todayTotal = 0.0
+
+            // usage 배열에서 일별 비용 합산
+            val usageArray = json.getAsJsonArray("usage")
+                ?: json.getAsJsonArray("data")
+                ?: json.getAsJsonArray("results")
+
+            usageArray?.forEach { item ->
+                val obj = item.asJsonObject
+                val cost = obj.get("cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+                    ?: obj.get("amount")?.takeIf { it.isJsonPrimitive }?.asDouble
+                    ?: obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
+                    ?: 0.0
+                monthTotal += cost
+
+                val date = obj.get("date")?.asString
+                    ?: obj.get("start_time")?.asString?.take(10)
+                    ?: ""
+                if (date == today || date.startsWith(today)) {
+                    todayTotal += cost
+                }
+            }
+
+            // cost가 센트 단위일 수 있음 — 100 넘으면 센트로 간주
+            if (monthTotal > 100 && monthTotal > todayTotal * 30) {
+                monthTotal /= 100.0
+                todayTotal /= 100.0
+            }
+
+            return BillingResult(todayTotal, monthTotal)
+        } catch (e: Exception) {
+            return BillingResult(0.0, 0.0, e.message ?: "xAI 연결 실패")
+        }
+    }
+
+    /**
      * 사전 조건: GCP 콘솔에서 빌링 데이터를 BigQuery로 내보내기 설정 필요.
      *
      * @param apiKey GCP API 키 (BigQuery 읽기 권한)
@@ -251,10 +325,16 @@ object BillingApiClient {
         val tableId: String,
     )
 
+    data class GrokConfig(
+        val managementKey: String,
+        val teamId: String,
+    )
+
     fun fetchAndMerge(
         anthropicKey: String?,
         openaiKey: String?,
         geminiConfig: GeminiConfig? = null,
+        grokConfig: GrokConfig? = null,
         estimatedData: ApiCostData?,
         subscriptions: List<Subscription> = emptyList(),
     ): MergedCostResult {
@@ -282,6 +362,13 @@ object BillingApiClient {
             )
             billingResults["gemini"] = result
             if (result.error != null) errors.add("Gemini: ${result.error}")
+        }
+
+        // Grok: xAI Management API
+        if (grokConfig != null) {
+            val result = fetchGrokBilling(grokConfig.managementKey, grokConfig.teamId)
+            billingResults["grok"] = result
+            if (result.error != null) errors.add("Grok: ${result.error}")
         }
 
         val hasBilling = billingResults.values.any { it.error == null }

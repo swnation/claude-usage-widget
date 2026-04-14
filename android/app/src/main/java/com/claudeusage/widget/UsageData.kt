@@ -183,7 +183,7 @@ object AiDefs {
         AiDef("gemini", "Gemini", "#4285f4",
             "https://aistudio.google.com/apikey", true),
         AiDef("grok", "Grok", "#1DA1F2",
-            "https://console.x.ai/", false),
+            "https://console.x.ai/", true),
         AiDef("perp", "Perplexity", "#20808d",
             "https://www.perplexity.ai/settings/api", false),
     )

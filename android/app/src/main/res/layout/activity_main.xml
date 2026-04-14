@@ -474,6 +474,48 @@
                     android:textSize="11sp"
                     android:layout_marginBottom="4dp" />
 
+                <!-- Grok Team ID -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Grok (xAI) Team ID"
+                    android:textColor="#1DA1F2"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="4dp" />
+
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="console.x.ai → Management Keys에서 키 생성 필요"
+                    android:textColor="#555566"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="8dp" />
+
+                <EditText
+                    android:id="@+id/grokTeamIdInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="40dp"
+                    android:background="@drawable/input_background"
+                    android:textColor="#e0e0e0"
+                    android:textColorHint="#555566"
+                    android:hint="Team ID"
+                    android:inputType="text"
+                    android:padding="8dp"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
+                <Button
+                    android:id="@+id/grokSaveButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="36dp"
+                    android:text="Grok Team ID 저장"
+                    android:backgroundTint="#22223a"
+                    android:textColor="#1DA1F2"
+                    android:textSize="11sp"
+                    android:layout_marginBottom="4dp" />
+
             </LinearLayout>
         </LinearLayout>
 
