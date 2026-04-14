@@ -154,101 +154,81 @@ object BillingApiClient {
 
     /**
      * xAI Management API로 Grok 사용량/비용을 가져온다.
-     * @param managementKey xAI Management Key (Console → Management Keys에서 생성)
-     * @param teamId xAI Team ID
+     * POST 방식, JSON body로 분석 조건 전달.
      */
     fun fetchGrokBilling(managementKey: String, teamId: String): BillingResult {
         try {
             val localNow = LocalDate.now(ZoneId.systemDefault())
             val monthStart = localNow.withDayOfMonth(1)
             val today = localNow.toString()
-            val startTime = "${monthStart}T00:00:00Z"
-            val endTime = Instant.now().toString()
+            val startTime = "$monthStart 00:00:00"
+            val endTime = "${localNow} 23:59:59"
 
-            // xAI Management API - 여러 URL 패턴 시도
-            val urls = listOf(
-                "https://management-api.x.ai/v1/billing/teams/$teamId/usage?start_time=$startTime&end_time=$endTime",
-                "https://api.x.ai/v1/billing/teams/$teamId/usage?start_time=$startTime&end_time=$endTime",
-            )
-
-            var lastError = ""
-            for (apiUrl in urls) {
-                val conn = URL(apiUrl).openConnection() as HttpURLConnection
-                conn.requestMethod = "GET"
-                conn.setRequestProperty("Authorization", "Bearer $managementKey")
-                conn.setRequestProperty("Accept", "application/json")
-                conn.connectTimeout = 15000
-                conn.readTimeout = 15000
-
-                val code = conn.responseCode
-                val stream = if (code in 200..299) conn.inputStream else conn.errorStream
-                val body = stream?.bufferedReader()?.readText() ?: ""
-                conn.disconnect()
-
-                if (code == 405 || code == 404) {
-                    lastError = "HTTP $code ($apiUrl)"
-                    continue // 다음 URL 시도
-                }
-
-                if (code != 200) {
-                    val errMsg = try {
-                        val errJson = JsonParser.parseString(body).asJsonObject
-                        errJson.get("error")?.asString
-                            ?: errJson.get("message")?.asString
-                            ?: errJson.get("detail")?.asString
-                    } catch (_: Exception) { null } ?: "HTTP $code: $body"
-                    return BillingResult(0.0, 0.0, errMsg)
-                }
-
-                // 성공 - 응답 파싱
-                val json = JsonParser.parseString(body)
-                var monthTotal = 0.0
-                var todayTotal = 0.0
-
-                // 응답이 배열인 경우와 객체인 경우 모두 처리
-                val usageArray = when {
-                    json.isJsonArray -> json.asJsonArray
-                    json.isJsonObject -> {
-                        val obj = json.asJsonObject
-                        obj.getAsJsonArray("usage")
-                            ?: obj.getAsJsonArray("data")
-                            ?: obj.getAsJsonArray("results")
-                            ?: obj.getAsJsonArray("items")
-                    }
-                    else -> null
-                }
-
-                if (usageArray != null) {
-                    usageArray.forEach { item ->
-                        val obj = item.asJsonObject
-                        val cost = obj.get("cost")?.takeIf { it.isJsonPrimitive }?.asDouble
-                            ?: obj.get("amount")?.takeIf { it.isJsonPrimitive }?.asDouble
-                            ?: obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
-                            ?: obj.get("total_amount")?.takeIf { it.isJsonPrimitive }?.asDouble
-                            ?: 0.0
-                        monthTotal += cost
-
-                        val date = obj.get("date")?.asString
-                            ?: obj.get("start_time")?.asString?.take(10)
-                            ?: obj.get("period")?.asString?.take(10)
-                            ?: ""
-                        if (date == today || date.startsWith(today)) {
-                            todayTotal += cost
-                        }
-                    }
-                } else if (json.isJsonObject) {
-                    // 단일 객체 응답 (총합만 있는 경우)
-                    val obj = json.asJsonObject
-                    monthTotal = obj.get("total_cost")?.takeIf { it.isJsonPrimitive }?.asDouble
-                        ?: obj.get("total_amount")?.takeIf { it.isJsonPrimitive }?.asDouble
-                        ?: obj.get("cost")?.takeIf { it.isJsonPrimitive }?.asDouble
-                        ?: 0.0
-                }
-
-                return BillingResult(todayTotal, monthTotal)
+            val requestBody = com.google.gson.JsonObject().apply {
+                add("analyticsRequest", com.google.gson.JsonObject().apply {
+                    add("timeRange", com.google.gson.JsonObject().apply {
+                        addProperty("startTime", startTime)
+                        addProperty("endTime", endTime)
+                        addProperty("timezone", "Etc/GMT")
+                    })
+                    addProperty("timeUnit", "TIME_UNIT_DAY")
+                    add("values", com.google.gson.JsonArray().apply {
+                        add(com.google.gson.JsonObject().apply {
+                            addProperty("name", "usd")
+                            addProperty("aggregation", "AGGREGATION_SUM")
+                        })
+                    })
+                    add("groupBy", com.google.gson.JsonArray().apply { add("description") })
+                    add("filters", com.google.gson.JsonArray())
+                })
             }
 
-            return BillingResult(0.0, 0.0, lastError.ifEmpty { "모든 엔드포인트 실패" })
+            val conn = URL(
+                "https://management-api.x.ai/v1/billing/teams/$teamId/usage"
+            ).openConnection() as HttpURLConnection
+            conn.requestMethod = "POST"
+            conn.setRequestProperty("Authorization", "Bearer $managementKey")
+            conn.setRequestProperty("Content-Type", "application/json")
+            conn.connectTimeout = 15000
+            conn.readTimeout = 15000
+            conn.doOutput = true
+            conn.outputStream.write(requestBody.toString().toByteArray())
+
+            val code = conn.responseCode
+            val stream = if (code in 200..299) conn.inputStream else conn.errorStream
+            val body = stream?.bufferedReader()?.readText() ?: ""
+            conn.disconnect()
+
+            if (code != 200) {
+                val errMsg = try {
+                    val errJson = JsonParser.parseString(body).asJsonObject
+                    errJson.get("error")?.asString
+                        ?: errJson.get("message")?.asString
+                        ?: errJson.get("detail")?.asString
+                } catch (_: Exception) { null } ?: "HTTP $code: ${body.take(200)}"
+                return BillingResult(0.0, 0.0, errMsg)
+            }
+
+            val json = JsonParser.parseString(body).asJsonObject
+            var monthTotal = 0.0
+            var todayTotal = 0.0
+
+            // timeSeries 배열에서 모든 모델의 일별 비용 합산
+            json.getAsJsonArray("timeSeries")?.forEach { series ->
+                series.asJsonObject.getAsJsonArray("dataPoints")?.forEach { dp ->
+                    val dpObj = dp.asJsonObject
+                    val values = dpObj.getAsJsonArray("values")
+                    val cost = values?.get(0)?.asDouble ?: 0.0
+                    monthTotal += cost
+
+                    val timestamp = dpObj.get("timestamp")?.asString ?: ""
+                    if (timestamp.startsWith(today)) {
+                        todayTotal += cost
+                    }
+                }
+            }
+
+            return BillingResult(todayTotal, monthTotal)
         } catch (e: Exception) {
             return BillingResult(0.0, 0.0, e.message ?: "xAI 연결 실패")
         }
