@@ -10,6 +10,7 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.Settings
+import android.util.Log
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.core.content.FileProvider
@@ -23,6 +24,7 @@ import java.util.concurrent.Executors
 class AppUpdater(private val activity: Activity) {
 
     companion object {
+        private const val TAG = "AppUpdater"
         const val GITHUB_REPO = "swnation/claude-usage-widget"
     }
 
@@ -37,25 +39,65 @@ class AppUpdater(private val activity: Activity) {
 
     fun checkForUpdate() {
         executor.execute {
+            var conn: HttpURLConnection? = null
             try {
                 val url = URL("https://api.github.com/repos/$GITHUB_REPO/releases/latest")
-                val conn = url.openConnection() as HttpURLConnection
+                conn = url.openConnection() as HttpURLConnection
                 conn.setRequestProperty("Accept", "application/vnd.github+json")
-                conn.connectTimeout = 10000
-                conn.readTimeout = 10000
+                conn.setRequestProperty("User-Agent", "claude-usage-widget-android")
+                conn.connectTimeout = 15000
+                conn.readTimeout = 15000
 
-                if (conn.responseCode != 200) return@execute
+                val responseCode = conn.responseCode
+                if (responseCode != 200) {
+                    val errorBody = try { conn.errorStream?.bufferedReader()?.readText() } catch (_: Exception) { null }
+                    Log.e(TAG, "GitHub API 응답 $responseCode: ${errorBody?.take(200)}")
+                    if (responseCode == 403) {
+                        activity.runOnUiThread {
+                            Toast.makeText(activity, "업데이트 확인 실패: API 제한 (잠시 후 재시도)", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    return@execute
+                }
 
                 val body = conn.inputStream.bufferedReader().readText()
-                val json = Gson().fromJson(body, JsonObject::class.java)
+                val json = try {
+                    Gson().fromJson(body, JsonObject::class.java)
+                } catch (e: Exception) {
+                    Log.e(TAG, "JSON 파싱 실패: ${e.message}")
+                    activity.runOnUiThread {
+                        Toast.makeText(activity, "업데이트 확인 실패: 응답 파싱 오류", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
 
-                val tagName = json.get("tag_name")?.asString ?: return@execute
+                val tagName = json.get("tag_name")?.asString
+                if (tagName == null) {
+                    Log.e(TAG, "tag_name 없음")
+                    return@execute
+                }
                 val latestVersion = tagName.removePrefix("v")
                 val releaseNotes = json.get("body")?.asString ?: ""
                 val currentVersion = getCurrentVersion()
 
+                Log.d(TAG, "현재=$currentVersion, 최신=$latestVersion")
+
+                if (!isNewerVersion(latestVersion, currentVersion)) {
+                    Log.d(TAG, "최신 버전 사용 중")
+                    return@execute
+                }
+
                 var apkUrl: String? = null
-                json.getAsJsonArray("assets")?.forEach { asset ->
+                val assets = json.getAsJsonArray("assets")
+                if (assets == null || assets.size() == 0) {
+                    Log.e(TAG, "릴리즈에 assets 없음 (빌드 진행 중?)")
+                    activity.runOnUiThread {
+                        Toast.makeText(activity, "새 버전 v$latestVersion 감지 (빌드 중, 잠시 후 재시도)", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
+
+                assets.forEach { asset ->
                     val assetObj = asset.asJsonObject
                     val name = assetObj.get("name")?.asString ?: ""
                     if (name.endsWith(".apk")) {
@@ -63,13 +105,30 @@ class AppUpdater(private val activity: Activity) {
                     }
                 }
 
-                if (apkUrl == null || !isNewerVersion(latestVersion, currentVersion)) return@execute
+                if (apkUrl == null) {
+                    Log.e(TAG, "APK 파일을 찾을 수 없음. assets: ${assets.size()}개")
+                    activity.runOnUiThread {
+                        Toast.makeText(activity, "업데이트 실패: APK 파일 없음", Toast.LENGTH_SHORT).show()
+                    }
+                    return@execute
+                }
 
                 val downloadUrl = apkUrl!!
                 activity.runOnUiThread {
                     showUpdateDialog(latestVersion, releaseNotes, downloadUrl)
                 }
-            } catch (_: Exception) {}
+            } catch (e: java.net.UnknownHostException) {
+                Log.e(TAG, "네트워크 연결 실패: ${e.message}")
+            } catch (e: java.net.SocketTimeoutException) {
+                Log.e(TAG, "연결 타임아웃: ${e.message}")
+            } catch (e: Exception) {
+                Log.e(TAG, "업데이트 확인 실패: ${e.message}", e)
+                activity.runOnUiThread {
+                    Toast.makeText(activity, "업데이트 확인 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
+            } finally {
+                conn?.disconnect()
+            }
         }
     }
 
