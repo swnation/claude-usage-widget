@@ -176,7 +176,7 @@ class FloatingOverlay private constructor(private val context: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val overlaySkinEnabled = prefs.getBoolean("overlay_skin_enabled", true)
         if (!overlaySkinEnabled) {
-            applyDefaultSkin(tv)
+            applyDefaultSkin(tv, applyCustomColor = false)
             return
         }
         try { applySkinInternal(tv) } catch (_: Exception) { applyDefaultSkin(tv) }
@@ -316,15 +316,17 @@ class FloatingOverlay private constructor(private val context: Context) {
         try { tv.setTextColor(Color.parseColor(custom)) } catch (_: Exception) {}
     }
 
-    private fun applyDefaultSkin(tv: TextView) {
+    private fun applyDefaultSkin(tv: TextView, applyCustomColor: Boolean = true) {
         val skin = SKIN_STYLES["default"]!!
         tv.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(skin.bgStartColor, skin.bgEndColor)
         ).apply { cornerRadius = skin.cornerRadius }
         tv.setTextColor(skin.textColor)
-        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        applyCustomTextColor(prefs, tv)
+        if (applyCustomColor) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            applyCustomTextColor(prefs, tv)
+        }
         tv.setShadowLayer(0f, 0f, 0f, 0)
         tv.elevation = 4f
     }

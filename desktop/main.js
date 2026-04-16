@@ -505,9 +505,9 @@ function broadcastCost() {
 }
 
 function broadcastStatus(msg) {
-  if (mainWin && !mainWin.isDestroyed()) {
-    mainWin.webContents.send('status-update', msg);
-  }
+  [mainWin, widgetWin].forEach(w => {
+    if (w && !w.isDestroyed()) w.webContents.send('status-update', msg);
+  });
 }
 
 // ────────────────────────────

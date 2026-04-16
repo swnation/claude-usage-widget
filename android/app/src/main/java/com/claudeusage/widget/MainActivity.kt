@@ -1059,7 +1059,14 @@ class MainActivity : AppCompatActivity() {
         // 현재 값 표시
         val savedColor = prefs.getString("overlay_text_color", null)
         val overlay = FloatingOverlay.getInstance(applicationContext)
-        val skinDefault = overlay.SKIN_STYLES[currentOverlaySkin]?.textColor ?: 0xFFe0e0e0.toInt()
+        val skinDefault = when (currentOverlaySkin) {
+            "custom" -> 0xFFffffff.toInt()
+            "custom-file" -> {
+                val json = prefs.getString("custom_skin_json", null)
+                json?.let { CustomSkinData.fromJson(it) }?.overlayTextColor() ?: 0xFFe0e0e0.toInt()
+            }
+            else -> overlay.SKIN_STYLES[currentOverlaySkin]?.textColor ?: 0xFFe0e0e0.toInt()
+        }
         val displayColor = if (savedColor != null) {
             try { Color.parseColor(savedColor) } catch (_: Exception) { skinDefault }
         } else skinDefault
