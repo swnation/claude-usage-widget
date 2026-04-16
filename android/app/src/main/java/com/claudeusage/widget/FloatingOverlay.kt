@@ -323,6 +323,8 @@ class FloatingOverlay private constructor(private val context: Context) {
             intArrayOf(skin.bgStartColor, skin.bgEndColor)
         ).apply { cornerRadius = skin.cornerRadius }
         tv.setTextColor(skin.textColor)
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        applyCustomTextColor(prefs, tv)
         tv.setShadowLayer(0f, 0f, 0f, 0)
         tv.elevation = 4f
     }
