@@ -56,17 +56,8 @@ function updateWidget() {
   text.textContent = parts.join(' │ ');
 }
 
-// 스킨 적용 (오버레이 전용 스킨 + 글씨 색 오버라이드)
-function applySkin(skinId, customSkinImage, overlayTextColor) {
-  document.body.setAttribute('data-skin', skinId || 'default');
-  if (skinId === 'custom' && customSkinImage) {
-    widget.style.backgroundImage = `url(${customSkinImage})`;
-    widget.style.backgroundSize = 'cover';
-    widget.style.backgroundPosition = 'center';
-  } else {
-    widget.style.backgroundImage = '';
-  }
-  // 사용자 커스텀 글씨 색
+// 글씨 색 적용
+function applyTextColor(overlayTextColor) {
   if (overlayTextColor) {
     widget.style.color = overlayTextColor;
   } else {
@@ -78,21 +69,17 @@ function applySkin(skinId, customSkinImage, overlayTextColor) {
 (async () => {
   const settings = await window.api.getSettings();
   overlayMode = settings.overlayMode || 'MINIMAL';
-
-  // 스킨 적용 (오버레이 전용 스킨 우선, 없으면 앱 스킨)
-  const skinId = settings.overlaySkin || settings.skin;
-  applySkin(skinId, settings.customSkinImage, settings.overlayTextColor);
+  applyTextColor(settings.overlayTextColor);
 
   lastUsage = await window.api.getUsage();
   lastCost = await window.api.getCost();
   updateWidget();
 })();
 
-// 설정 변경 시 스킨 실시간 반영
+// 설정 변경 시 실시간 반영
 window.api.onStatusUpdate(async () => {
   const settings = await window.api.getSettings();
   overlayMode = settings.overlayMode || 'MINIMAL';
-  const skinId = settings.overlaySkin || settings.skin;
-  applySkin(skinId, settings.customSkinImage, settings.overlayTextColor);
+  applyTextColor(settings.overlayTextColor);
   updateWidget();
 });

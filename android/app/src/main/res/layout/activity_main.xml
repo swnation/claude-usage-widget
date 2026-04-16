@@ -551,57 +551,114 @@
                 android:padding="12dp"
                 android:background="#16213e">
 
-                <androidx.recyclerview.widget.RecyclerView
-                    android:id="@+id/skinGrid"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content" />
-
-                <!-- 오버레이 스킨 -->
+                <!-- 1. 앱 배경 사진 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="오버레이 스킨"
+                    android:text="앱 배경 사진"
                     android:textColor="#c084fc"
                     android:textSize="12sp"
                     android:textStyle="bold"
                     android:layout_marginBottom="4dp" />
 
-                <HorizontalScrollView
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none">
-
-                    <LinearLayout
-                        android:id="@+id/overlaySkinContainer"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal" />
-                </HorizontalScrollView>
-
-                <!-- 앱 배경 스킨 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="앱 배경 스킨"
+                    android:text="권장: 1080×2400px (9:20)"
+                    android:textColor="#888899"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="6dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <ImageView
+                        android:id="@+id/bgPreviewThumb"
+                        android:layout_width="60dp"
+                        android:layout_height="40dp"
+                        android:scaleType="centerCrop"
+                        android:background="#22223a"
+                        android:layout_marginEnd="8dp" />
+
+                    <Button
+                        android:id="@+id/bgUploadBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="사진 선택"
+                        android:textSize="12sp"
+                        android:backgroundTint="#c084fc"
+                        android:textColor="#ffffff"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/bgRemoveBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="제거"
+                        android:textSize="12sp"
+                        android:backgroundTint="#444466"
+                        android:textColor="#e0e0e0" />
+                </LinearLayout>
+
+                <!-- 2. 오버레이 이미지 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="오버레이 이미지"
                     android:textColor="#c084fc"
                     android:textSize="12sp"
                     android:textStyle="bold"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="16dp"
                     android:layout_marginBottom="4dp" />
 
-                <HorizontalScrollView
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="권장: 600×88px (고정 300dp×44dp)"
+                    android:textColor="#888899"
+                    android:textSize="10sp"
+                    android:layout_marginBottom="6dp" />
+
+                <LinearLayout
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:scrollbars="none">
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
 
-                    <LinearLayout
-                        android:id="@+id/skinContainer"
+                    <ImageView
+                        android:id="@+id/overlayPreviewThumb"
+                        android:layout_width="100dp"
+                        android:layout_height="30dp"
+                        android:scaleType="fitXY"
+                        android:background="#22223a"
+                        android:layout_marginEnd="8dp" />
+
+                    <Button
+                        android:id="@+id/overlayUploadBtn"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:text="이미지 선택"
+                        android:textSize="12sp"
+                        android:backgroundTint="#c084fc"
+                        android:textColor="#ffffff"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/overlayRemoveBtn"
                         android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal" />
-                </HorizontalScrollView>
+                        android:layout_height="36dp"
+                        android:text="제거"
+                        android:textSize="12sp"
+                        android:backgroundTint="#444466"
+                        android:textColor="#e0e0e0" />
+                </LinearLayout>
 
-                <!-- 오버레이 글씨 색 -->
+                <!-- 3. 글씨 색 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
@@ -609,7 +666,7 @@
                     android:textColor="#c084fc"
                     android:textSize="12sp"
                     android:textStyle="bold"
-                    android:layout_marginTop="12dp"
+                    android:layout_marginTop="16dp"
                     android:layout_marginBottom="4dp" />
 
                 <LinearLayout
@@ -661,7 +718,6 @@
                         android:textColor="#e0e0e0" />
                 </LinearLayout>
 
-                <!-- 글씨 색 프리셋 -->
                 <LinearLayout
                     android:id="@+id/textColorPresetsContainer"
                     android:layout_width="match_parent"
@@ -670,43 +726,6 @@
                     android:layout_marginTop="6dp"
                     android:gravity="center_vertical" />
 
-                <!-- 플로팅 스킨 토글 -->
-                <CheckBox
-                    android:id="@+id/overlaySkiEnabled"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:text="플로팅 오버레이에도 스킨 적용"
-                    android:textColor="#e0e0e0"
-                    android:textSize="12sp"
-                    android:buttonTint="#c084fc"
-                    android:checked="true"
-                    android:layout_marginTop="8dp" />
-
-                <!-- 저장된 스킨 -->
-                <TextView
-                    android:id="@+id/savedSkinsLabel"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:text="저장된 스킨"
-                    android:textColor="#888899"
-                    android:textSize="11sp"
-                    android:layout_marginTop="12dp"
-                    android:layout_marginBottom="4dp"
-                    android:visibility="gone" />
-
-                <HorizontalScrollView
-                    android:id="@+id/savedSkinsScroll"
-                    android:layout_width="match_parent"
-                    android:layout_height="wrap_content"
-                    android:scrollbars="none"
-                    android:visibility="gone">
-
-                    <LinearLayout
-                        android:id="@+id/savedSkinsContainer"
-                        android:layout_width="wrap_content"
-                        android:layout_height="wrap_content"
-                        android:orientation="horizontal" />
-                </HorizontalScrollView>
             </LinearLayout>
         </LinearLayout>
 
