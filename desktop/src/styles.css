@@ -231,68 +231,12 @@ button:hover { opacity: 0.85; }
   border-top: 1px solid var(--border);
 }
 
-/* ── 스킨 선택 ── */
+/* ── 커스텀 영역 ── */
 .skin-section {
   margin-top: 16px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
-
-.skin-grid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
-  margin: 8px 0;
-}
-
-.skin-item {
-  position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 12px;
-  cursor: pointer;
-  border: 2px solid transparent;
-  overflow: hidden;
-  transition: border-color 0.2s, transform 0.15s;
-}
-.skin-item:hover { transform: scale(1.05); }
-.skin-item.active { border-color: var(--accent); }
-
-.skin-item .skin-preview {
-  width: 100%;
-  height: 100%;
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 22px;
-}
-
-.skin-item .skin-label {
-  position: absolute;
-  bottom: 2px;
-  left: 0; right: 0;
-  text-align: center;
-  font-size: 8px;
-  color: #fff;
-  text-shadow: 0 1px 3px rgba(0,0,0,0.6);
-}
-
-.skin-upload-btn {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 12px;
-  border: 2px dashed var(--border);
-  background: var(--input-bg);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 20px;
-  color: var(--text-dim);
-  cursor: pointer;
-  transition: border-color 0.2s;
-}
-.skin-upload-btn:hover { border-color: var(--accent); }
 
 /* ── 위젯 윈도우 ── */
 .widget-body {
@@ -319,212 +263,15 @@ button:hover { opacity: 0.85; }
 }
 
 /* ══════════════════════════════
-   스킨 정의
+   스킨 (기본 다크만 사용)
    ══════════════════════════════ */
-
-/* 🌸 봄 - 벚꽃 */
-[data-skin="spring"] {
-  --bg: #fff5f5;
-  --card: rgba(255,255,255,0.85);
-  --card-border: rgba(255,182,193,0.4);
-  --input-bg: rgba(255,228,235,0.7);
-  --border: rgba(255,182,193,0.3);
-  --text: #5c3d4e;
-  --text-sub: #b07088;
-  --text-dim: #d4a0b0;
-  --accent: #ff6b9d;
-  --accent2: #c084fc;
-  --bar-bg: rgba(255,182,193,0.3);
-  --radius: 16px;
-  --widget-bg: linear-gradient(135deg, rgba(255,228,235,0.95), rgba(255,245,247,0.95));
-  --widget-border: rgba(255,182,193,0.5);
-  --widget-radius: 20px;
-  --widget-shadow: 0 4px 15px rgba(255,105,180,0.15);
-  --widget-text: #5c3d4e;
-}
-
-/* 🌊 여름 - 바다 */
-[data-skin="summer"] {
-  --bg: #e8f4f8;
-  --card: rgba(255,255,255,0.85);
-  --card-border: rgba(100,200,230,0.3);
-  --input-bg: rgba(200,235,255,0.7);
-  --border: rgba(100,200,230,0.3);
-  --text: #1a4a5e;
-  --text-sub: #4a8a9e;
-  --text-dim: #8abac8;
-  --accent: #00bcd4;
-  --accent2: #ff9800;
-  --bar-bg: rgba(100,200,230,0.25);
-  --radius: 14px;
-  --widget-bg: linear-gradient(135deg, rgba(200,235,255,0.95), rgba(232,244,248,0.95));
-  --widget-border: rgba(100,200,230,0.4);
-  --widget-radius: 18px;
-  --widget-shadow: 0 4px 15px rgba(0,188,212,0.15);
-  --widget-text: #1a4a5e;
-}
-
-/* 🍂 가을 - 단풍 */
-[data-skin="autumn"] {
-  --bg: #faf5ef;
-  --card: rgba(255,255,255,0.8);
-  --card-border: rgba(210,150,80,0.3);
-  --input-bg: rgba(250,230,200,0.7);
-  --border: rgba(210,150,80,0.3);
-  --text: #5a3e1e;
-  --text-sub: #a07040;
-  --text-dim: #c4a070;
-  --accent: #e67e22;
-  --accent2: #c0392b;
-  --bar-bg: rgba(210,150,80,0.2);
-  --radius: 14px;
-  --widget-bg: linear-gradient(135deg, rgba(250,230,200,0.95), rgba(250,245,239,0.95));
-  --widget-border: rgba(210,150,80,0.4);
-  --widget-radius: 18px;
-  --widget-shadow: 0 4px 15px rgba(230,126,34,0.15);
-  --widget-text: #5a3e1e;
-}
-
-/* ❄️ 겨울 - 눈 */
-[data-skin="winter"] {
-  --bg: #eef2f7;
-  --card: rgba(255,255,255,0.85);
-  --card-border: rgba(160,195,230,0.3);
-  --input-bg: rgba(220,235,255,0.7);
-  --border: rgba(160,195,230,0.3);
-  --text: #2c3e5a;
-  --text-sub: #6080a0;
-  --text-dim: #90aec8;
-  --accent: #5c9ce6;
-  --accent2: #8e44ad;
-  --bar-bg: rgba(160,195,230,0.25);
-  --radius: 14px;
-  --widget-bg: linear-gradient(135deg, rgba(220,235,255,0.95), rgba(238,242,247,0.95));
-  --widget-border: rgba(160,195,230,0.4);
-  --widget-radius: 18px;
-  --widget-shadow: 0 4px 15px rgba(92,156,230,0.15);
-  --widget-text: #2c3e5a;
-}
-
-/* ── 몽글몽글 시리즈 (귀여운 라운드 스킨) ── */
-
-/* 🩷 몽글 핑크 */
-[data-skin="fluffy-pink"] {
-  --bg: #fff0f6;
-  --card: rgba(255,255,255,0.9);
-  --card-border: rgba(255,150,200,0.35);
-  --input-bg: rgba(255,220,240,0.6);
-  --border: rgba(255,180,210,0.3);
-  --text: #6e3050;
-  --text-sub: #c06090;
-  --text-dim: #dda0c0;
-  --accent: #ff69b4;
-  --accent2: #ff1493;
-  --bar-bg: rgba(255,150,200,0.2);
-  --radius: 20px;
-  --widget-bg: linear-gradient(135deg, rgba(255,220,240,0.96), rgba(255,240,248,0.96));
-  --widget-border: rgba(255,150,200,0.45);
-  --widget-radius: 24px;
-  --widget-shadow: 0 6px 20px rgba(255,105,180,0.2);
-  --widget-text: #6e3050;
-}
-
-/* 💜 몽글 퍼플 */
-[data-skin="fluffy-purple"] {
-  --bg: #f5f0ff;
-  --card: rgba(255,255,255,0.9);
-  --card-border: rgba(180,140,255,0.3);
-  --input-bg: rgba(230,215,255,0.6);
-  --border: rgba(180,140,255,0.25);
-  --text: #3e2060;
-  --text-sub: #8060b0;
-  --text-dim: #b0a0d0;
-  --accent: #9b59b6;
-  --accent2: #e74c8c;
-  --bar-bg: rgba(180,140,255,0.2);
-  --radius: 20px;
-  --widget-bg: linear-gradient(135deg, rgba(230,215,255,0.96), rgba(245,240,255,0.96));
-  --widget-border: rgba(180,140,255,0.4);
-  --widget-radius: 24px;
-  --widget-shadow: 0 6px 20px rgba(155,89,182,0.2);
-  --widget-text: #3e2060;
-}
-
-/* 💚 몽글 민트 */
-[data-skin="fluffy-mint"] {
-  --bg: #f0faf7;
-  --card: rgba(255,255,255,0.9);
-  --card-border: rgba(100,210,180,0.3);
-  --input-bg: rgba(200,245,230,0.6);
-  --border: rgba(100,210,180,0.25);
-  --text: #1a4a3a;
-  --text-sub: #40907a;
-  --text-dim: #80c0b0;
-  --accent: #2ecc71;
-  --accent2: #1abc9c;
-  --bar-bg: rgba(100,210,180,0.2);
-  --radius: 20px;
-  --widget-bg: linear-gradient(135deg, rgba(200,245,230,0.96), rgba(240,250,247,0.96));
-  --widget-border: rgba(100,210,180,0.4);
-  --widget-radius: 24px;
-  --widget-shadow: 0 6px 20px rgba(46,204,113,0.2);
-  --widget-text: #1a4a3a;
-}
-
-/* 💛 몽글 옐로우 */
-[data-skin="fluffy-yellow"] {
-  --bg: #fffde8;
-  --card: rgba(255,255,255,0.9);
-  --card-border: rgba(255,210,80,0.3);
-  --input-bg: rgba(255,245,180,0.6);
-  --border: rgba(255,210,80,0.25);
-  --text: #5a4a10;
-  --text-sub: #b09030;
-  --text-dim: #d0c070;
-  --accent: #f1c40f;
-  --accent2: #e67e22;
-  --bar-bg: rgba(255,210,80,0.2);
-  --radius: 20px;
-  --widget-bg: linear-gradient(135deg, rgba(255,245,200,0.96), rgba(255,253,232,0.96));
-  --widget-border: rgba(255,210,80,0.4);
-  --widget-radius: 24px;
-  --widget-shadow: 0 6px 20px rgba(241,196,15,0.2);
-  --widget-text: #5a4a10;
-}
-
-/* 🩵 몽글 스카이 */
-[data-skin="fluffy-sky"] {
-  --bg: #f0f6ff;
-  --card: rgba(255,255,255,0.9);
-  --card-border: rgba(120,180,255,0.3);
-  --input-bg: rgba(210,230,255,0.6);
-  --border: rgba(120,180,255,0.25);
-  --text: #1a3060;
-  --text-sub: #5080c0;
-  --text-dim: #90b0e0;
-  --accent: #3498db;
-  --accent2: #9b59b6;
-  --bar-bg: rgba(120,180,255,0.2);
-  --radius: 20px;
-  --widget-bg: linear-gradient(135deg, rgba(210,230,255,0.96), rgba(240,246,255,0.96));
-  --widget-border: rgba(120,180,255,0.4);
-  --widget-radius: 24px;
-  --widget-shadow: 0 6px 20px rgba(52,152,219,0.2);
-  --widget-text: #1a3060;
-}
 
 /* 기본 다크 */
 [data-skin="default"] {
   /* 기본값 사용 (CSS 변수 초기값) */
 }
 
-/* 커스텀 스킨 (사진 배경) */
-[data-skin="custom"] {
-  --widget-radius: 18px;
-  --widget-shadow: 0 4px 15px rgba(0,0,0,0.2);
-}
-
-/* ── 스킨 분리 UI ── */
+/* ── 글씨 색 / 텍스트 커스텀 UI ── */
 .skin-sub-label {
   font-size: 11px;
   color: var(--text-sub);

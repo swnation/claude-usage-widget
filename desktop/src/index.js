@@ -22,64 +22,10 @@ const AI_DEFS = {
 };
 
 // ══════════════════════════════
-//  스킨 시스템
+//  글씨 색 커스텀
 // ══════════════════════════════
-const SKINS = [
-  { id: 'default',       label: '기본',     emoji: '🌙', preview: 'linear-gradient(135deg, #1a1a2e, #16213e)' },
-  { id: 'spring',        label: '봄',       emoji: '🌸', preview: 'linear-gradient(135deg, #ffe4eb, #fff5f5)' },
-  { id: 'summer',        label: '여름',     emoji: '🌊', preview: 'linear-gradient(135deg, #c8ebff, #e8f4f8)' },
-  { id: 'autumn',        label: '가을',     emoji: '🍂', preview: 'linear-gradient(135deg, #fae6c8, #faf5ef)' },
-  { id: 'winter',        label: '겨울',     emoji: '❄️', preview: 'linear-gradient(135deg, #dcebff, #eef2f7)' },
-  { id: 'fluffy-pink',   label: '몽글핑크', emoji: '🩷', preview: 'linear-gradient(135deg, #ffdcf0, #fff0f6)' },
-  { id: 'fluffy-purple', label: '몽글퍼플', emoji: '💜', preview: 'linear-gradient(135deg, #e6d7ff, #f5f0ff)' },
-  { id: 'fluffy-mint',   label: '몽글민트', emoji: '💚', preview: 'linear-gradient(135deg, #c8f5e6, #f0faf7)' },
-  { id: 'fluffy-yellow', label: '몽글옐로', emoji: '💛', preview: 'linear-gradient(135deg, #fff5b4, #fffde8)' },
-  { id: 'fluffy-sky',    label: '몽글스카이', emoji: '🩵', preview: 'linear-gradient(135deg, #d2e6ff, #f0f6ff)' },
-];
-
-let currentSkin = 'default';
-let currentOverlaySkin = null; // null = 앱 스킨 따라감
 let overlayTextColor = null;
-let customSkinImage = null; // Base64 data URL
 
-// 앱 배경 스킨 적용
-function applySkin(skinId) {
-  currentSkin = skinId;
-  document.body.setAttribute('data-skin', skinId);
-
-  if (skinId === 'custom' && customSkinImage) {
-    document.body.style.backgroundImage = `url(${customSkinImage})`;
-    document.body.style.backgroundSize = 'cover';
-    document.body.style.backgroundPosition = 'center';
-  } else {
-    document.body.style.backgroundImage = '';
-  }
-
-  // 앱 스킨 그리드 active 표시
-  $$('#skinGrid .skin-item').forEach(el => {
-    el.classList.toggle('active', el.dataset.skin === skinId);
-  });
-
-  window.api.saveSettings({ skin: skinId, customSkinImage: skinId === 'custom' ? customSkinImage : undefined });
-}
-
-// 오버레이 스킨 적용
-function applyOverlaySkin(skinId) {
-  currentOverlaySkin = skinId;
-
-  $$('#overlaySkinGrid .skin-item').forEach(el => {
-    const isSync = el.dataset.skin === '__sync__';
-    if (skinId === null) {
-      el.classList.toggle('active', isSync);
-    } else {
-      el.classList.toggle('active', el.dataset.skin === skinId);
-    }
-  });
-
-  window.api.saveSettings({ overlaySkin: skinId || '' });
-}
-
-// 오버레이 글씨 색 적용
 function applyOverlayTextColor(color) {
   overlayTextColor = color;
   window.api.saveSettings({ overlayTextColor: color || '' });
@@ -91,7 +37,7 @@ function updateTextColorUI() {
   const picker = $('#textColorPicker');
   const hex = $('#textColorHex');
   if (!preview) return;
-  const effectiveColor = overlayTextColor || getDefaultWidgetTextColor();
+  const effectiveColor = overlayTextColor || '#e0e0e0';
   preview.style.background = effectiveColor;
   picker.value = effectiveColor;
   hex.value = overlayTextColor || '';
@@ -101,85 +47,6 @@ function updateTextColorUI() {
   });
 }
 
-function getDefaultWidgetTextColor() {
-  const skinId = currentOverlaySkin || currentSkin;
-  const defaults = {
-    'default': '#e0e0e0', 'spring': '#5c3d4e', 'summer': '#1a4a5e',
-    'autumn': '#5a3e1e', 'winter': '#2c3e5a', 'fluffy-pink': '#6e3050',
-    'fluffy-purple': '#3e2060', 'fluffy-mint': '#1a4a3a', 'fluffy-yellow': '#5a4a10',
-    'fluffy-sky': '#1a3060', 'custom': '#ffffff',
-  };
-  return defaults[skinId] || '#e0e0e0';
-}
-
-// 오버레이 스킨 그리드
-function renderOverlaySkinGrid() {
-  const grid = $('#overlaySkinGrid');
-  grid.innerHTML = '';
-
-  // "앱과 동일" 옵션
-  const syncItem = document.createElement('div');
-  syncItem.className = 'skin-item' + (currentOverlaySkin === null ? ' active' : '');
-  syncItem.dataset.skin = '__sync__';
-  syncItem.innerHTML = `
-    <div class="skin-preview" style="background:var(--input-bg);font-size:16px">🔗</div>
-    <div class="skin-label">앱동일</div>
-  `;
-  syncItem.onclick = () => applyOverlaySkin(null);
-  grid.appendChild(syncItem);
-
-  SKINS.forEach(skin => {
-    const item = document.createElement('div');
-    item.className = 'skin-item' + (currentOverlaySkin === skin.id ? ' active' : '');
-    item.dataset.skin = skin.id;
-    item.innerHTML = `
-      <div class="skin-preview" style="background:${skin.preview}">${skin.emoji}</div>
-      <div class="skin-label">${skin.label}</div>
-    `;
-    item.onclick = () => applyOverlaySkin(skin.id);
-    grid.appendChild(item);
-  });
-}
-
-// 앱 배경 스킨 그리드
-function renderSkinGrid() {
-  const grid = $('#skinGrid');
-  grid.innerHTML = '';
-
-  SKINS.forEach(skin => {
-    const item = document.createElement('div');
-    item.className = 'skin-item' + (currentSkin === skin.id ? ' active' : '');
-    item.dataset.skin = skin.id;
-    item.innerHTML = `
-      <div class="skin-preview" style="background:${skin.preview}">${skin.emoji}</div>
-      <div class="skin-label">${skin.label}</div>
-    `;
-    item.onclick = () => applySkin(skin.id);
-    grid.appendChild(item);
-  });
-
-  // 커스텀 (사진 업로드)
-  const customItem = document.createElement('div');
-  customItem.className = 'skin-item' + (currentSkin === 'custom' ? ' active' : '');
-  customItem.dataset.skin = 'custom';
-  if (customSkinImage) {
-    customItem.innerHTML = `
-      <div class="skin-preview" style="background:url(${customSkinImage}) center/cover">📷</div>
-      <div class="skin-label">내 사진</div>
-    `;
-  } else {
-    customItem.innerHTML = `
-      <div class="skin-upload-btn" style="width:100%;height:100%;aspect-ratio:auto">+</div>
-      <div class="skin-label">사진</div>
-    `;
-  }
-  customItem.onclick = () => {
-    $('#skinFileInput').click();
-  };
-  grid.appendChild(customItem);
-}
-
-// 글씨 색 프리셋
 function renderTextColorPresets() {
   const container = $('#textColorPresets');
   if (!container) return;
@@ -198,19 +65,6 @@ function renderTextColorPresets() {
     container.appendChild(swatch);
   });
 }
-
-$('#skinFileInput').onchange = (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = (ev) => {
-    customSkinImage = ev.target.result;
-    applySkin('custom');
-    renderSkinGrid();
-  };
-  reader.readAsDataURL(file);
-  e.target.value = '';
-};
 
 // 글씨 색 이벤트
 $('#textColorApply').onclick = () => {
@@ -240,15 +94,9 @@ $('#textColorHex').onkeydown = (e) => {
   // 플로팅 모드 복원
   if (settings.overlayMode) $('#overlayModeSelect').value = settings.overlayMode;
 
-  // 스킨 복원
-  currentSkin = settings.skin || 'default';
-  currentOverlaySkin = settings.overlaySkin || null;
+  // 글씨 색 복원
   overlayTextColor = settings.overlayTextColor || null;
-  customSkinImage = settings.customSkinImage || null;
-  renderOverlaySkinGrid();
-  renderSkinGrid();
   renderTextColorPresets();
-  applySkin(currentSkin);
   updateTextColorUI();
 
   const usage = await window.api.getUsage();
