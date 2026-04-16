@@ -176,7 +176,7 @@ class FloatingOverlay private constructor(private val context: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val overlaySkinEnabled = prefs.getBoolean("overlay_skin_enabled", true)
         if (!overlaySkinEnabled) {
-            applyDefaultSkin(tv)
+            applyDefaultSkin(tv, applyCustomColor = false)
             return
         }
         try { applySkinInternal(tv) } catch (_: Exception) { applyDefaultSkin(tv) }
@@ -184,7 +184,9 @@ class FloatingOverlay private constructor(private val context: Context) {
 
     private fun applySkinInternal(tv: TextView) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-        val skinId = prefs.getString("skin", "default") ?: "default"
+        // 오버레이 전용 스킨 (없으면 앱 스킨 따라감)
+        val appSkinId = prefs.getString("skin", "default") ?: "default"
+        val skinId = prefs.getString("overlay_skin", null) ?: appSkinId
 
         if (skinId == "custom-file") {
             // 파일 스킨 (.cskin)
@@ -230,6 +232,8 @@ class FloatingOverlay private constructor(private val context: Context) {
                     }
                 }
                 tv.setTextColor(skinData.overlayTextColor())
+                // 사용자 커스텀 글씨 색 오버라이드
+                applyCustomTextColor(prefs, tv)
                 tv.setPadding(skinData.overlayPaddingH(), skinData.overlayPaddingV(),
                     skinData.overlayPaddingH(), skinData.overlayPaddingV())
                 tv.elevation = skinData.overlayElevation()
@@ -286,6 +290,7 @@ class FloatingOverlay private constructor(private val context: Context) {
                     drawable.alpha = 220
                     tv.background = drawable
                     tv.setTextColor(0xFFffffff.toInt())
+                    applyCustomTextColor(prefs, tv)
                     tv.setShadowLayer(4f, 1f, 1f, 0xFF000000.toInt())
                     tv.elevation = 6f
                     return
@@ -299,18 +304,29 @@ class FloatingOverlay private constructor(private val context: Context) {
                 intArrayOf(skin.bgStartColor, skin.bgEndColor)
             ).apply { cornerRadius = skin.cornerRadius }
             tv.setTextColor(skin.textColor)
+            applyCustomTextColor(prefs, tv)
             tv.setShadowLayer(0f, 0f, 0f, 0)
             tv.elevation = if (skinId.startsWith("fluffy")) 8f else 4f
         }
     }
 
-    private fun applyDefaultSkin(tv: TextView) {
+    /** 사용자 커스텀 글씨 색 오버라이드 (overlay_text_color) */
+    private fun applyCustomTextColor(prefs: android.content.SharedPreferences, tv: TextView) {
+        val custom = prefs.getString("overlay_text_color", null) ?: return
+        try { tv.setTextColor(Color.parseColor(custom)) } catch (_: Exception) {}
+    }
+
+    private fun applyDefaultSkin(tv: TextView, applyCustomColor: Boolean = true) {
         val skin = SKIN_STYLES["default"]!!
         tv.background = GradientDrawable(
             GradientDrawable.Orientation.TL_BR,
             intArrayOf(skin.bgStartColor, skin.bgEndColor)
         ).apply { cornerRadius = skin.cornerRadius }
         tv.setTextColor(skin.textColor)
+        if (applyCustomColor) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            applyCustomTextColor(prefs, tv)
+        }
         tv.setShadowLayer(0f, 0f, 0f, 0)
         tv.elevation = 4f
     }

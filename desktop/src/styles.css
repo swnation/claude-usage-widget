@@ -26,6 +26,7 @@ body {
   --widget-border: rgba(255,255,255,0.08);
   --widget-radius: 8px;
   --widget-shadow: none;
+  --widget-text: #e0e0e0;
   --font: 'Segoe UI', sans-serif;
 }
 
@@ -304,6 +305,7 @@ button:hover { opacity: 0.85; }
   gap: 8px;
   font-size: 14px;
   font-weight: 600;
+  color: var(--widget-text);
   border: 1px solid var(--widget-border);
   box-shadow: var(--widget-shadow);
   cursor: move;
@@ -338,6 +340,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(255,182,193,0.5);
   --widget-radius: 20px;
   --widget-shadow: 0 4px 15px rgba(255,105,180,0.15);
+  --widget-text: #5c3d4e;
 }
 
 /* 🌊 여름 - 바다 */
@@ -358,6 +361,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(100,200,230,0.4);
   --widget-radius: 18px;
   --widget-shadow: 0 4px 15px rgba(0,188,212,0.15);
+  --widget-text: #1a4a5e;
 }
 
 /* 🍂 가을 - 단풍 */
@@ -378,6 +382,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(210,150,80,0.4);
   --widget-radius: 18px;
   --widget-shadow: 0 4px 15px rgba(230,126,34,0.15);
+  --widget-text: #5a3e1e;
 }
 
 /* ❄️ 겨울 - 눈 */
@@ -398,6 +403,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(160,195,230,0.4);
   --widget-radius: 18px;
   --widget-shadow: 0 4px 15px rgba(92,156,230,0.15);
+  --widget-text: #2c3e5a;
 }
 
 /* ── 몽글몽글 시리즈 (귀여운 라운드 스킨) ── */
@@ -420,6 +426,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(255,150,200,0.45);
   --widget-radius: 24px;
   --widget-shadow: 0 6px 20px rgba(255,105,180,0.2);
+  --widget-text: #6e3050;
 }
 
 /* 💜 몽글 퍼플 */
@@ -440,6 +447,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(180,140,255,0.4);
   --widget-radius: 24px;
   --widget-shadow: 0 6px 20px rgba(155,89,182,0.2);
+  --widget-text: #3e2060;
 }
 
 /* 💚 몽글 민트 */
@@ -460,6 +468,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(100,210,180,0.4);
   --widget-radius: 24px;
   --widget-shadow: 0 6px 20px rgba(46,204,113,0.2);
+  --widget-text: #1a4a3a;
 }
 
 /* 💛 몽글 옐로우 */
@@ -480,6 +489,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(255,210,80,0.4);
   --widget-radius: 24px;
   --widget-shadow: 0 6px 20px rgba(241,196,15,0.2);
+  --widget-text: #5a4a10;
 }
 
 /* 🩵 몽글 스카이 */
@@ -500,6 +510,7 @@ button:hover { opacity: 0.85; }
   --widget-border: rgba(120,180,255,0.4);
   --widget-radius: 24px;
   --widget-shadow: 0 6px 20px rgba(52,152,219,0.2);
+  --widget-text: #1a3060;
 }
 
 /* 기본 다크 */
@@ -512,3 +523,64 @@ button:hover { opacity: 0.85; }
   --widget-radius: 18px;
   --widget-shadow: 0 4px 15px rgba(0,0,0,0.2);
 }
+
+/* ── 스킨 분리 UI ── */
+.skin-sub-label {
+  font-size: 11px;
+  color: var(--text-sub);
+  margin: 8px 0 4px;
+  font-weight: 600;
+}
+
+.text-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.text-color-preview {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.text-color-row input[type="color"] {
+  width: 36px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--input-bg);
+  cursor: pointer;
+  padding: 0;
+}
+
+.text-color-row input[type="text"] {
+  width: 80px;
+  background: var(--input-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.text-color-presets {
+  display: flex;
+  gap: 4px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+
+.color-swatch {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid rgba(255,255,255,0.15);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+.color-swatch:hover { transform: scale(1.2); }
+.color-swatch.active { border: 2px solid var(--accent); }

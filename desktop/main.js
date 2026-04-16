@@ -505,9 +505,9 @@ function broadcastCost() {
 }
 
 function broadcastStatus(msg) {
-  if (mainWin && !mainWin.isDestroyed()) {
-    mainWin.webContents.send('status-update', msg);
-  }
+  [mainWin, widgetWin].forEach(w => {
+    if (w && !w.isDestroyed()) w.webContents.send('status-update', msg);
+  });
 }
 
 // ────────────────────────────
@@ -797,6 +797,8 @@ ipcMain.handle('save-settings', (_, s) => {
   startScrapeTimer();
   // 모드 변경 시 위젯 크기 조정
   updateWidgetSize();
+  // 위젯에 설정 변경 알림 (스킨 반영 등)
+  broadcastStatus('');
 });
 ipcMain.handle('refresh', () => {
   scrapeNow();

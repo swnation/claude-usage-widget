@@ -38,13 +38,15 @@ const SKINS = [
 ];
 
 let currentSkin = 'default';
+let currentOverlaySkin = null; // null = 앱 스킨 따라감
+let overlayTextColor = null;
 let customSkinImage = null; // Base64 data URL
 
+// 앱 배경 스킨 적용
 function applySkin(skinId) {
   currentSkin = skinId;
   document.body.setAttribute('data-skin', skinId);
 
-  // 커스텀 스킨이면 배경 이미지 적용
   if (skinId === 'custom' && customSkinImage) {
     document.body.style.backgroundImage = `url(${customSkinImage})`;
     document.body.style.backgroundSize = 'cover';
@@ -53,15 +55,93 @@ function applySkin(skinId) {
     document.body.style.backgroundImage = '';
   }
 
-  // 스킨 그리드 active 표시
-  $$('.skin-item').forEach(el => {
+  // 앱 스킨 그리드 active 표시
+  $$('#skinGrid .skin-item').forEach(el => {
     el.classList.toggle('active', el.dataset.skin === skinId);
   });
 
-  // 설정 저장
   window.api.saveSettings({ skin: skinId, customSkinImage: skinId === 'custom' ? customSkinImage : undefined });
 }
 
+// 오버레이 스킨 적용
+function applyOverlaySkin(skinId) {
+  currentOverlaySkin = skinId;
+
+  $$('#overlaySkinGrid .skin-item').forEach(el => {
+    const isSync = el.dataset.skin === '__sync__';
+    if (skinId === null) {
+      el.classList.toggle('active', isSync);
+    } else {
+      el.classList.toggle('active', el.dataset.skin === skinId);
+    }
+  });
+
+  window.api.saveSettings({ overlaySkin: skinId || '' });
+}
+
+// 오버레이 글씨 색 적용
+function applyOverlayTextColor(color) {
+  overlayTextColor = color;
+  window.api.saveSettings({ overlayTextColor: color || '' });
+  updateTextColorUI();
+}
+
+function updateTextColorUI() {
+  const preview = $('#textColorPreview');
+  const picker = $('#textColorPicker');
+  const hex = $('#textColorHex');
+  if (!preview) return;
+  const effectiveColor = overlayTextColor || getDefaultWidgetTextColor();
+  preview.style.background = effectiveColor;
+  picker.value = effectiveColor;
+  hex.value = overlayTextColor || '';
+
+  $$('#textColorPresets .color-swatch').forEach(el => {
+    el.classList.toggle('active', el.dataset.color === overlayTextColor);
+  });
+}
+
+function getDefaultWidgetTextColor() {
+  const skinId = currentOverlaySkin || currentSkin;
+  const defaults = {
+    'default': '#e0e0e0', 'spring': '#5c3d4e', 'summer': '#1a4a5e',
+    'autumn': '#5a3e1e', 'winter': '#2c3e5a', 'fluffy-pink': '#6e3050',
+    'fluffy-purple': '#3e2060', 'fluffy-mint': '#1a4a3a', 'fluffy-yellow': '#5a4a10',
+    'fluffy-sky': '#1a3060', 'custom': '#ffffff',
+  };
+  return defaults[skinId] || '#e0e0e0';
+}
+
+// 오버레이 스킨 그리드
+function renderOverlaySkinGrid() {
+  const grid = $('#overlaySkinGrid');
+  grid.innerHTML = '';
+
+  // "앱과 동일" 옵션
+  const syncItem = document.createElement('div');
+  syncItem.className = 'skin-item' + (currentOverlaySkin === null ? ' active' : '');
+  syncItem.dataset.skin = '__sync__';
+  syncItem.innerHTML = `
+    <div class="skin-preview" style="background:var(--input-bg);font-size:16px">🔗</div>
+    <div class="skin-label">앱동일</div>
+  `;
+  syncItem.onclick = () => applyOverlaySkin(null);
+  grid.appendChild(syncItem);
+
+  SKINS.forEach(skin => {
+    const item = document.createElement('div');
+    item.className = 'skin-item' + (currentOverlaySkin === skin.id ? ' active' : '');
+    item.dataset.skin = skin.id;
+    item.innerHTML = `
+      <div class="skin-preview" style="background:${skin.preview}">${skin.emoji}</div>
+      <div class="skin-label">${skin.label}</div>
+    `;
+    item.onclick = () => applyOverlaySkin(skin.id);
+    grid.appendChild(item);
+  });
+}
+
+// 앱 배경 스킨 그리드
 function renderSkinGrid() {
   const grid = $('#skinGrid');
   grid.innerHTML = '';
@@ -99,6 +179,26 @@ function renderSkinGrid() {
   grid.appendChild(customItem);
 }
 
+// 글씨 색 프리셋
+function renderTextColorPresets() {
+  const container = $('#textColorPresets');
+  if (!container) return;
+  container.innerHTML = '';
+  const presets = [
+    '#FFFFFF', '#000000', '#e0e0e0', '#333333',
+    '#FF6B6B', '#4ECDC4', '#FFD93D', '#6C5CE7',
+    '#00B894', '#FD79A8', '#0984E3', '#E17055',
+  ];
+  presets.forEach(color => {
+    const swatch = document.createElement('div');
+    swatch.className = 'color-swatch' + (overlayTextColor === color ? ' active' : '');
+    swatch.dataset.color = color;
+    swatch.style.background = color;
+    swatch.onclick = () => applyOverlayTextColor(color);
+    container.appendChild(swatch);
+  });
+}
+
 $('#skinFileInput').onchange = (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -110,6 +210,20 @@ $('#skinFileInput').onchange = (e) => {
   };
   reader.readAsDataURL(file);
   e.target.value = '';
+};
+
+// 글씨 색 이벤트
+$('#textColorApply').onclick = () => {
+  const hex = $('#textColorHex').value.trim();
+  if (hex) {
+    const color = hex.startsWith('#') ? hex : `#${hex}`;
+    applyOverlayTextColor(color);
+  }
+};
+$('#textColorReset').onclick = () => applyOverlayTextColor(null);
+$('#textColorPicker').onchange = (e) => applyOverlayTextColor(e.target.value);
+$('#textColorHex').onkeydown = (e) => {
+  if (e.key === 'Enter') $('#textColorApply').click();
 };
 
 // ── 초기 로딩 ──
@@ -128,9 +242,14 @@ $('#skinFileInput').onchange = (e) => {
 
   // 스킨 복원
   currentSkin = settings.skin || 'default';
+  currentOverlaySkin = settings.overlaySkin || null;
+  overlayTextColor = settings.overlayTextColor || null;
   customSkinImage = settings.customSkinImage || null;
+  renderOverlaySkinGrid();
   renderSkinGrid();
+  renderTextColorPresets();
   applySkin(currentSkin);
+  updateTextColorUI();
 
   const usage = await window.api.getUsage();
   if (usage) renderUsage(usage);

@@ -556,7 +556,39 @@
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content" />
 
-                <!-- 심플하게 HorizontalScrollView로 대체 -->
+                <!-- 오버레이 스킨 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="오버레이 스킨"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginBottom="4dp" />
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/overlaySkinContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <!-- 앱 배경 스킨 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="앱 배경 스킨"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
                 <HorizontalScrollView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -568,6 +600,75 @@
                         android:layout_height="wrap_content"
                         android:orientation="horizontal" />
                 </HorizontalScrollView>
+
+                <!-- 오버레이 글씨 색 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="오버레이 글씨 색"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/textColorPreview"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="#e0e0e0" />
+
+                    <EditText
+                        android:id="@+id/textColorInput"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:hint="#FFFFFF"
+                        android:textColor="#e0e0e0"
+                        android:textColorHint="#888899"
+                        android:textSize="13sp"
+                        android:background="#22223a"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/textColorApplyBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="적용"
+                        android:textSize="11sp"
+                        android:backgroundTint="#c084fc"
+                        android:textColor="#ffffff"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/textColorResetBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="초기화"
+                        android:textSize="11sp"
+                        android:backgroundTint="#444466"
+                        android:textColor="#e0e0e0" />
+                </LinearLayout>
+
+                <!-- 글씨 색 프리셋 -->
+                <LinearLayout
+                    android:id="@+id/textColorPresetsContainer"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:layout_marginTop="6dp"
+                    android:gravity="center_vertical" />
 
                 <!-- 플로팅 스킨 토글 -->
                 <CheckBox
