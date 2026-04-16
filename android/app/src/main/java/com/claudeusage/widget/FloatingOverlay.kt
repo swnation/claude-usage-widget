@@ -186,17 +186,28 @@ class FloatingOverlay private constructor(private val context: Context) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         // 오버레이 전용 스킨 (없으면 앱 스킨 따라감)
         val appSkinId = prefs.getString("skin", "default") ?: "default"
-        val skinId = prefs.getString("overlay_skin", null) ?: appSkinId
+        val overlayExplicit = prefs.getString("overlay_skin", null)
+        val skinId = overlayExplicit ?: appSkinId
 
         if (skinId == "custom-file") {
             // 파일 스킨 (.cskin)
-            val json = prefs.getString("custom_skin_json", null)
+            // 오버레이 전용 .cskin이면 overlay_custom_skin_json, 앱 따라가기면 custom_skin_json
+            val json = if (overlayExplicit == "custom-file") {
+                prefs.getString("overlay_custom_skin_json", null)
+                    ?: prefs.getString("custom_skin_json", null)
+            } else {
+                prefs.getString("custom_skin_json", null)
+            }
             val skinData = json?.let { CustomSkinData.fromJson(it) }
             if (skinData != null) {
                 // 배경: 별도 이미지 파일 → base64 이미지 → 단색 → 그라데이션
-                // 오버레이 전용 배경 > 공용 배경
-                val bgPath = prefs.getString("cskin_overlay_bg_path", null)
-                    ?: prefs.getString("cskin_bg_path", null)
+                val bgPath = if (overlayExplicit == "custom-file") {
+                    prefs.getString("overlay_cskin_overlay_bg_path", null)
+                        ?: prefs.getString("overlay_cskin_bg_path", null)
+                } else {
+                    prefs.getString("cskin_overlay_bg_path", null)
+                        ?: prefs.getString("cskin_bg_path", null)
+                }
                 val fileBitmap = bgPath?.let { android.graphics.BitmapFactory.decodeFile(it) }
                 val bgImage = fileBitmap ?: skinData.overlayBgImage()
                 val isImageType = fileBitmap != null || (skinData.overlay?.background?.type == "image" && bgImage != null)
