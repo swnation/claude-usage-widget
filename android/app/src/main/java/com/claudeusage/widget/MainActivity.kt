@@ -1672,6 +1672,7 @@ class MainActivity : AppCompatActivity() {
                     anthropicKey = anthropicKey.ifEmpty { null },
                     openaiKey = openaiKey.ifEmpty { null },
                     geminiConfig = buildGeminiConfig(prefs),
+                    grokConfig = buildGrokConfig(prefs),
                     estimatedData = estimatedData,
                     subscriptions = subscriptions,
                 )
