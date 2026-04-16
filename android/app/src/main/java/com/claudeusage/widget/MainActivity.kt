@@ -1011,7 +1011,7 @@ class MainActivity : AppCompatActivity() {
         statusView.setTextColor(0xFF888899.toInt())
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val ok = DriveApiClient.saveKeysToDrive(token, encrypted)
+            val ok = DriveApiClient.saveKeysToDrive(token, encrypted, buildExtraConfig(prefs))
             withContext(Dispatchers.Main) {
                 if (ok) {
                     statusView.text = "✅ Drive 백업 완료!"
@@ -1027,6 +1027,16 @@ class MainActivity : AppCompatActivity() {
     private fun updateOverlayButton() {
         val showing = floatingOverlay?.isShowing() == true || FloatingOverlay.wasShowing(this)
         overlayButton.text = if (showing) "플로팅 오버레이 끄기" else "플로팅 오버레이 켜기"
+    }
+
+    private fun buildExtraConfig(prefs: android.content.SharedPreferences): com.google.gson.JsonObject {
+        return com.google.gson.JsonObject().apply {
+            addProperty("gcp_project_id", prefs.getString("gcp_project_id", "") ?: "")
+            addProperty("gcp_dataset_id", prefs.getString("gcp_dataset_id", "") ?: "")
+            addProperty("gcp_table_id", prefs.getString("gcp_table_id", "") ?: "")
+            addProperty("grok_team_id", prefs.getString("grok_team_id", "") ?: "")
+            addProperty("gcp_service_account_json", prefs.getString("gcp_service_account_json", "") ?: "")
+        }
     }
 
     private fun buildGeminiConfig(prefs: android.content.SharedPreferences): BillingApiClient.GeminiConfig? {
@@ -1178,7 +1188,7 @@ class MainActivity : AppCompatActivity() {
         val token = prefs.getString("google_oauth_token", null)
         if (!token.isNullOrEmpty()) {
             lifecycleScope.launch(Dispatchers.IO) {
-                val ok = DriveApiClient.saveKeysToDrive(token, encrypted)
+                val ok = DriveApiClient.saveKeysToDrive(token, encrypted, buildExtraConfig(prefs))
                 withContext(Dispatchers.Main) {
                     if (ok) Toast.makeText(this@MainActivity, "☁️ Drive 백업 완료", Toast.LENGTH_SHORT).show()
                 }
@@ -1199,12 +1209,14 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "Drive에서 키 불러오는 중...", Toast.LENGTH_SHORT).show()
 
         lifecycleScope.launch(Dispatchers.IO) {
-            val encrypted = DriveApiClient.loadKeysFromDrive(token)
+            val driveData = DriveApiClient.loadKeysAndConfigFromDrive(token)
             withContext(Dispatchers.Main) {
-                if (encrypted == null) {
+                if (driveData?.encrypted == null) {
                     Toast.makeText(this@MainActivity, "Drive에 백업된 키가 없습니다", Toast.LENGTH_SHORT).show()
                     return@withContext
                 }
+
+                val encrypted = driveData.encrypted
 
                 // PIN 입력 받기
                 val pinInput = EditText(this@MainActivity).apply {
@@ -1233,10 +1245,18 @@ class MainActivity : AppCompatActivity() {
                                 editor.putString("${entry.key}_admin_key", entry.value.asString)
                                 anyKey = true
                             }
+                            // 부가 설정 복원 (Gemini/Grok 프로젝트 ID 등)
+                            driveData.config?.let { config ->
+                                config.get("gcp_project_id")?.asString?.let { editor.putString("gcp_project_id", it) }
+                                config.get("gcp_dataset_id")?.asString?.let { editor.putString("gcp_dataset_id", it) }
+                                config.get("gcp_table_id")?.asString?.let { editor.putString("gcp_table_id", it) }
+                                config.get("grok_team_id")?.asString?.let { editor.putString("grok_team_id", it) }
+                                config.get("gcp_service_account_json")?.asString?.let { editor.putString("gcp_service_account_json", it) }
+                            }
                             editor.apply()
 
                             setupBillingKeys() // UI 갱신
-                            Toast.makeText(this@MainActivity, "🔓 키 복원 완료", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(this@MainActivity, "🔓 키 + 설정 복원 완료", Toast.LENGTH_SHORT).show()
                             if (anyKey) fetchAdminCosts()
                         } catch (_: Exception) {
                             Toast.makeText(this@MainActivity, "키 데이터 파싱 실패", Toast.LENGTH_SHORT).show()
