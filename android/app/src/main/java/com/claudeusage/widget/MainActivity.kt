@@ -189,6 +189,71 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    // 오버레이 전용 .cskin 파일 선택
+    private val overlayCskinFilePicker = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val inStream = contentResolver.openInputStream(uri) ?: return@registerForActivityResult
+                val bytes = inStream.readBytes()
+                inStream.close()
+
+                var json: String? = null
+                var overlayBgSaved = false
+
+                if (bytes.size > 2 && bytes[0] == 0x50.toByte() && bytes[1] == 0x4B.toByte()) {
+                    val tempZip = java.io.File(cacheDir, "overlay_skin_temp.zip")
+                    tempZip.writeBytes(bytes)
+                    val zipFile = java.util.zip.ZipFile(tempZip)
+                    for (entry in zipFile.entries()) {
+                        val name = entry.name.lowercase()
+                        val baseName = name.substringAfterLast("/")
+                        if (name.endsWith(".cskin") || name.endsWith(".json")) {
+                            json = zipFile.getInputStream(entry).bufferedReader().readText()
+                        } else if (name.endsWith(".png") || name.endsWith(".jpg") || name.endsWith(".jpeg") || name.endsWith(".webp")) {
+                            // 오버레이 배경 (어떤 이미지든 오버레이용)
+                            java.io.File(filesDir, "overlay_cskin_bg.png").outputStream().use { out ->
+                                zipFile.getInputStream(entry).copyTo(out)
+                            }
+                            overlayBgSaved = true
+                        }
+                    }
+                    zipFile.close()
+                    tempZip.delete()
+                } else {
+                    json = String(bytes)
+                }
+
+                if (json == null) {
+                    Toast.makeText(this, "스킨 JSON을 찾을 수 없습니다", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+                val skinData = CustomSkinData.fromJson(json)
+                if (skinData == null) {
+                    Toast.makeText(this, "스킨 파일 파싱 실패", Toast.LENGTH_SHORT).show()
+                    return@registerForActivityResult
+                }
+                val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+                val editor = prefs.edit()
+                    .putString("overlay_skin", "custom-file")
+                    .putString("overlay_custom_skin_json", json)
+                if (overlayBgSaved) {
+                    editor.putString("overlay_cskin_bg_path", java.io.File(filesDir, "overlay_cskin_bg.png").absolutePath)
+                } else {
+                    editor.remove("overlay_cskin_bg_path")
+                }
+                editor.remove("overlay_cskin_overlay_bg_path")
+                editor.apply()
+                setupSkinSelector()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                Toast.makeText(this, "오버레이: ${skinData.name} 적용!", Toast.LENGTH_SHORT).show()
+            } catch (e: Exception) {
+                Toast.makeText(this, "파일 읽기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
     // .cskin 스킨의 배경 이미지 별도 선택
     private val cskinBgImagePicker = registerForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -750,6 +815,10 @@ class MainActivity : AppCompatActivity() {
         }
         overlayContainer.addView(syncItem)
 
+        // 오버레이: 파일 스킨 (.cskin)
+        val overlayFileItem = buildOverlayFileItem(prefs, currentOverlaySkin)
+        overlayContainer.addView(overlayFileItem)
+
         // ── 앱 배경 스킨 ──
         val container = findViewById<LinearLayout>(R.id.skinContainer)
         container.removeAllViews()
@@ -1048,6 +1117,68 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 오버레이 전용 .cskin 파일 아이템 */
+    private fun buildOverlayFileItem(prefs: android.content.SharedPreferences, currentOverlaySkin: String): LinearLayout {
+        val dp = resources.displayMetrics.density
+        val isActive = currentOverlaySkin == "custom-file" && prefs.getString("overlay_skin", null) == "custom-file"
+        val skinName = if (isActive) {
+            val json = prefs.getString("overlay_custom_skin_json", null)
+            json?.let { CustomSkinData.fromJson(it)?.name } ?: "파일"
+        } else "파일"
+
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+            layoutParams = LinearLayout.LayoutParams((64 * dp).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (8 * dp).toInt()
+            }
+            val preview = View(this@MainActivity).apply {
+                val s = (48 * dp).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s)
+                if (isActive) {
+                    val json = prefs.getString("overlay_custom_skin_json", null)
+                    val skinData = json?.let { CustomSkinData.fromJson(it) }
+                    if (skinData != null) {
+                        background = GradientDrawable(
+                            skinData.overlayGradientOrientation(), skinData.overlayBgColors()
+                        ).apply { cornerRadius = skinData.overlayCornerRadius() * dp }
+                    } else {
+                        background = GradientDrawable().apply {
+                            shape = GradientDrawable.RECTANGLE
+                            cornerRadius = 12f * dp
+                            setStroke((2 * dp).toInt(), 0xFF888899.toInt())
+                            setColor(0xFF22223a.toInt())
+                        }
+                    }
+                    foreground = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 12f * dp
+                        setStroke((2 * dp).toInt(), 0xFFc084fc.toInt())
+                    }
+                } else {
+                    background = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 12f * dp
+                        setStroke((2 * dp).toInt(), 0xFF888899.toInt())
+                        setColor(0xFF22223a.toInt())
+                    }
+                }
+            }
+            val label = TextView(this@MainActivity).apply {
+                text = "📄\n$skinName"
+                textSize = 9f
+                setTextColor(0xFFe0e0e0.toInt())
+                gravity = android.view.Gravity.CENTER
+            }
+            addView(preview)
+            addView(label)
+            setOnClickListener {
+                overlayCskinFilePicker.launch(arrayOf("application/json", "*/*"))
+            }
+        }
+    }
+
     /** 오버레이 글씨 색 선택 UI */
     private fun setupTextColorPicker(prefs: android.content.SharedPreferences, currentOverlaySkin: String) {
         val colorPreview = findViewById<View>(R.id.textColorPreview) ?: return
@@ -1062,7 +1193,11 @@ class MainActivity : AppCompatActivity() {
         val skinDefault = when (currentOverlaySkin) {
             "custom" -> 0xFFffffff.toInt()
             "custom-file" -> {
-                val json = prefs.getString("custom_skin_json", null)
+                val json = if (prefs.getString("overlay_skin", null) == "custom-file") {
+                    prefs.getString("overlay_custom_skin_json", null) ?: prefs.getString("custom_skin_json", null)
+                } else {
+                    prefs.getString("custom_skin_json", null)
+                }
                 json?.let { CustomSkinData.fromJson(it) }?.overlayTextColor() ?: 0xFFe0e0e0.toInt()
             }
             else -> overlay.SKIN_STYLES[currentOverlaySkin]?.textColor ?: 0xFFe0e0e0.toInt()
