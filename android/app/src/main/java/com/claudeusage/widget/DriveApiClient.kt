@@ -172,15 +172,20 @@ object DriveApiClient {
     private const val KEYS_FILE = "admin_keys_backup.json"
 
     /**
-     * 암호화된 Admin 키를 Drive에 저장한다.
+     * 암호화된 Admin 키 + 부가 설정을 Drive에 저장한다.
      * @param encryptedData PIN으로 암호화된 키 데이터 (Base64 문자열)
+     * @param extraConfig Gemini/Grok 등 부가 설정 JSON (null이면 키만 저장)
      */
-    fun saveKeysToDrive(token: String, encryptedData: String): Boolean {
+    fun saveKeysToDrive(token: String, encryptedData: String, extraConfig: JsonObject? = null): Boolean {
         return try {
             val folderId = getOrCreateFolder(token, KEYS_FOLDER)
-            val content = """{"encrypted":"$encryptedData","updatedAt":"${java.time.Instant.now()}"}"""
+            val root = JsonObject().apply {
+                addProperty("encrypted", encryptedData)
+                addProperty("updatedAt", java.time.Instant.now().toString())
+                if (extraConfig != null) add("config", extraConfig)
+            }
+            val content = Gson().toJson(root)
 
-            // 기존 파일 있으면 업데이트, 없으면 생성
             val existingId = searchFile(token, KEYS_FILE, folderId)
             if (existingId != null) {
                 httpPatch(
@@ -194,17 +199,29 @@ object DriveApiClient {
         } catch (_: Exception) { false }
     }
 
+    data class DriveKeyData(
+        val encrypted: String?,
+        val config: JsonObject? = null,
+    )
+
     /**
-     * Drive에서 암호화된 Admin 키를 불러온다.
-     * @return 암호화된 키 데이터 (Base64) 또는 null
+     * Drive에서 암호화된 Admin 키 + 부가 설정을 불러온다.
      */
-    fun loadKeysFromDrive(token: String): String? {
+    fun loadKeysAndConfigFromDrive(token: String): DriveKeyData? {
         return try {
             val folderId = searchFolder(token, KEYS_FOLDER) ?: return null
             val fileId = searchFile(token, KEYS_FILE, folderId) ?: return null
             val json = readFile(token, fileId) ?: return null
-            json.get("encrypted")?.asString
+            DriveKeyData(
+                encrypted = json.get("encrypted")?.asString,
+                config = json.getAsJsonObject("config"),
+            )
         } catch (_: Exception) { null }
+    }
+
+    /** 하위 호환: 암호화 키만 반환 */
+    fun loadKeysFromDrive(token: String): String? {
+        return loadKeysAndConfigFromDrive(token)?.encrypted
     }
 
     private fun getOrCreateFolder(token: String, name: String): String {
