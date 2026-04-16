@@ -726,56 +726,45 @@ class MainActivity : AppCompatActivity() {
 
     // ── 스킨 선택 ──
     private fun setupSkinSelector() {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val currentAppSkin = prefs.getString("skin", "default") ?: "default"
+        val currentOverlaySkin = prefs.getString("overlay_skin", null) ?: currentAppSkin
+
+        // ── 오버레이 스킨 ──
+        val overlayContainer = findViewById<LinearLayout>(R.id.overlaySkinContainer)
+        overlayContainer.removeAllViews()
+        SKINS.forEach { skin ->
+            overlayContainer.addView(buildSkinItem(skin, currentOverlaySkin == skin.id) {
+                prefs.edit().putString("overlay_skin", skin.id).apply()
+                setupSkinSelector()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+                Toast.makeText(this, "오버레이: ${skin.label}", Toast.LENGTH_SHORT).show()
+            })
+        }
+        // 오버레이: "앱과 동일" 옵션
+        val syncItem = buildSyncItem(currentOverlaySkin == currentAppSkin && !prefs.contains("overlay_skin")) {
+            prefs.edit().remove("overlay_skin").apply()
+            setupSkinSelector()
+            FloatingOverlay.getInstance(applicationContext).updateSkin()
+            Toast.makeText(this, "오버레이: 앱과 동일", Toast.LENGTH_SHORT).show()
+        }
+        overlayContainer.addView(syncItem)
+
+        // ── 앱 배경 스킨 ──
         val container = findViewById<LinearLayout>(R.id.skinContainer)
         container.removeAllViews()
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val currentSkin = prefs.getString("skin", "default") ?: "default"
-
         SKINS.forEach { skin ->
-            val item = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                gravity = android.view.Gravity.CENTER
-                setPadding(8, 8, 8, 8)
-                val size = (64 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(size, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
-                    marginEnd = (8 * resources.displayMetrics.density).toInt()
-                }
-            }
-            val preview = View(this).apply {
-                val s = (48 * resources.displayMetrics.density).toInt()
-                layoutParams = LinearLayout.LayoutParams(s, s)
-                background = GradientDrawable(
-                    GradientDrawable.Orientation.TL_BR,
-                    intArrayOf(skin.startColor, skin.endColor)
-                ).apply {
-                    cornerRadius = if (skin.id.startsWith("fluffy")) 24f * resources.displayMetrics.density
-                        else 12f * resources.displayMetrics.density
-                }
-                if (currentSkin == skin.id) {
-                    foreground = GradientDrawable().apply {
-                        shape = GradientDrawable.RECTANGLE
-                        cornerRadius = 12f * resources.displayMetrics.density
-                        setStroke((2 * resources.displayMetrics.density).toInt(), 0xFFc084fc.toInt())
-                    }
-                }
-            }
-            val label = TextView(this).apply {
-                text = "${skin.emoji}\n${skin.label}"
-                textSize = 9f
-                setTextColor(0xFFe0e0e0.toInt())
-                gravity = android.view.Gravity.CENTER
-            }
-            item.addView(preview)
-            item.addView(label)
-            item.setOnClickListener {
+            container.addView(buildSkinItem(skin, currentAppSkin == skin.id) {
                 prefs.edit().putString("skin", skin.id).apply()
-                setupSkinSelector() // refresh
-                applySkin() // 앱 화면 스킨
-                FloatingOverlay.getInstance(applicationContext).updateSkin() // 오버레이 스킨
-                UsageWidgetProvider.updateAll(this) // 위젯 스킨
+                setupSkinSelector()
+                applySkin()
+                // overlay_skin 미설정이면 오버레이도 따라감
+                if (!prefs.contains("overlay_skin")) {
+                    FloatingOverlay.getInstance(applicationContext).updateSkin()
+                }
+                UsageWidgetProvider.updateAll(this)
                 Toast.makeText(this, "${skin.label} 스킨 적용!", Toast.LENGTH_SHORT).show()
-            }
-            container.addView(item)
+            })
         }
 
         // ── 커스텀 스킨 (사진) ──
@@ -788,7 +777,7 @@ class MainActivity : AppCompatActivity() {
                 marginEnd = (8 * resources.displayMetrics.density).toInt()
             }
         }
-        val customPreview = if (currentSkin == "custom") {
+        val customPreview = if (currentAppSkin == "custom") {
             // 저장된 사진 미리보기
             val path = prefs.getString("custom_skin_path", null)
             if (path != null) {
@@ -827,7 +816,7 @@ class MainActivity : AppCompatActivity() {
                 setStroke((2 * resources.displayMetrics.density).toInt(), 0xFF888899.toInt())
                 setColor(0xFF22223a.toInt())
             }
-            if (currentSkin == "custom") {
+            if (currentAppSkin == "custom") {
                 foreground = GradientDrawable().apply {
                     shape = GradientDrawable.RECTANGLE
                     cornerRadius = 12f * resources.displayMetrics.density
@@ -858,14 +847,14 @@ class MainActivity : AppCompatActivity() {
                 marginEnd = (8 * resources.displayMetrics.density).toInt()
             }
         }
-        val fileSkinName = if (currentSkin == "custom-file") {
+        val fileSkinName = if (currentAppSkin == "custom-file") {
             val json = prefs.getString("custom_skin_json", null)
             json?.let { CustomSkinData.fromJson(it)?.name } ?: "파일"
         } else "파일"
         val filePreview = View(this).apply {
             val s = (48 * resources.displayMetrics.density).toInt()
             layoutParams = LinearLayout.LayoutParams(s, s)
-            if (currentSkin == "custom-file") {
+            if (currentAppSkin == "custom-file") {
                 val json = prefs.getString("custom_skin_json", null)
                 val skinData = json?.let { CustomSkinData.fromJson(it) }
                 if (skinData != null) {
@@ -911,7 +900,7 @@ class MainActivity : AppCompatActivity() {
         container.addView(fileItem)
 
         // ── 배경 이미지 선택 (파일 스킨 활성화 시만) ──
-        if (currentSkin == "custom-file") {
+        if (currentAppSkin == "custom-file") {
             val bgItem = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 gravity = android.view.Gravity.CENTER
@@ -953,6 +942,9 @@ class MainActivity : AppCompatActivity() {
             container.addView(bgItem)
         }
 
+        // ── 오버레이 글씨 색 ──
+        setupTextColorPicker(prefs, currentOverlaySkin)
+
         // ── 저장된 스킨 목록 ──
         setupSavedSkins()
 
@@ -982,6 +974,156 @@ class MainActivity : AppCompatActivity() {
                     }
                 } catch (_: Exception) {}
             }
+        }
+    }
+
+    /** 스킨 아이템 빌드 (오버레이/앱 공용) */
+    private fun buildSkinItem(skin: SkinInfo, isActive: Boolean, onClick: () -> Unit): LinearLayout {
+        val dp = resources.displayMetrics.density
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+            layoutParams = LinearLayout.LayoutParams((64 * dp).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (8 * dp).toInt()
+            }
+            val preview = View(this@MainActivity).apply {
+                val s = (48 * dp).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s)
+                background = GradientDrawable(
+                    GradientDrawable.Orientation.TL_BR,
+                    intArrayOf(skin.startColor, skin.endColor)
+                ).apply {
+                    cornerRadius = if (skin.id.startsWith("fluffy")) 24f * dp else 12f * dp
+                }
+                if (isActive) {
+                    foreground = GradientDrawable().apply {
+                        shape = GradientDrawable.RECTANGLE
+                        cornerRadius = 12f * dp
+                        setStroke((2 * dp).toInt(), 0xFFc084fc.toInt())
+                    }
+                }
+            }
+            val label = TextView(this@MainActivity).apply {
+                text = "${skin.emoji}\n${skin.label}"
+                textSize = 9f
+                setTextColor(0xFFe0e0e0.toInt())
+                gravity = android.view.Gravity.CENTER
+            }
+            addView(preview)
+            addView(label)
+            setOnClickListener { onClick() }
+        }
+    }
+
+    /** "앱과 동일" 동기화 아이템 */
+    private fun buildSyncItem(isActive: Boolean, onClick: () -> Unit): LinearLayout {
+        val dp = resources.displayMetrics.density
+        return LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = android.view.Gravity.CENTER
+            setPadding(8, 8, 8, 8)
+            layoutParams = LinearLayout.LayoutParams((64 * dp).toInt(), LinearLayout.LayoutParams.WRAP_CONTENT).apply {
+                marginEnd = (8 * dp).toInt()
+            }
+            val preview = View(this@MainActivity).apply {
+                val s = (48 * dp).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s)
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.RECTANGLE
+                    cornerRadius = 12f * dp
+                    setStroke((2 * dp).toInt(), if (isActive) 0xFFc084fc.toInt() else 0xFF888899.toInt())
+                    setColor(0xFF22223a.toInt())
+                }
+            }
+            val label = TextView(this@MainActivity).apply {
+                text = "🔗\n앱동일"
+                textSize = 9f
+                setTextColor(0xFFe0e0e0.toInt())
+                gravity = android.view.Gravity.CENTER
+            }
+            addView(preview)
+            addView(label)
+            setOnClickListener { onClick() }
+        }
+    }
+
+    /** 오버레이 글씨 색 선택 UI */
+    private fun setupTextColorPicker(prefs: android.content.SharedPreferences, currentOverlaySkin: String) {
+        val colorPreview = findViewById<View>(R.id.textColorPreview) ?: return
+        val colorInput = findViewById<EditText>(R.id.textColorInput) ?: return
+        val applyBtn = findViewById<Button>(R.id.textColorApplyBtn) ?: return
+        val resetBtn = findViewById<Button>(R.id.textColorResetBtn) ?: return
+        val presetsContainer = findViewById<LinearLayout>(R.id.textColorPresetsContainer) ?: return
+
+        // 현재 값 표시
+        val savedColor = prefs.getString("overlay_text_color", null)
+        val overlay = FloatingOverlay.getInstance(applicationContext)
+        val skinDefault = overlay.SKIN_STYLES[currentOverlaySkin]?.textColor ?: 0xFFe0e0e0.toInt()
+        val displayColor = if (savedColor != null) {
+            try { Color.parseColor(savedColor) } catch (_: Exception) { skinDefault }
+        } else skinDefault
+
+        colorPreview.background = GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
+            cornerRadius = 6f * resources.displayMetrics.density
+            setColor(displayColor)
+            setStroke(1, 0xFF888899.toInt())
+        }
+        if (savedColor != null) colorInput.setText(savedColor)
+        else colorInput.setText("")
+
+        applyBtn.setOnClickListener {
+            val hex = colorInput.text.toString().trim()
+            if (hex.isNotEmpty()) {
+                val colorStr = if (hex.startsWith("#")) hex else "#$hex"
+                try {
+                    Color.parseColor(colorStr)
+                    prefs.edit().putString("overlay_text_color", colorStr).apply()
+                    FloatingOverlay.getInstance(applicationContext).updateSkin()
+                    setupSkinSelector()
+                    Toast.makeText(this, "글씨 색 적용!", Toast.LENGTH_SHORT).show()
+                } catch (_: Exception) {
+                    Toast.makeText(this, "올바른 색상코드를 입력하세요 (#FFFFFF)", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+
+        resetBtn.setOnClickListener {
+            prefs.edit().remove("overlay_text_color").apply()
+            FloatingOverlay.getInstance(applicationContext).updateSkin()
+            setupSkinSelector()
+            Toast.makeText(this, "글씨 색 초기화", Toast.LENGTH_SHORT).show()
+        }
+
+        // 프리셋 색상
+        presetsContainer.removeAllViews()
+        val presets = listOf(
+            "#FFFFFF" to "흰색", "#000000" to "검정", "#e0e0e0" to "밝은회",
+            "#333333" to "어두운회", "#FF6B6B" to "빨강", "#4ECDC4" to "민트",
+            "#FFD93D" to "노랑", "#6C5CE7" to "보라", "#00B894" to "초록",
+            "#FD79A8" to "핑크", "#0984E3" to "파랑", "#E17055" to "주황",
+        )
+        val dp = resources.displayMetrics.density
+        presets.forEach { (hex, _) ->
+            val swatch = View(this).apply {
+                val s = (28 * dp).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s).apply {
+                    marginEnd = (6 * dp).toInt()
+                }
+                background = GradientDrawable().apply {
+                    shape = GradientDrawable.OVAL
+                    setColor(Color.parseColor(hex))
+                    setStroke(1, 0xFF888899.toInt())
+                }
+                setOnClickListener {
+                    prefs.edit().putString("overlay_text_color", hex).apply()
+                    FloatingOverlay.getInstance(applicationContext).updateSkin()
+                    setupSkinSelector()
+                    Toast.makeText(this@MainActivity, "글씨 색 적용!", Toast.LENGTH_SHORT).show()
+                }
+            }
+            presetsContainer.addView(swatch)
         }
     }
 
