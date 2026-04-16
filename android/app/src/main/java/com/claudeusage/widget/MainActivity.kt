@@ -721,11 +721,11 @@ class MainActivity : AppCompatActivity() {
         val bgUploadBtn = findViewById<Button>(R.id.bgUploadBtn)
         val bgRemoveBtn = findViewById<Button>(R.id.bgRemoveBtn)
 
-        // 배경 사진 미리보기
+        // 배경 사진 미리보기 (썸네일 축소 로드 — OOM 방지)
         val bgPath = prefs.getString("custom_skin_path", null)
         if (bgPath != null) {
             try {
-                val bitmap = android.graphics.BitmapFactory.decodeFile(bgPath)
+                val bitmap = decodeSampledBitmap(bgPath, 120, 80)
                 if (bitmap != null) {
                     bgPreviewThumb.setImageBitmap(bitmap)
                 } else {
@@ -750,6 +750,7 @@ class MainActivity : AppCompatActivity() {
                 .remove("custom_skin_path")
                 .putString("skin", "default")
                 .apply()
+            try { java.io.File(filesDir, "custom_skin_bg.png").delete() } catch (_: Exception) {}
             setupSkinSection()
             applySkin()
             FloatingOverlay.getInstance(applicationContext).updateSkin()
@@ -762,11 +763,11 @@ class MainActivity : AppCompatActivity() {
         val overlayUploadBtn = findViewById<Button>(R.id.overlayUploadBtn)
         val overlayRemoveBtn = findViewById<Button>(R.id.overlayRemoveBtn)
 
-        // 오버레이 이미지 미리보기
+        // 오버레이 이미지 미리보기 (썸네일 축소 로드)
         val overlayPath = prefs.getString("overlay_image_path", null)
         if (overlayPath != null) {
             try {
-                val bitmap = android.graphics.BitmapFactory.decodeFile(overlayPath)
+                val bitmap = decodeSampledBitmap(overlayPath, 200, 60)
                 if (bitmap != null) {
                     overlayPreviewThumb.setImageBitmap(bitmap)
                 } else {
@@ -800,6 +801,27 @@ class MainActivity : AppCompatActivity() {
     }
 
     /** 오버레이 글씨 색 선택 UI */
+    /** 이미지를 축소 로드하여 OOM 방지 (썸네일용) */
+    private fun decodeSampledBitmap(path: String, reqWidth: Int, reqHeight: Int): android.graphics.Bitmap? {
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(path, options)
+        options.inSampleSize = calculateInSampleSize(options, reqWidth, reqHeight)
+        options.inJustDecodeBounds = false
+        return android.graphics.BitmapFactory.decodeFile(path, options)
+    }
+
+    private fun calculateInSampleSize(options: android.graphics.BitmapFactory.Options, reqW: Int, reqH: Int): Int {
+        val (h, w) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (h > reqH || w > reqW) {
+            val halfH = h / 2; val halfW = w / 2
+            while (halfH / inSampleSize >= reqH && halfW / inSampleSize >= reqW) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
+    }
+
     private fun setupTextColorPicker(prefs: android.content.SharedPreferences, currentOverlaySkin: String) {
         val colorPreview = findViewById<View>(R.id.textColorPreview) ?: return
         val colorInput = findViewById<EditText>(R.id.textColorInput) ?: return

@@ -193,10 +193,12 @@ class FloatingOverlay private constructor(private val context: Context) {
     }
 
     private fun applySkinInternal(tv: TextView, prefs: android.content.SharedPreferences) {
-        // 1. 오버레이 이미지 확인
+        // 1. 오버레이 이미지 확인 (고정 크기에 맞춰 축소 로드)
         val overlayImagePath = prefs.getString("overlay_image_path", null)
         if (overlayImagePath != null) {
-            val bitmap = android.graphics.BitmapFactory.decodeFile(overlayImagePath)
+            val dp = context.resources.displayMetrics.density
+            val bitmap = decodeSampledBitmap(overlayImagePath,
+                (OVERLAY_WIDTH_DP * dp).toInt(), (OVERLAY_HEIGHT_DP * dp).toInt())
             if (bitmap != null) {
                 val drawable = android.graphics.drawable.BitmapDrawable(context.resources, bitmap)
                 tv.background = drawable
@@ -255,6 +257,19 @@ class FloatingOverlay private constructor(private val context: Context) {
 
         // 3. 기본 다크
         applyDefaultSkin(tv, prefs)
+    }
+
+    private fun decodeSampledBitmap(path: String, reqW: Int, reqH: Int): android.graphics.Bitmap? {
+        val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(path, opts)
+        var inSampleSize = 1
+        if (opts.outHeight > reqH || opts.outWidth > reqW) {
+            val halfH = opts.outHeight / 2; val halfW = opts.outWidth / 2
+            while (halfH / inSampleSize >= reqH && halfW / inSampleSize >= reqW) inSampleSize *= 2
+        }
+        opts.inSampleSize = inSampleSize
+        opts.inJustDecodeBounds = false
+        return android.graphics.BitmapFactory.decodeFile(path, opts)
     }
 
     private fun applyCustomTextColor(prefs: android.content.SharedPreferences, tv: TextView) {
