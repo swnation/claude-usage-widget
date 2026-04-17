@@ -114,6 +114,17 @@ class AppUpdater(private val activity: Activity) {
                 }
 
                 val downloadUrl = apkUrl!!
+
+                // "나중에" 누른 버전은 24시간 동안 다시 묻지 않음
+                val prefs = androidx.preference.PreferenceManager.getDefaultSharedPreferences(activity)
+                val skippedVersion = prefs.getString("update_skipped_version", null)
+                val skippedAt = prefs.getLong("update_skipped_at", 0L)
+                val skipExpired = System.currentTimeMillis() - skippedAt > 24 * 60 * 60 * 1000L
+                if (skippedVersion == latestVersion && !skipExpired) {
+                    Log.d(TAG, "v$latestVersion 다시 안내 안 함 (24시간 이내)")
+                    return@execute
+                }
+
                 activity.runOnUiThread {
                     showUpdateDialog(latestVersion, releaseNotes, downloadUrl)
                 }
@@ -156,7 +167,13 @@ class AppUpdater(private val activity: Activity) {
             .setTitle("새 버전: v$version")
             .setMessage(notes.ifEmpty { "새 버전이 있습니다." })
             .setPositiveButton("업데이트") { _, _ -> downloadAndInstall(downloadUrl) }
-            .setNegativeButton("나중에", null)
+            .setNegativeButton("나중에") { _, _ ->
+                // 이 버전은 24시간 동안 안내 안 함
+                androidx.preference.PreferenceManager.getDefaultSharedPreferences(activity).edit()
+                    .putString("update_skipped_version", version)
+                    .putLong("update_skipped_at", System.currentTimeMillis())
+                    .apply()
+            }
             .show()
     }
 

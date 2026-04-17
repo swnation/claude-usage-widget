@@ -34,6 +34,20 @@ jobs:
       - name: Decode Keystore
         run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/keystore.jks
 
+      - name: Inject version into build.gradle.kts
+        working-directory: android
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          IFS='.' read -ra V <<< "$VERSION"
+          MAJOR=${V[0]:-0}
+          MINOR=${V[1]:-0}
+          PATCH=${V[2]:-0}
+          VERSION_CODE=$((MAJOR * 10000 + MINOR * 100 + PATCH))
+          sed -i "s/versionName = \".*\"/versionName = \"$VERSION\"/" app/build.gradle.kts
+          sed -i "s/versionCode = .*/versionCode = $VERSION_CODE/" app/build.gradle.kts
+          echo "Updated to versionName=$VERSION, versionCode=$VERSION_CODE"
+          grep -E "versionName|versionCode" app/build.gradle.kts
+
       - name: Build Signed APK
         working-directory: android
         env:
