@@ -112,9 +112,12 @@ class FloatingOverlay private constructor(private val context: Context) {
 
         windowManager = context.getSystemService(Context.WINDOW_SERVICE) as WindowManager
 
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
         val dp = context.resources.displayMetrics.density
-        val widthPx = (OVERLAY_WIDTH_DP * dp).toInt()
-        val heightPx = (OVERLAY_HEIGHT_DP * dp).toInt()
+        val w = prefs.getInt("overlay_width_dp", OVERLAY_WIDTH_DP)
+        val h = prefs.getInt("overlay_height_dp", OVERLAY_HEIGHT_DP)
+        val widthPx = (w * dp).toInt()
+        val heightPx = (h * dp).toInt()
 
         val textView = TextView(context).apply {
             text = "세션 --%"
@@ -291,6 +294,20 @@ class FloatingOverlay private constructor(private val context: Context) {
         }
         tv.setShadowLayer(0f, 0f, 0f, 0)
         tv.elevation = 4f
+    }
+
+    fun updateSize() {
+        val view = overlayView ?: return
+        val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+        val dp = context.resources.displayMetrics.density
+        val w = prefs.getInt("overlay_width_dp", OVERLAY_WIDTH_DP)
+        val h = prefs.getInt("overlay_height_dp", OVERLAY_HEIGHT_DP)
+        try {
+            val params = view.layoutParams as WindowManager.LayoutParams
+            params.width = (w * dp).toInt()
+            params.height = (h * dp).toInt()
+            windowManager?.updateViewLayout(view, params)
+        } catch (_: Exception) {}
     }
 
     fun hide() {
