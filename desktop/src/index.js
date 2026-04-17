@@ -105,10 +105,6 @@ $('#textColorHex').onkeydown = (e) => {
   const cost = await window.api.getCost();
   if (cost) renderCost(cost);
 
-  // 오랑붕쌤 상태
-  const obsStatus = await window.api.getObsStatus();
-  setObsState(obsStatus);
-
   // Admin 키
   const adminKeys = await window.api.getAdminKeys();
   if (adminKeys.anthropic) $('#anthropicKeyInput').value = adminKeys.anthropic;
@@ -159,18 +155,6 @@ $$('input[name="displayMode"]').forEach(radio => {
 });
 
 loginBtn.onclick = () => window.api.login();
-
-// 오랑붕쌤 연결
-$('#obsBtn').onclick = () => window.api.obsLogin();
-window.api.onObsStatus((status) => setObsState(status));
-
-function setObsState(connected) {
-  const dot = $('#obsDot');
-  const text = $('#obsText');
-  dot.className = 'dot ' + (connected ? 'green' : 'gray');
-  text.textContent = connected ? '오랑붕쌤: 연결됨' : '오랑붕쌤: 연결 안됨';
-  $('#obsBtn').textContent = connected ? '재연결' : '연결';
-}
 
 // Admin API 키 (암호화 저장)
 $('#anthropicKeySave').onclick = () => promptPinAndSave('anthropic');

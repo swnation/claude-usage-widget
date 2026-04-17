@@ -10,8 +10,6 @@ contextBridge.exposeInMainWorld('api', {
   logout: () => ipcRenderer.invoke('logout'),
   toggleWidget: () => ipcRenderer.invoke('toggle-widget'),
   showMain: () => ipcRenderer.invoke('show-main'),
-  obsLogin: () => ipcRenderer.invoke('obs-login'),
-  getObsStatus: () => ipcRenderer.invoke('get-obs-status'),
   saveAdminKeyEncrypted: (type, key, pin) => ipcRenderer.invoke('save-admin-key-encrypted', type, key, pin),
   restoreAdminKeys: (pin) => ipcRenderer.invoke('restore-admin-keys', pin),
   getAdminKeys: () => ipcRenderer.invoke('get-admin-keys'),
@@ -19,7 +17,6 @@ contextBridge.exposeInMainWorld('api', {
   // 구독 관리
   getSubscriptions: () => ipcRenderer.invoke('get-subscriptions'),
   saveSubscriptions: (subs) => ipcRenderer.invoke('save-subscriptions', subs),
-  onObsStatus: (cb) => { ipcRenderer.on('obs-status', (_, s) => cb(s)); },
   onAdminCostUpdate: (cb) => { ipcRenderer.on('admin-cost-update', (_, d) => cb(d)); },
   quit: () => ipcRenderer.invoke('quit'),
   onUsageUpdate: (cb) => {

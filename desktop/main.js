@@ -8,7 +8,6 @@ const crypto = require('crypto');
 const SETTINGS_PATH = path.join(app.getPath('userData'), 'settings.json');
 const PRELOAD = path.join(__dirname, 'preload.js');
 const USAGE_URL = 'https://claude.ai/settings/usage';
-const OBS_URL = 'https://swnation.github.io/OrangBoongSSem/';
 const SCRAPE_TIMEOUT_MS = 30000;
 
 // ── AI 정의 ──
@@ -106,7 +105,7 @@ function updateTrayMenu() {
   const menu = Menu.buildFromTemplate([
     { label: statusLabel, enabled: false },
     { type: 'separator' },
-    { label: '새로고침', click: () => { scrapeNow(); scrapeObsCost(); } },
+    { label: '새로고침', click: () => { scrapeNow(); fetchAllCosts(); } },
     { label: settings.widgetVisible ? '위젯 숨기기' : '위젯 표시',
       click: () => toggleWidget() },
     { label: '설정 열기', click: () => showMainWindow() },
@@ -189,7 +188,7 @@ async function scrapeNow() {
   if (isScraping) return;
   if (settings.displayMode === 'API_COST_ONLY') {
     // API_COST_ONLY 모드에서는 Claude 스크래핑 생략
-    scrapeObsCost();
+    fetchAllCosts();
     return;
   }
   isScraping = true;
@@ -255,19 +254,10 @@ async function scrapeNow() {
   isScraping = false;
 }
 
-// ── 오랑붕쌤 Drive API 직접 호출 ──
-const OBS_DOMAINS = [
-  ['Orangi Migraine', 'orangi_master.json'],
-  ['Orangi Mental', 'orangi_mental_master.json'],
-  ['Orangi Health', 'orangi_health_master.json'],
-  ['Bung Mental', 'bung_mental_master.json'],
-  ['Bung Health', 'bung_health_master.json'],
-  ['Bungruki Pregnancy', 'bungruki_master.json'],
-];
-
+// ── Google Drive API 헬퍼 ──
 async function driveGet(urlPath, token) {
   return new Promise((resolve, reject) => {
-    https.get(urlPath, { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
+    https.get(urlPath, { headers: { 'Authorization': \`Bearer \${token}\` } }, (res) => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {
@@ -277,58 +267,6 @@ async function driveGet(urlPath, token) {
       });
     }).on('error', reject);
   });
-}
-
-let isObsFetching = false;
-
-// ── 오랑붕쌤 Drive에서 추정 비용만 가져오��� ──
-async function fetchDriveEstimated() {
-  if (!settings.googleToken) return null;
-  const token = settings.googleToken;
-
-  const today = new Date().toLocaleDateString('sv'); // YYYY-MM-DD (로컬 시간대)
-  const month = today.slice(0,7);
-  let todayTotal = 0, monthTotal = 0;
-  const byAIMap = {};
-  let anySuccess = false;
-
-  for (const [folderName, masterFile] of OBS_DOMAINS) {
-    try {
-      const q1 = encodeURIComponent(`name='${folderName}' and mimeType='application/vnd.google-apps.folder' and trashed=false`);
-      const folders = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q1}&fields=files(id)`, token);
-      if (!folders?.files?.length) continue;
-      const folderId = folders.files[0].id;
-
-      const q2 = encodeURIComponent(`name='${masterFile}' and '${folderId}' in parents and trashed=false`);
-      const files = await driveGet(`https://www.googleapis.com/drive/v3/files?q=${q2}&fields=files(id)`, token);
-      if (!files?.files?.length) continue;
-      const fileId = files.files[0].id;
-
-      const master = await driveGet(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, token);
-      if (!master?.usage_data) continue;
-
-      anySuccess = true;
-      for (const [date, aiMap] of Object.entries(master.usage_data)) {
-        for (const [aiId, info] of Object.entries(aiMap)) {
-          const cost = info.cost || 0;
-          if (!byAIMap[aiId]) byAIMap[aiId] = { today: 0, month: 0 };
-          if (date === today) { todayTotal += cost; byAIMap[aiId].today += cost; }
-          if (date.startsWith(month)) { monthTotal += cost; byAIMap[aiId].month += cost; }
-        }
-      }
-    } catch (e) {
-      if (e.message === 'TOKEN_EXPIRED') {
-        settings.googleToken = null;
-        settings.obsLoggedIn = false;
-        saveSettings();
-        broadcastStatus('토큰 만료 — 오랑붕쌤 재연결 필요');
-        return null;
-      }
-    }
-  }
-
-  if (!anySuccess) return null;
-  return { todayTotal, monthTotal, byAIMap, bySys: [{ systemName: '오랑붕쌤', todayCost: todayTotal, monthCost: monthTotal }] };
 }
 
 // ── Billing API 호출 ──
@@ -380,17 +318,13 @@ async function fetchBillingApi(aiId, key) {
 }
 
 // ── 통합 비용 fetch (Billing 우선 + Drive 보조) ──
-async function scrapeObsCost() {
-  if (isObsFetching) return;
-  isObsFetching = true;
+let isCostFetching = false;
+
+async function fetchAllCosts() {
+  if (isCostFetching) return;
+  isCostFetching = true;
 
   try {
-    const hasBillingKeys = settings.adminKey || settings.openaiKey;
-
-    // 1) 오랑붕쌤 추정 데이터
-    const estimated = await fetchDriveEstimated();
-
-    // 2) Billing API 호출
     const billingResults = {};
     if (settings.adminKey) {
       billingResults.claude = await fetchBillingApi('claude', settings.adminKey);
@@ -400,82 +334,40 @@ async function scrapeObsCost() {
     }
 
     const hasBilling = Object.values(billingResults).some(r => !r.error);
-    const hasEstimated = estimated != null;
+    if (!hasBilling) { isCostFetching = false; return; }
 
-    if (!hasBilling && !hasEstimated) { isObsFetching = false; return; }
-
-    // 3) AI별 병합
-    const estByAI = estimated?.byAIMap || {};
-    const allAiIds = new Set([...Object.keys(billingResults), ...Object.keys(estByAI)]);
     let todayTotal = 0, monthTotal = 0;
-    let billingTodaySum = 0, billingMonthSum = 0;
-    let estTodaySum = 0, estMonthSum = 0;
-
     const byAI = [];
-    for (const aiId of allAiIds) {
+    for (const [aiId, billing] of Object.entries(billingResults)) {
+      if (billing.error) continue;
       const def = AI_DEFS[aiId] || { name: aiId, color: '#888' };
-      const billing = billingResults[aiId];
-      const est = estByAI[aiId];
-
-      const billingToday = (billing && !billing.error) ? billing.todayCost : null;
-      const billingMonth = (billing && !billing.error) ? billing.monthCost : null;
-      const estimatedToday = est?.today || 0;
-      const estimatedMonth = est?.month || 0;
-
-      const effectiveToday = billingToday ?? estimatedToday;
-      const effectiveMonth = billingMonth ?? estimatedMonth;
-      todayTotal += effectiveToday;
-      monthTotal += effectiveMonth;
-
-      if (billingToday != null) billingTodaySum += billingToday;
-      if (billingMonth != null) billingMonthSum += billingMonth;
-      estTodaySum += estimatedToday;
-      estMonthSum += estimatedMonth;
-
-      // source 판단
-      let source = 'estimated';
-      if (billingMonth != null && estimatedMonth > 0) source = 'hybrid';
-      else if (billingMonth != null) source = 'billing';
-
+      todayTotal += billing.todayCost;
+      monthTotal += billing.monthCost;
       byAI.push({
         aiId, name: def.name, color: def.color,
-        todayCost: effectiveToday, monthCost: effectiveMonth,
-        billingToday, billingMonth, estimatedToday, estimatedMonth, source,
-        monthDiff: (billingMonth != null && estimatedMonth > 0) ? billingMonth - estimatedMonth : null,
+        todayCost: billing.todayCost, monthCost: billing.monthCost,
+        source: 'billing',
       });
     }
     byAI.sort((a, b) => b.monthCost - a.monthCost);
 
-    // 전체 소스
-    let source = 'estimated';
-    if (hasBilling && hasEstimated) source = 'hybrid';
-    else if (hasBilling) source = 'billing';
-
-    // 구독 정보
     const subscriptions = settings.subscriptions || [];
 
     costData = {
-      todayTotal, monthTotal, source,
-      billingToday: hasBilling ? billingTodaySum : null,
-      billingMonth: hasBilling ? billingMonthSum : null,
-      estimatedToday: hasEstimated ? estTodaySum : null,
-      estimatedMonth: hasEstimated ? estMonthSum : null,
-      byAI,
-      bySys: estimated?.bySys || [],
-      subscriptions,
+      todayTotal, monthTotal, source: 'billing',
+      byAI, subscriptions,
       lastUpdated: new Date().toISOString(),
     };
 
     broadcastCost();
     updateTrayFromUsage();
 
-    // Admin 비교도 전송
-    if (hasBillingKeys && mainWin && !mainWin.isDestroyed()) {
+    if (mainWin && !mainWin.isDestroyed()) {
       mainWin.webContents.send('admin-cost-update', { costData });
     }
   } catch (_) {}
 
-  isObsFetching = false;
+  isCostFetching = false;
 }
 
 function startScrapeTimer() {
@@ -483,7 +375,7 @@ function startScrapeTimer() {
   const ms = Math.max(30, settings.refreshInterval || 120) * 1000;
   scrapeTimer = setInterval(() => {
     scrapeNow();
-    scrapeObsCost();
+    fetchAllCosts();
   }, ms);
 }
 
@@ -569,62 +461,7 @@ function toggleWidget() {
   updateTrayMenu();
 }
 
-// ────────────────────────────
-//  윈도우: 오랑붕쌤 로그인
-// ────────────────────────────
-let obsLoginWin = null;
-
-function showObsLoginWindow() {
-  if (obsLoginWin && !obsLoginWin.isDestroyed()) {
-    obsLoginWin.show();
-    obsLoginWin.focus();
-    return;
-  }
-  obsLoginWin = new BrowserWindow({
-    width: 900, height: 700,
-    webPreferences: { contextIsolation: true, nodeIntegration: false }
-  });
-  obsLoginWin.setMenuBarVisibility(false);
-  obsLoginWin.loadURL(OBS_URL);
-
-  // 토큰 감지: 주기적으로 S.token 체크
-  let checkCount = 0;
-  const checkInterval = setInterval(async () => {
-    if (!obsLoginWin || obsLoginWin.isDestroyed()) {
-      clearInterval(checkInterval);
-      return;
-    }
-    checkCount++;
-    if (checkCount > 60) { clearInterval(checkInterval); return; }
-
-    try {
-      const result = await obsLoginWin.webContents.executeJavaScript(`
-        (function() {
-          var token = (typeof S !== 'undefined' && S && S.token) ? S.token : null;
-          return JSON.stringify({ token: token });
-        })();
-      `);
-      const { token } = JSON.parse(result);
-      if (token) {
-        clearInterval(checkInterval);
-        settings.obsLoggedIn = true;
-        settings.googleToken = token;
-        saveSettings();
-        broadcastStatus('오랑붕쌤 연결 완료 (Drive API)');
-        if (mainWin && !mainWin.isDestroyed()) {
-          mainWin.webContents.send('obs-status', true);
-        }
-        obsLoginWin.close();
-        scrapeObsCost();
-      }
-    } catch (_) {}
-  }, 2000);
-
-  obsLoginWin.on('closed', () => {
-    clearInterval(checkInterval);
-    obsLoginWin = null;
-  });
-}
+// (오랑붕쌤 로그인 제거됨 — Drive 백업은 Android에서만 지원)
 
 // ────────────────────────────
 //  Anthropic Admin API
@@ -751,9 +588,9 @@ function adminApiRequest(hostname, path, headers) {
 }
 
 async function fetchAllAdminCosts() {
-  // 이제 scrapeObsCost()가 Billing + Drive를 통합 처리하므로
+  // 이제 fetchAllCosts()가 Billing + Drive를 통합 처리하므로
   // 이 함수는 즉시 통합 fetch를 트리거한다
-  await scrapeObsCost();
+  await fetchAllCosts();
   return costData;
 }
 
@@ -802,7 +639,7 @@ ipcMain.handle('save-settings', (_, s) => {
 });
 ipcMain.handle('refresh', () => {
   scrapeNow();
-  scrapeObsCost();
+  fetchAllCosts();
 });
 ipcMain.handle('login', () => showLoginWindow());
 ipcMain.handle('logout', async () => {
@@ -816,8 +653,7 @@ ipcMain.handle('logout', async () => {
 });
 ipcMain.handle('toggle-widget', () => toggleWidget());
 ipcMain.handle('show-main', () => showMainWindow());
-ipcMain.handle('obs-login', () => showObsLoginWindow());
-ipcMain.handle('get-obs-status', () => settings.obsLoggedIn || false);
+// (오랑붕쌤 IPC 제거됨)
 ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
   if (!['anthropic', 'openai'].includes(type)) return { error: 'Invalid type' };
   if (!pin || pin.length < 4) return { error: 'PIN은 4자리 이상' };
@@ -842,7 +678,7 @@ ipcMain.handle('save-admin-key-encrypted', async (_, type, key, pin) => {
 });
 ipcMain.handle('restore-admin-keys', async (_, pin) => {
   if (!pin || typeof pin !== 'string') return { error: 'PIN 필요' };
-  if (!settings.googleToken) return { error: '오랑붕쌤 연결 필요' };
+  if (!settings.googleToken) return { error: 'Google Drive 미연결 (Android에서 백업/복원 사용)' };
   const encrypted = await loadKeysFromDriveDesktop(settings.googleToken);
   if (!encrypted) return { error: 'Drive에 백업 없음' };
   const decrypted = await decryptKeys(encrypted, pin);
@@ -866,7 +702,7 @@ ipcMain.handle('get-subscriptions', () => settings.subscriptions || []);
 ipcMain.handle('save-subscriptions', (_, subs) => {
   settings.subscriptions = subs;
   saveSettings();
-  scrapeObsCost(); // 구독 변경 시 비용 재계산
+  fetchAllCosts(); // 구독 변경 시 비용 재계산
 });
 ipcMain.handle('open-external', (_, url) => {
   const { shell } = require('electron');
@@ -884,7 +720,7 @@ app.whenReady().then(() => {
 
   // 초기 스크래핑
   scrapeNow();
-  scrapeObsCost();
+  fetchAllCosts();
   startScrapeTimer();
 });
 
