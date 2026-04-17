@@ -196,6 +196,10 @@ class FloatingOverlay private constructor(private val context: Context) {
     }
 
     private fun applySkinInternal(tv: TextView, prefs: android.content.SharedPreferences) {
+        // 오버레이 투명도 (0~100% → 0f~1f)
+        val opacity = (prefs.getInt("overlay_opacity", 100).coerceIn(0, 100)) / 100f
+        tv.alpha = opacity
+
         // 1. 오버레이 이미지 확인 (고정 크기에 맞춰 축소 로드)
         val overlayImagePath = prefs.getString("overlay_image_path", null)
         if (overlayImagePath != null) {
