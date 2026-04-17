@@ -604,6 +604,126 @@
                         android:textColor="#e0e0e0" />
                 </LinearLayout>
 
+                <!-- 앱 배경색 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="앱 배경색"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="16dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/appBgColorPreview"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="#1a1a2e" />
+
+                    <EditText
+                        android:id="@+id/appBgColorInput"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:hint="#1a1a2e"
+                        android:textColor="#e0e0e0"
+                        android:textColorHint="#888899"
+                        android:textSize="13sp"
+                        android:background="#22223a"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/appBgColorApplyBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="적용"
+                        android:textSize="11sp"
+                        android:backgroundTint="#c084fc"
+                        android:textColor="#ffffff"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/appBgColorResetBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="초기화"
+                        android:textSize="11sp"
+                        android:backgroundTint="#444466"
+                        android:textColor="#e0e0e0" />
+                </LinearLayout>
+
+                <!-- 앱 글씨색 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="앱 글씨색"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/appTextColorPreview"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="#e0e0e0" />
+
+                    <EditText
+                        android:id="@+id/appTextColorInput"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:hint="#e0e0e0"
+                        android:textColor="#e0e0e0"
+                        android:textColorHint="#888899"
+                        android:textSize="13sp"
+                        android:background="#22223a"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/appTextColorApplyBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="적용"
+                        android:textSize="11sp"
+                        android:backgroundTint="#c084fc"
+                        android:textColor="#ffffff"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/appTextColorResetBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="초기화"
+                        android:textSize="11sp"
+                        android:backgroundTint="#444466"
+                        android:textColor="#e0e0e0" />
+                </LinearLayout>
+
                 <!-- 2. 오버레이 이미지 -->
                 <TextView
                     android:layout_width="wrap_content"
@@ -656,6 +776,90 @@
                         android:textSize="12sp"
                         android:backgroundTint="#444466"
                         android:textColor="#e0e0e0" />
+                </LinearLayout>
+
+                <!-- 오버레이 크기 조절 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="오버레이 크기"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="너비"
+                        android:textColor="#888899"
+                        android:textSize="11sp"
+                        android:layout_marginEnd="4dp" />
+
+                    <SeekBar
+                        android:id="@+id/overlayWidthSeek"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:min="100"
+                        android:max="400"
+                        android:progress="300"
+                        android:progressTint="#c084fc"
+                        android:thumbTint="#c084fc" />
+
+                    <TextView
+                        android:id="@+id/overlayWidthLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="300dp"
+                        android:textColor="#e0e0e0"
+                        android:textSize="11sp"
+                        android:layout_marginStart="8dp"
+                        android:minWidth="42dp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical"
+                    android:layout_marginTop="4dp">
+
+                    <TextView
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="높이"
+                        android:textColor="#888899"
+                        android:textSize="11sp"
+                        android:layout_marginEnd="4dp" />
+
+                    <SeekBar
+                        android:id="@+id/overlayHeightSeek"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:min="20"
+                        android:max="100"
+                        android:progress="44"
+                        android:progressTint="#c084fc"
+                        android:thumbTint="#c084fc" />
+
+                    <TextView
+                        android:id="@+id/overlayHeightLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="44dp"
+                        android:textColor="#e0e0e0"
+                        android:textSize="11sp"
+                        android:layout_marginStart="8dp"
+                        android:minWidth="42dp" />
                 </LinearLayout>
 
                 <!-- 3. 글씨 색 -->

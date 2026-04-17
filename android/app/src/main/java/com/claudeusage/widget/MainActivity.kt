@@ -604,10 +604,21 @@ class MainActivity : AppCompatActivity() {
         try {
             val skin = FloatingOverlay.getAppColors(this)
 
-            // .cskin 파일의 배경 이미지 확인
             val prefs = PreferenceManager.getDefaultSharedPreferences(this)
             val skinId = prefs.getString("skin", "default") ?: "default"
-            var sectionBgColor = skin.sectionBgColor
+
+            // 사용자 커스텀 앱 색상 오버라이드
+            val customBgColor = prefs.getString("app_bg_color", null)?.let {
+                try { Color.parseColor(it) } catch (_: Exception) { null }
+            }
+            val customTextColor = prefs.getString("app_text_color", null)?.let {
+                try { Color.parseColor(it) } catch (_: Exception) { null }
+            }
+            val effectiveBgColor = customBgColor ?: skin.bgColor
+            val effectiveTextColor = customTextColor ?: skin.textColor
+            var sectionBgColor = if (customBgColor != null) {
+                (customBgColor and 0x00FFFFFF) or 0xE0000000.toInt()
+            } else skin.sectionBgColor
 
             val scrollView = findViewById<android.widget.ScrollView>(R.id.mainScrollView)
             val bgImageView = findViewById<ImageView>(R.id.bgImageView)
@@ -625,7 +636,7 @@ class MainActivity : AppCompatActivity() {
                         ?: ((skin.sectionBgColor and 0x00FFFFFF) or 0xCC000000.toInt())
                 } else {
                     bgImageView?.visibility = View.GONE
-                    scrollView?.setBackgroundColor(skin.bgColor)
+                    scrollView?.setBackgroundColor(effectiveBgColor)
                 }
             } else if (skinId == "custom") {
                 val path = prefs.getString("custom_skin_path", null)
@@ -637,11 +648,11 @@ class MainActivity : AppCompatActivity() {
                     sectionBgColor = (skin.sectionBgColor and 0x00FFFFFF) or 0xCC000000.toInt()
                 } else {
                     bgImageView?.visibility = View.GONE
-                    scrollView?.setBackgroundColor(skin.bgColor)
+                    scrollView?.setBackgroundColor(effectiveBgColor)
                 }
             } else {
                 bgImageView?.visibility = View.GONE
-                scrollView?.setBackgroundColor(skin.bgColor)
+                scrollView?.setBackgroundColor(effectiveBgColor)
             }
 
             // 헤더 텍스트
@@ -682,13 +693,13 @@ class MainActivity : AppCompatActivity() {
             // 라디오 버튼 텍스트 & 틴트
             for (i in 0 until modeRadioGroup.childCount) {
                 (modeRadioGroup.getChildAt(i) as? RadioButton)?.apply {
-                    setTextColor(skin.textColor)
+                    setTextColor(effectiveTextColor)
                     buttonTintList = accentTint
                 }
             }
 
             // 갱신 주기 입력 텍스트
-            refreshInput.setTextColor(skin.textColor)
+            refreshInput.setTextColor(effectiveTextColor)
             refreshInput.setHintTextColor(skin.subtextColor)
 
             // 밝은 스킨: 비용 카드 내부 텍스트도 어둡게
@@ -796,8 +807,113 @@ class MainActivity : AppCompatActivity() {
             Toast.makeText(this, "오버레이 이미지 제거됨", Toast.LENGTH_SHORT).show()
         }
 
+        // ── 앱 배경색 / 글씨색 ──
+        setupAppColorPickers(prefs)
+
+        // ── 오버레이 크기 조절 ──
+        setupOverlaySizeSliders(prefs)
+
         // ── 3. 글씨 색 ──
         setupTextColorPicker(prefs, "default")
+    }
+
+    private fun setupAppColorPickers(prefs: android.content.SharedPreferences) {
+        val bgPreview = findViewById<View>(R.id.appBgColorPreview) ?: return
+        val bgInput = findViewById<EditText>(R.id.appBgColorInput) ?: return
+        val bgApply = findViewById<Button>(R.id.appBgColorApplyBtn) ?: return
+        val bgReset = findViewById<Button>(R.id.appBgColorResetBtn) ?: return
+        val txtPreview = findViewById<View>(R.id.appTextColorPreview) ?: return
+        val txtInput = findViewById<EditText>(R.id.appTextColorInput) ?: return
+        val txtApply = findViewById<Button>(R.id.appTextColorApplyBtn) ?: return
+        val txtReset = findViewById<Button>(R.id.appTextColorResetBtn) ?: return
+
+        val savedBg = prefs.getString("app_bg_color", null)
+        val savedTxt = prefs.getString("app_text_color", null)
+
+        val bgColor = savedBg?.let { try { Color.parseColor(it) } catch (_: Exception) { null } } ?: 0xFF1a1a2e.toInt()
+        val txtColor = savedTxt?.let { try { Color.parseColor(it) } catch (_: Exception) { null } } ?: 0xFFe0e0e0.toInt()
+
+        bgPreview.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 6f * resources.displayMetrics.density
+            setColor(bgColor)
+            setStroke(1, 0xFF888899.toInt())
+        }
+        txtPreview.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 6f * resources.displayMetrics.density
+            setColor(txtColor)
+            setStroke(1, 0xFF888899.toInt())
+        }
+        if (savedBg != null) bgInput.setText(savedBg)
+        if (savedTxt != null) txtInput.setText(savedTxt)
+
+        bgApply.setOnClickListener {
+            val hex = bgInput.text.toString().trim().let { if (it.startsWith("#")) it else "#$it" }
+            try {
+                Color.parseColor(hex)
+                prefs.edit().putString("app_bg_color", hex).apply()
+                applySkin()
+                setupSkinSection()
+            } catch (_: Exception) { Toast.makeText(this, "올바른 색상코드를 입력하세요", Toast.LENGTH_SHORT).show() }
+        }
+        bgReset.setOnClickListener {
+            prefs.edit().remove("app_bg_color").apply()
+            applySkin()
+            setupSkinSection()
+        }
+        txtApply.setOnClickListener {
+            val hex = txtInput.text.toString().trim().let { if (it.startsWith("#")) it else "#$it" }
+            try {
+                Color.parseColor(hex)
+                prefs.edit().putString("app_text_color", hex).apply()
+                applySkin()
+                setupSkinSection()
+            } catch (_: Exception) { Toast.makeText(this, "올바른 색상코드를 입력하세요", Toast.LENGTH_SHORT).show() }
+        }
+        txtReset.setOnClickListener {
+            prefs.edit().remove("app_text_color").apply()
+            applySkin()
+            setupSkinSection()
+        }
+    }
+
+    private fun setupOverlaySizeSliders(prefs: android.content.SharedPreferences) {
+        val widthSeek = findViewById<android.widget.SeekBar>(R.id.overlayWidthSeek) ?: return
+        val heightSeek = findViewById<android.widget.SeekBar>(R.id.overlayHeightSeek) ?: return
+        val widthLabel = findViewById<TextView>(R.id.overlayWidthLabel) ?: return
+        val heightLabel = findViewById<TextView>(R.id.overlayHeightLabel) ?: return
+
+        val curW = prefs.getInt("overlay_width_dp", FloatingOverlay.OVERLAY_WIDTH_DP)
+        val curH = prefs.getInt("overlay_height_dp", FloatingOverlay.OVERLAY_HEIGHT_DP)
+        widthSeek.progress = curW
+        heightSeek.progress = curH
+        widthLabel.text = "${curW}dp"
+        heightLabel.text = "${curH}dp"
+
+        val listener = object : android.widget.SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                if (seekBar == widthSeek) {
+                    widthLabel.text = "${progress}dp"
+                } else {
+                    heightLabel.text = "${progress}dp"
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
+            override fun onStopTrackingTouch(seekBar: android.widget.SeekBar?) {
+                val w = widthSeek.progress
+                val h = heightSeek.progress
+                prefs.edit()
+                    .putInt("overlay_width_dp", w)
+                    .putInt("overlay_height_dp", h)
+                    .apply()
+                FloatingOverlay.getInstance(applicationContext).updateSize()
+                FloatingOverlay.getInstance(applicationContext).updateSkin()
+            }
+        }
+        widthSeek.setOnSeekBarChangeListener(listener)
+        heightSeek.setOnSeekBarChangeListener(listener)
     }
 
     /** 오버레이 글씨 색 선택 UI */
