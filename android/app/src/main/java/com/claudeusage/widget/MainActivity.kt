@@ -610,27 +610,29 @@ class MainActivity : AppCompatActivity() {
             val skinId = prefs.getString("skin", "default") ?: "default"
 
             // 사용자 커스텀 앱 색상 오버라이드
-            val customBgColor = prefs.getString("app_bg_color", null)?.let {
+            fun parsePref(key: String): Int? = prefs.getString(key, null)?.let {
                 try { Color.parseColor(it) } catch (_: Exception) { null }
             }
-            val customTextColor = prefs.getString("app_text_color", null)?.let {
-                try { Color.parseColor(it) } catch (_: Exception) { null }
-            }
-            val effectiveBgColor = customBgColor ?: skin.bgColor
-            val effectiveTextColor = customTextColor ?: skin.textColor
-            var sectionBgColor = if (customBgColor != null) {
-                (customBgColor and 0x00FFFFFF) or 0xE0000000.toInt()
+            val effectiveBgColor = parsePref("app_bg_color") ?: skin.bgColor
+            val effectiveAccentColor = parsePref("app_accent_color") ?: skin.accentColor
+            val effectiveTextColor = parsePref("app_text_color") ?: skin.textColor
+            val effectiveSubtextColor = parsePref("app_text_color")?.let {
+                // 내용 색상이 커스텀이면 subtext도 살짝 투명하게
+                (it and 0x00FFFFFF) or 0xBB000000.toInt()
+            } ?: skin.subtextColor
+
+            var sectionBgColor = if (parsePref("app_bg_color") != null) {
+                (effectiveBgColor and 0x00FFFFFF) or 0xE0000000.toInt()
             } else skin.sectionBgColor
 
-            // 컨텐츠(섹션) 투명도 적용 — 모든 카드/섹션 배경에 적용
+            // 컨텐츠 투명도 — 모든 섹션/카드 배경에 적용
             val sectionOpacity = prefs.getInt("section_opacity", 100).coerceIn(0, 100)
+            val alphaVal = (sectionOpacity * 255 / 100) shl 24
             if (sectionOpacity < 100) {
-                val alpha = (sectionOpacity * 255 / 100) shl 24
-                sectionBgColor = (sectionBgColor and 0x00FFFFFF) or alpha
+                sectionBgColor = (sectionBgColor and 0x00FFFFFF) or alphaVal
             }
             val cardBgColor = if (sectionOpacity < 100) {
-                val alpha = (sectionOpacity * 255 / 100) shl 24
-                (skin.cardBgColor and 0x00FFFFFF) or alpha
+                (skin.cardBgColor and 0x00FFFFFF) or alphaVal
             } else skin.cardBgColor
 
             val scrollView = findViewById<android.widget.ScrollView>(R.id.mainScrollView)
@@ -669,7 +671,7 @@ class MainActivity : AppCompatActivity() {
             }
 
             // 헤더 텍스트
-            planNameText.setTextColor(skin.subtextColor)
+            planNameText.setTextColor(effectiveSubtextColor)
 
             // 섹션 헤더 & 바디 배경/텍스트
             val headers = listOf(
@@ -683,7 +685,7 @@ class MainActivity : AppCompatActivity() {
             headers.forEach { id ->
                 findViewById<TextView>(id)?.apply {
                     setBackgroundColor(sectionBgColor)
-                    setTextColor(skin.accentColor)
+                    setTextColor(effectiveAccentColor)
                 }
             }
             bodies.forEach { id ->
@@ -691,17 +693,26 @@ class MainActivity : AppCompatActivity() {
             }
 
             // 상태 텍스트
-            statusText.setTextColor(skin.subtextColor)
+            statusText.setTextColor(effectiveSubtextColor)
+
+            // 로그인 상태
+            loginStatus.setTextColor(effectiveSubtextColor)
 
             // 버튼 강조색
-            val accentTint = android.content.res.ColorStateList.valueOf(skin.accentColor)
+            val accentTint = android.content.res.ColorStateList.valueOf(effectiveAccentColor)
             toggleButton.backgroundTintList = accentTint
-            overlayButton.setTextColor(skin.accentColor)
-            saveButton.setTextColor(skin.accentColor)
+            overlayButton.setTextColor(effectiveAccentColor)
+            saveButton.setTextColor(effectiveAccentColor)
             loginButton.backgroundTintList = accentTint
 
-            // 카드 배경 (API 요금 섹션)
+            // 카드 배경 — 모든 카드에 적용
             costByAiContainer.setBackgroundColor(cardBgColor)
+
+            // 사용량 카드 텍스트
+            costTodayText.setTextColor(effectiveAccentColor)
+            costMonthText.setTextColor(effectiveAccentColor)
+            costTodayKrw.setTextColor(effectiveSubtextColor)
+            costMonthKrw.setTextColor(effectiveSubtextColor)
 
             // 라디오 버튼 텍스트 & 틴트
             for (i in 0 until modeRadioGroup.childCount) {
@@ -713,13 +724,7 @@ class MainActivity : AppCompatActivity() {
 
             // 갱신 주기 입력 텍스트
             refreshInput.setTextColor(effectiveTextColor)
-            refreshInput.setHintTextColor(skin.subtextColor)
-
-            // 밝은 스킨: 비용 카드 내부 텍스트도 어둡게
-            if (!skin.isDark) {
-                costTodayText.setTextColor(skin.accentColor)
-                costMonthText.setTextColor(skin.accentColor)
-            }
+            refreshInput.setHintTextColor(effectiveSubtextColor)
         } catch (_: Exception) {
             // 스킨 적용 실패해도 앱 실행은 유지
         }
@@ -834,64 +839,18 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setupAppColorPickers(prefs: android.content.SharedPreferences) {
-        val bgPreview = findViewById<View>(R.id.appBgColorPreview) ?: return
-        val bgInput = findViewById<EditText>(R.id.appBgColorInput) ?: return
-        val bgApply = findViewById<Button>(R.id.appBgColorApplyBtn) ?: return
-        val bgReset = findViewById<Button>(R.id.appBgColorResetBtn) ?: return
-        val txtPreview = findViewById<View>(R.id.appTextColorPreview) ?: return
-        val txtInput = findViewById<EditText>(R.id.appTextColorInput) ?: return
-        val txtApply = findViewById<Button>(R.id.appTextColorApplyBtn) ?: return
-        val txtReset = findViewById<Button>(R.id.appTextColorResetBtn) ?: return
-
-        val savedBg = prefs.getString("app_bg_color", null)
-        val savedTxt = prefs.getString("app_text_color", null)
-
-        val bgColor = savedBg?.let { try { Color.parseColor(it) } catch (_: Exception) { null } } ?: 0xFF1a1a2e.toInt()
-        val txtColor = savedTxt?.let { try { Color.parseColor(it) } catch (_: Exception) { null } } ?: 0xFFe0e0e0.toInt()
-
-        bgPreview.background = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = 6f * resources.displayMetrics.density
-            setColor(bgColor)
-            setStroke(1, 0xFF888899.toInt())
-        }
-        txtPreview.background = android.graphics.drawable.GradientDrawable().apply {
-            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-            cornerRadius = 6f * resources.displayMetrics.density
-            setColor(txtColor)
-            setStroke(1, 0xFF888899.toInt())
-        }
-        if (savedBg != null) bgInput.setText(savedBg)
-        if (savedTxt != null) txtInput.setText(savedTxt)
-
-        bgApply.setOnClickListener {
-            val hex = bgInput.text.toString().trim().let { if (it.startsWith("#")) it else "#$it" }
-            try {
-                Color.parseColor(hex)
-                prefs.edit().putString("app_bg_color", hex).apply()
-                applySkin()
-                setupSkinSection()
-            } catch (_: Exception) { Toast.makeText(this, "올바른 색상코드를 입력하세요", Toast.LENGTH_SHORT).show() }
-        }
-        bgReset.setOnClickListener {
-            prefs.edit().remove("app_bg_color").apply()
-            applySkin()
-            setupSkinSection()
-        }
-        txtApply.setOnClickListener {
-            val hex = txtInput.text.toString().trim().let { if (it.startsWith("#")) it else "#$it" }
-            try {
-                Color.parseColor(hex)
-                prefs.edit().putString("app_text_color", hex).apply()
-                applySkin()
-                setupSkinSection()
-            } catch (_: Exception) { Toast.makeText(this, "올바른 색상코드를 입력하세요", Toast.LENGTH_SHORT).show() }
-        }
-        txtReset.setOnClickListener {
-            prefs.edit().remove("app_text_color").apply()
-            applySkin()
-            setupSkinSection()
-        }
+        // 배경색
+        setupSingleColorPicker(R.id.appBgColorPreview, R.id.appBgColorInput,
+            R.id.appBgColorApplyBtn, R.id.appBgColorResetBtn, "app_bg_color",
+            0xFF1a1a2e.toInt(), prefs)
+        // 제목/강조색
+        setupSingleColorPicker(R.id.appAccentColorPreview, R.id.appAccentColorInput,
+            R.id.appAccentColorApplyBtn, R.id.appAccentColorResetBtn, "app_accent_color",
+            0xFFc084fc.toInt(), prefs)
+        // 내용 글씨색
+        setupSingleColorPicker(R.id.appTextColorPreview, R.id.appTextColorInput,
+            R.id.appTextColorApplyBtn, R.id.appTextColorResetBtn, "app_text_color",
+            0xFFe0e0e0.toInt(), prefs)
 
         // 프리셋 색상 샘플
         val bgPresets = listOf(
@@ -899,20 +858,52 @@ class MainActivity : AppCompatActivity() {
             "#FDF5E6", "#FFF8F0", "#F0F4F8", "#1B1B3A",
             "#0a0820", "#2C1320", "#0D0804", "#F5F5DC",
         )
+        val accentPresets = listOf(
+            "#c084fc", "#FF6B9D", "#4caf50", "#00bcd4",
+            "#FFD700", "#FF6B6B", "#e67e22", "#8B0000",
+            "#5c9ce6", "#ff69b4", "#2ecc71", "#9b59b6",
+        )
         val txtPresets = listOf(
             "#e0e0e0", "#FFFFFF", "#000000", "#333333",
             "#C9D1D9", "#FFD93D", "#4DDFFC", "#FF6B6B",
             "#00B894", "#D4B895", "#5c3d4e", "#c084fc",
         )
-        renderColorPresets(R.id.appBgColorPresetsContainer, bgPresets, savedBg) { hex ->
+        renderColorPresets(R.id.appBgColorPresetsContainer, bgPresets, prefs.getString("app_bg_color", null)) { hex ->
             prefs.edit().putString("app_bg_color", hex).apply()
-            applySkin()
-            setupSkinSection()
+            applySkin(); setupSkinSection()
         }
-        renderColorPresets(R.id.appTextColorPresetsContainer, txtPresets, savedTxt) { hex ->
+        renderColorPresets(R.id.appAccentColorPresetsContainer, accentPresets, prefs.getString("app_accent_color", null)) { hex ->
+            prefs.edit().putString("app_accent_color", hex).apply()
+            applySkin(); setupSkinSection()
+        }
+        renderColorPresets(R.id.appTextColorPresetsContainer, txtPresets, prefs.getString("app_text_color", null)) { hex ->
             prefs.edit().putString("app_text_color", hex).apply()
-            applySkin()
-            setupSkinSection()
+            applySkin(); setupSkinSection()
+        }
+    }
+
+    private fun setupSingleColorPicker(previewId: Int, inputId: Int, applyId: Int, resetId: Int,
+                                        prefKey: String, defaultColor: Int, prefs: android.content.SharedPreferences) {
+        val preview = findViewById<View>(previewId) ?: return
+        val input = findViewById<EditText>(inputId) ?: return
+        val applyBtn = findViewById<Button>(applyId) ?: return
+        val resetBtn = findViewById<Button>(resetId) ?: return
+        val saved = prefs.getString(prefKey, null)
+        val color = saved?.let { try { Color.parseColor(it) } catch (_: Exception) { null } } ?: defaultColor
+        preview.background = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = 6f * resources.displayMetrics.density
+            setColor(color)
+            setStroke(1, 0xFF888899.toInt())
+        }
+        if (saved != null) input.setText(saved)
+        applyBtn.setOnClickListener {
+            val hex = input.text.toString().trim().let { if (it.startsWith("#")) it else "#$it" }
+            try { Color.parseColor(hex); prefs.edit().putString(prefKey, hex).apply(); applySkin(); setupSkinSection() }
+            catch (_: Exception) { Toast.makeText(this, "올바른 색상코드를 입력하세요", Toast.LENGTH_SHORT).show() }
+        }
+        resetBtn.setOnClickListener {
+            prefs.edit().remove(prefKey).apply(); applySkin(); setupSkinSection()
         }
     }
 

@@ -676,11 +676,83 @@
                         android:orientation="horizontal" />
                 </HorizontalScrollView>
 
-                <!-- 앱 글씨색 -->
+                <!-- 제목/강조 색 -->
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="앱 글씨색"
+                    android:text="제목/강조 색"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <View
+                        android:id="@+id/appAccentColorPreview"
+                        android:layout_width="32dp"
+                        android:layout_height="32dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="#c084fc" />
+
+                    <EditText
+                        android:id="@+id/appAccentColorInput"
+                        android:layout_width="0dp"
+                        android:layout_height="36dp"
+                        android:layout_weight="1"
+                        android:hint="#c084fc"
+                        android:textColor="#e0e0e0"
+                        android:textColorHint="#888899"
+                        android:textSize="13sp"
+                        android:background="#22223a"
+                        android:paddingStart="8dp"
+                        android:paddingEnd="8dp"
+                        android:inputType="text"
+                        android:maxLines="1"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/appAccentColorApplyBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="적용"
+                        android:textSize="11sp"
+                        android:backgroundTint="#c084fc"
+                        android:textColor="#ffffff"
+                        android:layout_marginEnd="4dp" />
+
+                    <Button
+                        android:id="@+id/appAccentColorResetBtn"
+                        android:layout_width="wrap_content"
+                        android:layout_height="36dp"
+                        android:text="초기화"
+                        android:textSize="11sp"
+                        android:backgroundTint="#444466"
+                        android:textColor="#e0e0e0" />
+                </LinearLayout>
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:layout_marginTop="6dp">
+                    <LinearLayout
+                        android:id="@+id/appAccentColorPresetsContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
+                <!-- 내용 글씨색 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="내용 글씨색"
                     android:textColor="#c084fc"
                     android:textSize="12sp"
                     android:textStyle="bold"
