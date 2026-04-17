@@ -177,9 +177,10 @@ class AppUpdater(private val activity: Activity) {
     private fun downloadAndInstall(downloadUrl: String) {
         Toast.makeText(activity, "다운로드 중...", Toast.LENGTH_SHORT).show()
 
+        val fileName = "claude-usage-widget.apk"
         val file = File(
             Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "claude-usage-widget.apk"
+            fileName
         )
         if (file.exists()) file.delete()
 
@@ -187,7 +188,8 @@ class AppUpdater(private val activity: Activity) {
             .setTitle("Claude 사용량 업데이트")
             .setDescription("새 버전을 다운로드하고 있습니다")
             .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "claude-usage-widget.apk")
+            .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, fileName)
+            .setMimeType("application/vnd.android.package-archive")
 
         val dm = activity.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
         val downloadId = dm.enqueue(request)
@@ -195,8 +197,32 @@ class AppUpdater(private val activity: Activity) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 val id = intent?.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1)
-                if (id == downloadId) {
-                    activity.unregisterReceiver(this)
+                if (id != downloadId) return
+                activity.unregisterReceiver(this)
+
+                // DownloadManager에서 실제 상태 확인
+                val query = DownloadManager.Query().setFilterById(downloadId)
+                val cursor = dm.query(query)
+                if (cursor != null && cursor.moveToFirst()) {
+                    val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                        // DownloadManager가 반환하는 실제 URI 사용
+                        val downloadedUri = dm.getUriForDownloadedFile(downloadId)
+                        if (downloadedUri != null) {
+                            installApkFromUri(downloadedUri)
+                        } else {
+                            installApk(file)
+                        }
+                    } else {
+                        val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                        Log.e(TAG, "다운로드 실패: status=$status, reason=$reason")
+                        activity.runOnUiThread {
+                            Toast.makeText(activity, "다운로드 실패 (코드: $reason)", Toast.LENGTH_LONG).show()
+                        }
+                    }
+                    cursor.close()
+                } else {
+                    // 쿼리 실패 시 파일 직접 시도
                     installApk(file)
                 }
             }
@@ -209,12 +235,16 @@ class AppUpdater(private val activity: Activity) {
         }
     }
 
-    private fun installApk(file: File) {
-        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+    private fun installApkFromUri(uri: Uri) {
         val intent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(uri, "application/vnd.android.package-archive")
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION
         }
         activity.startActivity(intent)
+    }
+
+    private fun installApk(file: File) {
+        val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", file)
+        installApkFromUri(uri)
     }
 }
