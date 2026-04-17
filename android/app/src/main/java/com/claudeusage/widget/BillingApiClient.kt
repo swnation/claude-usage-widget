@@ -11,7 +11,7 @@ import java.time.ZoneOffset
 /**
  * 통합 Billing API 클라이언트.
  * Admin/Billing API를 호출하여 실제 청구 비용을 가져온다.
- * 오랑붕쌤 추정치와 병합하여 최종 ApiCostData를 생성한다.
+ * 추정치와 병합하여 최종 ApiCostData를 생성한다.
  */
 object BillingApiClient {
 
@@ -361,12 +361,12 @@ object BillingApiClient {
     }
 
     /**
-     * 모든 Billing API를 호출하고 오랑붕쌤 추정치와 병합한다.
+     * 모든 Billing API를 호출하고 추정치와 병합한다.
      *
      * @param anthropicKey Anthropic Admin API 키 (null이면 스킵)
      * @param openaiKey OpenAI API 키 (null이면 스킵)
      * @param geminiConfig GCP BigQuery 설정 (null이면 스킵)
-     * @param estimatedData 오랑붕쌤에서 가져온 추정 데이터 (null이면 스킵)
+     * @param estimatedData 추정 데이터 (null이면 스킵)
      * @param subscriptions 구독 목록
      */
     data class GeminiConfig(
@@ -429,7 +429,7 @@ object BillingApiClient {
         if (!hasBilling && !hasEstimated) {
             return MergedCostResult(null,
                 if (errors.isNotEmpty()) errors.joinToString("; ")
-                else "Billing API 키 또는 오랑붕쌤 연결이 필요합니다")
+                else "Billing API 키가 필요합니다")
         }
 
         // 추정 데이터를 AI별 맵으로

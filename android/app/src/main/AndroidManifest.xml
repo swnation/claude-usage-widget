@@ -33,7 +33,7 @@
             android:theme="@style/Theme.ClaudeUsage" />
 
         <activity
-            android:name=".ObsLoginActivity"
+            android:name=".GoogleDriveAuthActivity"
             android:exported="false"
             android:theme="@style/Theme.ClaudeUsage" />
 
