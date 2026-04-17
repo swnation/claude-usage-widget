@@ -60,8 +60,7 @@ class UsageMonitorService : Service() {
     private var scrapeDelayedRunnable: Runnable? = null
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
-    // 오랑붕쌤 Drive API
-    private var isObsFetching = false
+    private var isCostFetching = false
 
     override fun onCreate() {
         super.onCreate()
@@ -103,7 +102,7 @@ class UsageMonitorService : Service() {
         scrapeDelayedRunnable = null
         try { scrapeWebView?.destroy() } catch (_: Exception) {}
         scrapeWebView = null
-        isObsFetching = false
+        isCostFetching = false
         super.onDestroy()
     }
 
@@ -187,9 +186,9 @@ class UsageMonitorService : Service() {
             }
         }
 
-        // 오랑붕쌤 스크래핑 (API_COST_ONLY 또는 BOTH, 로그인된 경우만)
-        if (mode != DisplayMode.CLAUDE_ONLY && prefs.getBoolean("obs_logged_in", false)) {
-            fetchObsCostInBackground()
+        // Billing API 비용 조회 (API_COST_ONLY 또는 BOTH)
+        if (mode != DisplayMode.CLAUDE_ONLY) {
+            fetchBillingCostInBackground()
         }
     }
 
@@ -299,34 +298,21 @@ class UsageMonitorService : Service() {
         finishScraping()
     }
 
-    // ── 비용 데이터 통합 fetch (Billing 우선, Drive 보조) ──
-    private fun fetchObsCostInBackground() {
-        if (isObsFetching) return
+    // ── Billing API 비용 fetch ──
+    private fun fetchBillingCostInBackground() {
+        if (isCostFetching) return
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val mode = DisplayMode.fromString(prefs.getString("display_mode", null))
         if (mode == DisplayMode.CLAUDE_ONLY) return
 
-        isObsFetching = true
+        val anthropicKey = prefs.getString("anthropic_admin_key", null)
+        val openaiKey = prefs.getString("openai_admin_key", null)
+        val hasBillingKeys = !anthropicKey.isNullOrEmpty() || !openaiKey.isNullOrEmpty()
+        if (!hasBillingKeys) return
+
+        isCostFetching = true
         Thread {
             try {
-                // 1) 오랑붕쌤 추정 데이터 (Drive)
-                var estimatedData: ApiCostData? = null
-                val token = prefs.getString("google_oauth_token", null)
-                if (!token.isNullOrEmpty()) {
-                    val driveResult = DriveApiClient.fetchCostFromDrive(token)
-                    if (driveResult.tokenExpired) {
-                        prefs.edit().putBoolean("obs_logged_in", false)
-                            .remove("google_oauth_token").apply()
-                    } else {
-                        estimatedData = driveResult.costData
-                    }
-                }
-
-                // 2) Billing API 실제 비용 + 병합
-                val anthropicKey = prefs.getString("anthropic_admin_key", null)
-                val openaiKey = prefs.getString("openai_admin_key", null)
-                val hasBillingKeys = !anthropicKey.isNullOrEmpty() || !openaiKey.isNullOrEmpty()
-
                 // 구독 정보 로드
                 val subsJson = prefs.getString("subscriptions", null)
                 val subscriptions = if (subsJson != null) {
@@ -334,37 +320,31 @@ class UsageMonitorService : Service() {
                     catch (_: Exception) { emptyList() }
                 } else emptyList<Subscription>()
 
-                val costData = if (hasBillingKeys) {
-                    // Billing API 호출 → 추정치와 병합
-                    // Gemini BigQuery 설정
-                    val geminiConfig = run {
-                        val gKey = prefs.getString("gcp_service_account_json", null)
-                        val pId = prefs.getString("gcp_project_id", null)
-                        val dId = prefs.getString("gcp_dataset_id", null)
-                        val tId = prefs.getString("gcp_table_id", null)
-                        if (!gKey.isNullOrEmpty() && !pId.isNullOrEmpty() && !dId.isNullOrEmpty() && !tId.isNullOrEmpty())
-                            BillingApiClient.GeminiConfig(gKey, pId, dId, tId) else null
-                    }
-                    // Grok xAI 설정
-                    val grokConfig = run {
-                        val gKey = prefs.getString("grok_admin_key", null)
-                        val tId = prefs.getString("grok_team_id", null)
-                        if (!gKey.isNullOrEmpty() && !tId.isNullOrEmpty())
-                            BillingApiClient.GrokConfig(gKey, tId) else null
-                    }
-                    val merged = BillingApiClient.fetchAndMerge(
-                        anthropicKey = anthropicKey,
-                        openaiKey = openaiKey,
-                        geminiConfig = geminiConfig,
-                        grokConfig = grokConfig,
-                        estimatedData = estimatedData,
-                        subscriptions = subscriptions,
-                    )
-                    merged.costData
-                } else {
-                    // Billing 키 없으면 추정 데이터만 사용
-                    estimatedData?.copy(subscriptions = subscriptions)
+                // Gemini BigQuery 설정
+                val geminiConfig = run {
+                    val gKey = prefs.getString("gcp_service_account_json", null)
+                    val pId = prefs.getString("gcp_project_id", null)
+                    val dId = prefs.getString("gcp_dataset_id", null)
+                    val tId = prefs.getString("gcp_table_id", null)
+                    if (!gKey.isNullOrEmpty() && !pId.isNullOrEmpty() && !dId.isNullOrEmpty() && !tId.isNullOrEmpty())
+                        BillingApiClient.GeminiConfig(gKey, pId, dId, tId) else null
                 }
+                // Grok xAI 설정
+                val grokConfig = run {
+                    val gKey = prefs.getString("grok_admin_key", null)
+                    val tId = prefs.getString("grok_team_id", null)
+                    if (!gKey.isNullOrEmpty() && !tId.isNullOrEmpty())
+                        BillingApiClient.GrokConfig(gKey, tId) else null
+                }
+                val merged = BillingApiClient.fetchAndMerge(
+                    anthropicKey = anthropicKey,
+                    openaiKey = openaiKey,
+                    geminiConfig = geminiConfig,
+                    grokConfig = grokConfig,
+                    estimatedData = null,
+                    subscriptions = subscriptions,
+                )
+                val costData = merged.costData
 
                 if (costData != null) {
                     val costJson = Gson().toJson(costData)
@@ -377,7 +357,7 @@ class UsageMonitorService : Service() {
                     }
                 }
             } catch (_: Exception) {}
-            isObsFetching = false
+            isCostFetching = false
         }.start()
     }
 
@@ -482,7 +462,7 @@ class UsageMonitorService : Service() {
                         .setStyle(NotificationCompat.BigTextStyle().bigText(cost.notificationExpanded()))
                 } else {
                     builder.setContentTitle("💰 API 요금")
-                        .setContentText("오랑붕쌤 데이터 로딩 중...")
+                        .setContentText("Billing 데이터 로딩 중...")
                 }
             }
             DisplayMode.BOTH -> {

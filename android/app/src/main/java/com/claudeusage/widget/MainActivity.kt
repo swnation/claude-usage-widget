@@ -47,7 +47,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var costMonthText: TextView
     private lateinit var costMonthKrw: TextView
     private lateinit var costByAiContainer: LinearLayout
-    // (오랑붕쌤 제거됨)
+    // Google Drive 연결
     // Admin API (동적)
     private lateinit var billingKeysContainer: LinearLayout
     private lateinit var adminCostText: TextView
@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // (오랑붕쌤 로그인 제거됨)
+    // (Google Drive 로그인은 GoogleDriveAuthActivity에서 처리)
 
     // 커스텀 스킨 사진 선택
     private val customSkinPicker = registerForActivityResult(
@@ -403,8 +403,7 @@ class MainActivity : AppCompatActivity() {
         costMonthText = findViewById(R.id.costMonthText)
         costMonthKrw = findViewById(R.id.costMonthKrw)
         costByAiContainer = findViewById(R.id.costByAiContainer)
-        // 오랑붕쌤 연결
-        // (오랑붕쌤 UI 제거됨)
+        // Google Drive 연결 (키 백업/복원용)
         // Billing API (동적)
         billingKeysContainer = findViewById(R.id.billingKeysContainer)
         adminCostText = findViewById(R.id.adminCostText)
@@ -1201,9 +1200,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun backupKeysToDrive() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val token = prefs.getString("google_oauth_token", null)
+        val token = prefs.getString("google_drive_token", null)
         if (token.isNullOrEmpty()) {
-            Toast.makeText(this, "오랑붕쌤 연결이 필요합니다", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Google Drive 연결이 필요합니다", Toast.LENGTH_SHORT).show()
             return
         }
         val encrypted = prefs.getString("admin_keys_encrypted", null)
@@ -1244,11 +1243,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Gemini/Grok 부가 설정을 Drive에 자동 백업 (오랑붕쌤 연결 필요) */
+    /** Gemini/Grok 부가 설정을 Drive에 자동 백업 (Google Drive 연결 필요) */
     private fun backupConfigToDrive(silent: Boolean = true) {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val token = prefs.getString("google_oauth_token", null) ?: run {
-            if (!silent) Toast.makeText(this, "오랑붕쌤 연결 필요 (Drive 백업 미실행)", Toast.LENGTH_SHORT).show()
+        val token = prefs.getString("google_drive_token", null) ?: run {
+            if (!silent) Toast.makeText(this, "Google Drive 연결 필요 (Drive 백업 미실행)", Toast.LENGTH_SHORT).show()
             return
         }
         val encrypted = prefs.getString("admin_keys_encrypted", "") ?: ""
@@ -1288,13 +1287,6 @@ class MainActivity : AppCompatActivity() {
 
         if (anthropicKey.isEmpty() && openaiKey.isEmpty()) return
 
-        // 오랑붕쌤 추정치 로드
-        val costJson = prefs.getString("last_api_cost", null)
-        val estimated = if (costJson != null) {
-            try { com.google.gson.Gson().fromJson(costJson, ApiCostData::class.java) }
-            catch (_: Exception) { null }
-        } else null
-
         // 구독 정보 로드
         val subsJson = prefs.getString("subscriptions", null)
         val subscriptions = if (subsJson != null) {
@@ -1310,7 +1302,7 @@ class MainActivity : AppCompatActivity() {
                 openaiKey = openaiKey.ifEmpty { null },
                 geminiConfig = buildGeminiConfig(prefs),
                 grokConfig = buildGrokConfig(prefs),
-                estimatedData = estimated,
+                estimatedData = null,
                 subscriptions = subscriptions,
             )
 
@@ -1409,7 +1401,7 @@ class MainActivity : AppCompatActivity() {
         Toast.makeText(this, "🔐 Admin 키 암호화 저장됨", Toast.LENGTH_SHORT).show()
 
         // Drive 백업 (Google 토큰 있으면)
-        val token = prefs.getString("google_oauth_token", null)
+        val token = prefs.getString("google_drive_token", null)
         if (!token.isNullOrEmpty()) {
             lifecycleScope.launch(Dispatchers.IO) {
                 val ok = DriveApiClient.saveKeysToDrive(token, encrypted, buildExtraConfig(prefs))
@@ -1424,9 +1416,9 @@ class MainActivity : AppCompatActivity() {
 
     private fun restoreKeysFromDrive() {
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-        val token = prefs.getString("google_oauth_token", null)
+        val token = prefs.getString("google_drive_token", null)
         if (token.isNullOrEmpty()) {
-            Toast.makeText(this, "오랑붕쌤 연결이 필요합니다", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Google Drive 연결이 필요합니다", Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -1623,7 +1615,7 @@ class MainActivity : AppCompatActivity() {
         }
         updateCostSectionVisibility()
 
-        // (오랑붕쌤 상태 제거됨)
+        // Google Drive 연결 상태 (키 백업/복원용)
 
         // Billing API 키 (동적)
         setupBillingKeys()
@@ -1725,10 +1717,12 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // 오랑붕쌤 비용 데이터는 연결되어 있으면 항상 가져오기 (모드 무관)
-        val obsLoggedIn = prefs.getBoolean("obs_logged_in", false)
-        if (obsLoggedIn) {
-            fetchObsCost()
+        // Billing API 비용 조회
+        val hasAnyBillingKey = BILLING_AI_OPTIONS.any { (keyId, _, _) ->
+            (prefs.getString("${keyId}_admin_key", "") ?: "").isNotEmpty()
+        }
+        if (hasAnyBillingKey) {
+            fetchAdminCosts()
         }
     }
 
@@ -1872,91 +1866,4 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {}
     }
 
-    // ── 비용 데이터 통합 fetch (Billing 우선, Drive 보조) ──
-    private fun fetchObsCost() {
-        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
-
-        val token = prefs.getString("google_oauth_token", null)
-        val anthropicKey = prefs.getString("anthropic_admin_key", "") ?: ""
-        val openaiKey = prefs.getString("openai_admin_key", "") ?: ""
-        val hasGeminiConfig = buildGeminiConfig(prefs) != null
-        val hasGrokConfig = buildGrokConfig(prefs) != null
-        val hasBillingKeys = anthropicKey.isNotEmpty() || openaiKey.isNotEmpty() || hasGeminiConfig || hasGrokConfig
-        val hasToken = !token.isNullOrEmpty()
-
-        if (!hasBillingKeys && !hasToken) return
-
-        statusText.text = if (hasBillingKeys) "Billing API 조회 중..." else "Drive에서 비용 데이터 조회 중..."
-
-        lifecycleScope.launch(Dispatchers.IO) {
-            // 1) 오랑붕쌤 추정 데이터 (Drive)
-            var estimatedData: ApiCostData? = null
-            if (hasToken) {
-                val driveResult = DriveApiClient.fetchCostFromDrive(token!!)
-                if (driveResult.tokenExpired) {
-                    withContext(Dispatchers.Main) {
-                        prefs.edit().putBoolean("obs_logged_in", false)
-                            .remove("google_oauth_token").apply()
-                    }
-                } else {
-                    estimatedData = driveResult.costData
-                }
-            }
-
-            // 2) 구독 정보
-            val subsJson = prefs.getString("subscriptions", null)
-            val subscriptions = if (subsJson != null) {
-                try { com.google.gson.Gson().fromJson(subsJson, Array<Subscription>::class.java).toList() }
-                catch (_: Exception) { emptyList() }
-            } else emptyList<Subscription>()
-
-            // 3) Billing 있으면 병합, 없으면 추정만
-            val costData = if (hasBillingKeys) {
-                val merged = BillingApiClient.fetchAndMerge(
-                    anthropicKey = anthropicKey.ifEmpty { null },
-                    openaiKey = openaiKey.ifEmpty { null },
-                    geminiConfig = buildGeminiConfig(prefs),
-                    grokConfig = buildGrokConfig(prefs),
-                    estimatedData = estimatedData,
-                    subscriptions = subscriptions,
-                )
-                merged.costData
-            } else {
-                estimatedData?.copy(subscriptions = subscriptions)
-            }
-
-            withContext(Dispatchers.Main) {
-                if (costData != null) {
-                    displayCostData(costData)
-                    prefs.edit().putString("last_api_cost",
-                        com.google.gson.Gson().toJson(costData)).apply()
-                    UsageWidgetProvider.updateAll(this@MainActivity)
-
-                    // Admin 비교 텍스트도 업데이트
-                    if (hasBillingKeys) {
-                        val lines = mutableListOf<String>()
-                        lines.add("소스: ${costData.sourceLabel()}")
-                        costData.byAI.filter { it.monthCost > 0 }.forEach { ai ->
-                            val tag = when (ai.source) {
-                                CostSource.BILLING -> "✓실제"
-                                CostSource.HYBRID -> "✓실제"
-                                CostSource.ESTIMATED -> "~추정"
-                            }
-                            lines.add("${ai.name}: $${String.format("%.4f", ai.monthCost)} $tag")
-                            ai.monthDiff?.let { diff ->
-                                val sign = if (diff >= 0) "+" else ""
-                                lines.add("  추정대비 $sign$${String.format("%.4f", diff)}")
-                            }
-                        }
-                        if (costData.error != null) lines.add("⚠ ${costData.error}")
-                        adminCostText.text = lines.joinToString("\n")
-                    }
-
-                    statusText.text = "마지막 업데이트: ${java.time.LocalTime.now().toString().take(5)}"
-                } else if (estimatedData == null && !hasBillingKeys) {
-                    statusText.text = "비용 데이터 없음"
-                }
-            }
-        }
-    }
 }
