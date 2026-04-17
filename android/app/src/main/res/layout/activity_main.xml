@@ -664,6 +664,18 @@
                         android:textColor="#e0e0e0" />
                 </LinearLayout>
 
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:layout_marginTop="6dp">
+                    <LinearLayout
+                        android:id="@+id/appBgColorPresetsContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
                 <!-- 앱 글씨색 -->
                 <TextView
                     android:layout_width="wrap_content"
@@ -723,6 +735,18 @@
                         android:backgroundTint="#444466"
                         android:textColor="#e0e0e0" />
                 </LinearLayout>
+
+                <HorizontalScrollView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:scrollbars="none"
+                    android:layout_marginTop="6dp">
+                    <LinearLayout
+                        android:id="@+id/appTextColorPresetsContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
 
                 <!-- 컨텐츠 영역(섹션) 투명도 -->
                 <TextView
@@ -1011,13 +1035,18 @@
                         android:textColor="#e0e0e0" />
                 </LinearLayout>
 
-                <LinearLayout
-                    android:id="@+id/textColorPresetsContainer"
+                <HorizontalScrollView
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:orientation="horizontal"
-                    android:layout_marginTop="6dp"
-                    android:gravity="center_vertical" />
+                    android:scrollbars="none"
+                    android:layout_marginTop="6dp">
+                    <LinearLayout
+                        android:id="@+id/textColorPresetsContainer"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical" />
+                </HorizontalScrollView>
 
             </LinearLayout>
         </LinearLayout>
