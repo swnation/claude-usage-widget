@@ -724,6 +724,45 @@
                         android:textColor="#e0e0e0" />
                 </LinearLayout>
 
+                <!-- 컨텐츠 영역(섹션) 투명도 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="컨텐츠 영역 투명도"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <SeekBar
+                        android:id="@+id/sectionOpacitySeek"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:min="0"
+                        android:max="100"
+                        android:progress="100"
+                        android:progressTint="#c084fc"
+                        android:thumbTint="#c084fc" />
+
+                    <TextView
+                        android:id="@+id/sectionOpacityLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="100%"
+                        android:textColor="#e0e0e0"
+                        android:textSize="11sp"
+                        android:layout_marginStart="8dp"
+                        android:minWidth="42dp" />
+                </LinearLayout>
+
                 <!-- 2. 오버레이 이미지 -->
                 <TextView
                     android:layout_width="wrap_content"
@@ -856,6 +895,56 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="44dp"
+                        android:textColor="#e0e0e0"
+                        android:textSize="11sp"
+                        android:layout_marginStart="8dp"
+                        android:minWidth="42dp" />
+                </LinearLayout>
+
+                <!-- 비율 잠금 -->
+                <CheckBox
+                    android:id="@+id/overlayAspectLockCheck"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="비율 유지"
+                    android:textColor="#e0e0e0"
+                    android:textSize="11sp"
+                    android:buttonTint="#c084fc"
+                    android:layout_marginTop="4dp" />
+
+                <!-- 오버레이 투명도 -->
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="오버레이 투명도"
+                    android:textColor="#c084fc"
+                    android:textSize="12sp"
+                    android:textStyle="bold"
+                    android:layout_marginTop="12dp"
+                    android:layout_marginBottom="4dp" />
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:orientation="horizontal"
+                    android:gravity="center_vertical">
+
+                    <SeekBar
+                        android:id="@+id/overlayOpacitySeek"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:min="0"
+                        android:max="100"
+                        android:progress="100"
+                        android:progressTint="#c084fc"
+                        android:thumbTint="#c084fc" />
+
+                    <TextView
+                        android:id="@+id/overlayOpacityLabel"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:text="100%"
                         android:textColor="#e0e0e0"
                         android:textSize="11sp"
                         android:layout_marginStart="8dp"

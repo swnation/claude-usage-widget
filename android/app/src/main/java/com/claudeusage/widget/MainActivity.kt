@@ -620,6 +620,13 @@ class MainActivity : AppCompatActivity() {
                 (customBgColor and 0x00FFFFFF) or 0xE0000000.toInt()
             } else skin.sectionBgColor
 
+            // 컨텐츠(섹션) 투명도 적용
+            val sectionOpacity = prefs.getInt("section_opacity", 100).coerceIn(0, 100)
+            if (sectionOpacity < 100) {
+                val alpha = (sectionOpacity * 255 / 100) shl 24
+                sectionBgColor = (sectionBgColor and 0x00FFFFFF) or alpha
+            }
+
             val scrollView = findViewById<android.widget.ScrollView>(R.id.mainScrollView)
             val bgImageView = findViewById<ImageView>(R.id.bgImageView)
             if (skinId == "custom-file") {
@@ -813,6 +820,9 @@ class MainActivity : AppCompatActivity() {
         // ── 오버레이 크기 조절 ──
         setupOverlaySizeSliders(prefs)
 
+        // ── 투명도 슬라이더 (컨텐츠 + 오버레이) ──
+        setupOpacitySliders(prefs)
+
         // ── 3. 글씨 색 ──
         setupTextColorPicker(prefs, "default")
     }
@@ -883,6 +893,7 @@ class MainActivity : AppCompatActivity() {
         val heightSeek = findViewById<android.widget.SeekBar>(R.id.overlayHeightSeek) ?: return
         val widthLabel = findViewById<TextView>(R.id.overlayWidthLabel) ?: return
         val heightLabel = findViewById<TextView>(R.id.overlayHeightLabel) ?: return
+        val lockCheck = findViewById<android.widget.CheckBox>(R.id.overlayAspectLockCheck) ?: return
 
         val curW = prefs.getInt("overlay_width_dp", FloatingOverlay.OVERLAY_WIDTH_DP)
         val curH = prefs.getInt("overlay_height_dp", FloatingOverlay.OVERLAY_HEIGHT_DP)
@@ -890,14 +901,37 @@ class MainActivity : AppCompatActivity() {
         heightSeek.progress = curH
         widthLabel.text = "${curW}dp"
         heightLabel.text = "${curH}dp"
+        lockCheck.isChecked = prefs.getBoolean("overlay_aspect_locked", false)
 
+        lockCheck.setOnCheckedChangeListener { _, checked ->
+            prefs.edit().putBoolean("overlay_aspect_locked", checked).apply()
+        }
+
+        var internalUpdate = false
         val listener = object : android.widget.SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(seekBar: android.widget.SeekBar?, progress: Int, fromUser: Boolean) {
-                if (!fromUser) return
+                if (!fromUser || internalUpdate) return
                 if (seekBar == widthSeek) {
                     widthLabel.text = "${progress}dp"
+                    // 비율 잠금: 너비 변경 → 높이 자동 조정
+                    if (lockCheck.isChecked) {
+                        val ratio = getOverlayImageRatio(prefs)
+                        val newH = (progress / ratio).toInt().coerceIn(heightSeek.min, heightSeek.max)
+                        internalUpdate = true
+                        heightSeek.progress = newH
+                        heightLabel.text = "${newH}dp"
+                        internalUpdate = false
+                    }
                 } else {
                     heightLabel.text = "${progress}dp"
+                    if (lockCheck.isChecked) {
+                        val ratio = getOverlayImageRatio(prefs)
+                        val newW = (progress * ratio).toInt().coerceIn(widthSeek.min, widthSeek.max)
+                        internalUpdate = true
+                        widthSeek.progress = newW
+                        widthLabel.text = "${newW}dp"
+                        internalUpdate = false
+                    }
                 }
             }
             override fun onStartTrackingTouch(seekBar: android.widget.SeekBar?) {}
@@ -914,6 +948,58 @@ class MainActivity : AppCompatActivity() {
         }
         widthSeek.setOnSeekBarChangeListener(listener)
         heightSeek.setOnSeekBarChangeListener(listener)
+    }
+
+    /** 오버레이 이미지 비율 (없으면 기본 300:44 = 6.82) */
+    private fun getOverlayImageRatio(prefs: android.content.SharedPreferences): Float {
+        val path = prefs.getString("overlay_image_path", null) ?: return 300f / 44f
+        return try {
+            val opts = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeFile(path, opts)
+            if (opts.outWidth > 0 && opts.outHeight > 0) {
+                opts.outWidth.toFloat() / opts.outHeight.toFloat()
+            } else 300f / 44f
+        } catch (_: Exception) { 300f / 44f }
+    }
+
+    private fun setupOpacitySliders(prefs: android.content.SharedPreferences) {
+        // 컨텐츠(섹션) 투명도
+        val sectSeek = findViewById<android.widget.SeekBar>(R.id.sectionOpacitySeek)
+        val sectLabel = findViewById<TextView>(R.id.sectionOpacityLabel)
+        if (sectSeek != null && sectLabel != null) {
+            val cur = prefs.getInt("section_opacity", 100)
+            sectSeek.progress = cur
+            sectLabel.text = "${cur}%"
+            sectSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) {
+                    sectLabel.text = "${p}%"
+                }
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(s: android.widget.SeekBar?) {
+                    prefs.edit().putInt("section_opacity", s?.progress ?: 100).apply()
+                    applySkin()
+                }
+            })
+        }
+
+        // 오버레이 투명도
+        val ovSeek = findViewById<android.widget.SeekBar>(R.id.overlayOpacitySeek)
+        val ovLabel = findViewById<TextView>(R.id.overlayOpacityLabel)
+        if (ovSeek != null && ovLabel != null) {
+            val cur = prefs.getInt("overlay_opacity", 100)
+            ovSeek.progress = cur
+            ovLabel.text = "${cur}%"
+            ovSeek.setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: android.widget.SeekBar?, p: Int, u: Boolean) {
+                    ovLabel.text = "${p}%"
+                }
+                override fun onStartTrackingTouch(s: android.widget.SeekBar?) {}
+                override fun onStopTrackingTouch(s: android.widget.SeekBar?) {
+                    prefs.edit().putInt("overlay_opacity", s?.progress ?: 100).apply()
+                    FloatingOverlay.getInstance(applicationContext).updateSkin()
+                }
+            })
+        }
     }
 
     /** 오버레이 글씨 색 선택 UI */
