@@ -219,6 +219,7 @@ class MainActivity : AppCompatActivity() {
                     .putString("gcp_service_account_json", json).apply()
                 findViewById<TextView>(R.id.gcpServiceAccountStatus)?.text = "서비스 계정: $email"
                 Toast.makeText(this, "서비스 계정 등록: $email", Toast.LENGTH_SHORT).show()
+                backupConfigToDrive()
             } catch (e: Exception) {
                 Toast.makeText(this, "파일 읽기 실패: ${e.message}", Toast.LENGTH_SHORT).show()
             }
@@ -571,6 +572,7 @@ class MainActivity : AppCompatActivity() {
                 .putString("gcp_table_id", tId)
                 .apply()
             Toast.makeText(this, "Gemini Billing 설정 저장됨", Toast.LENGTH_SHORT).show()
+            backupConfigToDrive()
             // Gemini admin key가 이미 등록되어 있으면 바로 조회
             if (gcpPrefs.getString("gcp_service_account_json", null) != null) {
                 fetchAdminCosts()
@@ -591,6 +593,7 @@ class MainActivity : AppCompatActivity() {
             }
             grokPrefs.edit().putString("grok_team_id", teamId).apply()
             Toast.makeText(this, "Grok Team ID 저장됨", Toast.LENGTH_SHORT).show()
+            backupConfigToDrive()
             if (grokPrefs.getString("grok_admin_key", "")?.isNotEmpty() == true) {
                 fetchAdminCosts()
             } else {
@@ -1238,6 +1241,25 @@ class MainActivity : AppCompatActivity() {
             addProperty("gcp_table_id", prefs.getString("gcp_table_id", "") ?: "")
             addProperty("grok_team_id", prefs.getString("grok_team_id", "") ?: "")
             addProperty("gcp_service_account_json", prefs.getString("gcp_service_account_json", "") ?: "")
+        }
+    }
+
+    /** Gemini/Grok 부가 설정을 Drive에 자동 백업 (오랑붕쌤 연결 필요) */
+    private fun backupConfigToDrive(silent: Boolean = true) {
+        val prefs = PreferenceManager.getDefaultSharedPreferences(this)
+        val token = prefs.getString("google_oauth_token", null) ?: run {
+            if (!silent) Toast.makeText(this, "오랑붕쌤 연결 필요 (Drive 백업 미실행)", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val encrypted = prefs.getString("admin_keys_encrypted", "") ?: ""
+        val config = buildExtraConfig(prefs)
+        lifecycleScope.launch(Dispatchers.IO) {
+            val ok = DriveApiClient.saveKeysToDrive(token, encrypted, config)
+            if (!silent) withContext(Dispatchers.Main) {
+                Toast.makeText(this@MainActivity,
+                    if (ok) "☁️ Drive 백업 완료" else "❌ Drive 백업 실패",
+                    Toast.LENGTH_SHORT).show()
+            }
         }
     }
 

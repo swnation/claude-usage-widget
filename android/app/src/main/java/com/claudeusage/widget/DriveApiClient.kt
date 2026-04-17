@@ -173,20 +173,26 @@ object DriveApiClient {
 
     /**
      * 암호화된 Admin 키 + 부가 설정을 Drive에 저장한다.
-     * @param encryptedData PIN으로 암호화된 키 데이터 (Base64 문자열)
-     * @param extraConfig Gemini/Grok 등 부가 설정 JSON (null이면 키만 저장)
+     * @param encryptedData PIN으로 암호화된 키 데이터 (없으면 빈 문자열, 설정만 백업 가능)
+     * @param extraConfig Gemini/Grok 등 부가 설정 JSON
      */
     fun saveKeysToDrive(token: String, encryptedData: String, extraConfig: JsonObject? = null): Boolean {
         return try {
             val folderId = getOrCreateFolder(token, KEYS_FOLDER)
+
+            // 기존 내용 보존 (설정만 업데이트할 때 키를 날리지 않도록)
+            val existingId = searchFile(token, KEYS_FILE, folderId)
+            val existingEncrypted = if (encryptedData.isEmpty() && existingId != null) {
+                readFile(token, existingId)?.get("encrypted")?.asString ?: ""
+            } else encryptedData
+
             val root = JsonObject().apply {
-                addProperty("encrypted", encryptedData)
+                addProperty("encrypted", existingEncrypted)
                 addProperty("updatedAt", java.time.Instant.now().toString())
                 if (extraConfig != null) add("config", extraConfig)
             }
             val content = Gson().toJson(root)
 
-            val existingId = searchFile(token, KEYS_FILE, folderId)
             if (existingId != null) {
                 httpPatch(
                     "https://www.googleapis.com/upload/drive/v3/files/$existingId?uploadType=media",
