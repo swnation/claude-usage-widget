@@ -622,12 +622,16 @@ class MainActivity : AppCompatActivity() {
                 (customBgColor and 0x00FFFFFF) or 0xE0000000.toInt()
             } else skin.sectionBgColor
 
-            // 컨텐츠(섹션) 투명도 적용
+            // 컨텐츠(섹션) 투명도 적용 — 모든 카드/섹션 배경에 적용
             val sectionOpacity = prefs.getInt("section_opacity", 100).coerceIn(0, 100)
             if (sectionOpacity < 100) {
                 val alpha = (sectionOpacity * 255 / 100) shl 24
                 sectionBgColor = (sectionBgColor and 0x00FFFFFF) or alpha
             }
+            val cardBgColor = if (sectionOpacity < 100) {
+                val alpha = (sectionOpacity * 255 / 100) shl 24
+                (skin.cardBgColor and 0x00FFFFFF) or alpha
+            } else skin.cardBgColor
 
             val scrollView = findViewById<android.widget.ScrollView>(R.id.mainScrollView)
             val bgImageView = findViewById<ImageView>(R.id.bgImageView)
@@ -697,7 +701,7 @@ class MainActivity : AppCompatActivity() {
             loginButton.backgroundTintList = accentTint
 
             // 카드 배경 (API 요금 섹션)
-            costByAiContainer.setBackgroundColor(skin.cardBgColor)
+            costByAiContainer.setBackgroundColor(cardBgColor)
 
             // 라디오 버튼 텍스트 & 틴트
             for (i in 0 until modeRadioGroup.childCount) {
@@ -887,6 +891,47 @@ class MainActivity : AppCompatActivity() {
             prefs.edit().remove("app_text_color").apply()
             applySkin()
             setupSkinSection()
+        }
+
+        // 프리셋 색상 샘플
+        val bgPresets = listOf(
+            "#1a1a2e", "#0D1117", "#1E1E2E", "#2D2B55",
+            "#FDF5E6", "#FFF8F0", "#F0F4F8", "#1B1B3A",
+            "#0a0820", "#2C1320", "#0D0804", "#F5F5DC",
+        )
+        val txtPresets = listOf(
+            "#e0e0e0", "#FFFFFF", "#000000", "#333333",
+            "#C9D1D9", "#FFD93D", "#4DDFFC", "#FF6B6B",
+            "#00B894", "#D4B895", "#5c3d4e", "#c084fc",
+        )
+        renderColorPresets(R.id.appBgColorPresetsContainer, bgPresets, savedBg) { hex ->
+            prefs.edit().putString("app_bg_color", hex).apply()
+            applySkin()
+            setupSkinSection()
+        }
+        renderColorPresets(R.id.appTextColorPresetsContainer, txtPresets, savedTxt) { hex ->
+            prefs.edit().putString("app_text_color", hex).apply()
+            applySkin()
+            setupSkinSection()
+        }
+    }
+
+    private fun renderColorPresets(containerId: Int, presets: List<String>, current: String?, onClick: (String) -> Unit) {
+        val container = findViewById<LinearLayout>(containerId) ?: return
+        container.removeAllViews()
+        val dp = resources.displayMetrics.density
+        presets.forEach { hex ->
+            val swatch = View(this).apply {
+                val s = (28 * dp).toInt()
+                layoutParams = LinearLayout.LayoutParams(s, s).apply { marginEnd = (6 * dp).toInt() }
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    shape = android.graphics.drawable.GradientDrawable.OVAL
+                    setColor(Color.parseColor(hex))
+                    setStroke(if (hex == current) (2 * dp).toInt() else 1, if (hex == current) 0xFFc084fc.toInt() else 0xFF888899.toInt())
+                }
+                setOnClickListener { onClick(hex) }
+            }
+            container.addView(swatch)
         }
     }
 
