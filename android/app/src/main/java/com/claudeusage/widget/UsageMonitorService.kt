@@ -23,6 +23,13 @@ import com.google.gson.Gson
 import com.google.gson.JsonObject
 import java.util.Timer
 import java.util.TimerTask
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class UsageMonitorService : Service() {
 
@@ -61,6 +68,7 @@ class UsageMonitorService : Service() {
     private var sessionAlertSent = false
     private var weeklyAlertSent = false
     private var isCostFetching = false
+    private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     override fun onCreate() {
         super.onCreate()
@@ -103,6 +111,7 @@ class UsageMonitorService : Service() {
         try { scrapeWebView?.destroy() } catch (_: Exception) {}
         scrapeWebView = null
         isCostFetching = false
+        serviceScope.cancel()
         super.onDestroy()
     }
 
@@ -311,16 +320,14 @@ class UsageMonitorService : Service() {
         if (!hasBillingKeys) return
 
         isCostFetching = true
-        Thread {
+        serviceScope.launch {
             try {
-                // 구독 정보 로드
                 val subsJson = prefs.getString("subscriptions", null)
                 val subscriptions = if (subsJson != null) {
                     try { Gson().fromJson(subsJson, Array<Subscription>::class.java).toList() }
                     catch (_: Exception) { emptyList() }
                 } else emptyList<Subscription>()
 
-                // Gemini BigQuery 설정
                 val geminiConfig = run {
                     val gKey = prefs.getString("gcp_service_account_json", null)
                     val pId = prefs.getString("gcp_project_id", null)
@@ -329,7 +336,6 @@ class UsageMonitorService : Service() {
                     if (!gKey.isNullOrEmpty() && !pId.isNullOrEmpty() && !dId.isNullOrEmpty() && !tId.isNullOrEmpty())
                         BillingApiClient.GeminiConfig(gKey, pId, dId, tId) else null
                 }
-                // Grok xAI 설정
                 val grokConfig = run {
                     val gKey = prefs.getString("grok_admin_key", null)
                     val tId = prefs.getString("grok_team_id", null)
@@ -350,15 +356,15 @@ class UsageMonitorService : Service() {
                     val costJson = Gson().toJson(costData)
                     prefs.edit().putString("last_api_cost", costJson).apply()
 
-                    mainHandler.post {
+                    withContext(Dispatchers.Main) {
                         val usage = loadSavedUsage()
                         notificationManager.notify(NOTIFICATION_ID, buildNotification(usage))
-                        UsageWidgetProvider.updateAll(this)
+                        UsageWidgetProvider.updateAll(this@UsageMonitorService)
                     }
                 }
             } catch (_: Exception) {}
             isCostFetching = false
-        }.start()
+        }
     }
 
     private fun checkAlerts(usage: PlanUsage?) {

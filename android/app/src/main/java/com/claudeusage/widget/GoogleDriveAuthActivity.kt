@@ -31,6 +31,7 @@ class GoogleDriveAuthActivity : AppCompatActivity() {
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        setupBackPressHandler()
 
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
         val clientId = prefs.getString("google_oauth_client_id", null)
@@ -104,9 +105,18 @@ class GoogleDriveAuthActivity : AppCompatActivity() {
 
     private fun handleRedirect(url: String) {
         // Token is in the URL fragment: http://localhost#access_token=...&token_type=...
-        val fragment = Uri.parse(url.replace("#", "?")).getQueryParameter("access_token")
+        val hashIdx = url.indexOf('#')
+        val token = if (hashIdx >= 0) {
+            url.substring(hashIdx + 1)
+                .split("&")
+                .map { it.split("=", limit = 2) }
+                .firstOrNull { it.size == 2 && it[0] == "access_token" }
+                ?.get(1)
+                ?.let { Uri.decode(it) }
+        } else null
 
-        if (!fragment.isNullOrEmpty()) {
+        if (!token.isNullOrEmpty()) {
+            val fragment = token
             PreferenceManager.getDefaultSharedPreferences(this).edit()
                 .putString("google_drive_token", fragment)
                 .putBoolean("google_drive_connected", true)
@@ -121,13 +131,17 @@ class GoogleDriveAuthActivity : AppCompatActivity() {
         }
     }
 
-    @Deprecated("Use OnBackPressedCallback")
-    override fun onBackPressed() {
-        if (::webView.isInitialized && webView.canGoBack()) {
-            webView.goBack()
-        } else {
-            super.onBackPressed()
-        }
+    private fun setupBackPressHandler() {
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (::webView.isInitialized && webView.canGoBack()) {
+                    webView.goBack()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
     }
 
     override fun onDestroy() {
