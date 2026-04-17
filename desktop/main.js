@@ -257,7 +257,7 @@ async function scrapeNow() {
 // ── Google Drive API 헬퍼 ──
 async function driveGet(urlPath, token) {
   return new Promise((resolve, reject) => {
-    https.get(urlPath, { headers: { 'Authorization': \`Bearer \${token}\` } }, (res) => {
+    https.get(urlPath, { headers: { 'Authorization': `Bearer ${token}` } }, (res) => {
       let data = '';
       res.on('data', c => data += c);
       res.on('end', () => {

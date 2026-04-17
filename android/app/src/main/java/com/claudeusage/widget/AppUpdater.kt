@@ -200,31 +200,29 @@ class AppUpdater(private val activity: Activity) {
                 if (id != downloadId) return
                 activity.unregisterReceiver(this)
 
-                // DownloadManager에서 실제 상태 확인
+                // DownloadManager에서 실제 상태 확인 (Cursor는 use로 안전하게 닫음)
                 val query = DownloadManager.Query().setFilterById(downloadId)
-                val cursor = dm.query(query)
-                if (cursor != null && cursor.moveToFirst()) {
-                    val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
-                    if (status == DownloadManager.STATUS_SUCCESSFUL) {
-                        // DownloadManager가 반환하는 실제 URI 사용
-                        val downloadedUri = dm.getUriForDownloadedFile(downloadId)
-                        if (downloadedUri != null) {
-                            installApkFromUri(downloadedUri)
+                var handled = false
+                dm.query(query)?.use { cursor ->
+                    if (cursor.moveToFirst()) {
+                        val status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS))
+                        if (status == DownloadManager.STATUS_SUCCESSFUL) {
+                            val downloadedUri = dm.getUriForDownloadedFile(downloadId)
+                            if (downloadedUri != null) {
+                                installApkFromUri(downloadedUri)
+                                handled = true
+                            }
                         } else {
-                            installApk(file)
-                        }
-                    } else {
-                        val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
-                        Log.e(TAG, "다운로드 실패: status=$status, reason=$reason")
-                        activity.runOnUiThread {
-                            Toast.makeText(activity, "다운로드 실패 (코드: $reason)", Toast.LENGTH_LONG).show()
+                            val reason = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_REASON))
+                            Log.e(TAG, "다운로드 실패: status=$status, reason=$reason")
+                            activity.runOnUiThread {
+                                Toast.makeText(activity, "다운로드 실패 (코드: $reason)", Toast.LENGTH_LONG).show()
+                            }
+                            handled = true
                         }
                     }
-                    cursor.close()
-                } else {
-                    // 쿼리 실패 시 파일 직접 시도
-                    installApk(file)
                 }
+                if (!handled) installApk(file)
             }
         }
 
