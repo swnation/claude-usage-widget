@@ -302,9 +302,9 @@ object BillingApiClient {
                   DATE(usage_start_time) as date,
                   SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) as net_cost
                 FROM `$projectId.$datasetId.$tableId`
-                WHERE (service.description = 'Vertex AI API'
-                       OR service.description = 'Generative Language API'
-                       OR service.description LIKE '%generativelanguage%')
+                WHERE (service.description = 'Gemini API'
+                       OR service.description = 'Vertex AI API'
+                       OR service.description = 'Generative Language API')
                   AND DATE(usage_start_time) >= '$monthStart'
                 GROUP BY date
                 ORDER BY date
