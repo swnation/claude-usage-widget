@@ -300,7 +300,8 @@ object BillingApiClient {
             val query = """
                 SELECT
                   DATE(usage_start_time) as date,
-                  SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) as net_cost
+                  SUM(cost) + SUM(IFNULL((SELECT SUM(c.amount) FROM UNNEST(credits) c), 0)) as net_cost,
+                  ANY_VALUE(currency) as currency
                 FROM `$projectId.$datasetId.$tableId`
                 WHERE (service.description = 'Gemini API'
                        OR service.description = 'Vertex AI API'
@@ -343,15 +344,25 @@ object BillingApiClient {
             val json = JsonParser.parseString(body).asJsonObject
             var monthTotal = 0.0
             var todayTotal = 0.0
+            var currency = "USD"
 
             json.getAsJsonArray("rows")?.forEach { row ->
                 val fields = row.asJsonObject.getAsJsonArray("f")
                 val date = fields[0].asJsonObject.get("v")?.asString ?: ""
                 val cost = fields[1].asJsonObject.get("v")?.asString?.toDoubleOrNull() ?: 0.0
+                val cur = fields[2].asJsonObject.get("v")?.asString
+                if (cur != null) currency = cur
                 monthTotal += cost
                 if (date == today) {
                     todayTotal = cost
                 }
+            }
+
+            // KRW면 USD로 변환
+            if (currency == "KRW") {
+                val rate = 1450.0
+                todayTotal /= rate
+                monthTotal /= rate
             }
 
             return BillingResult(todayTotal, monthTotal)
